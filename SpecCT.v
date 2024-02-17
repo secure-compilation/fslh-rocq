@@ -1,4 +1,4 @@
-(** * SpecCT: Speculative Constant Time *)
+(** * SpecCT: Speculative Constant-Time *)
 
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
@@ -383,7 +383,7 @@ Proof.
 Qed.
 (* /FOLD *)
 
-(** ** Speculative constant time *)
+(** ** Speculative constant-time *)
 
 (** The observations are the same, so we can just reuse them. *)
 Print observation.
