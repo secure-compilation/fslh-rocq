@@ -385,6 +385,8 @@ Qed.
 
 (** ** Speculative constant-time *)
 
+(* SOONER: Add constant-time if-then-else to the expression language (used for SLH) *)
+
 (** The observations are the same, so we can just reuse them. *)
 Print observation.
 
@@ -462,7 +464,13 @@ Inductive spec_eval : com' -> state -> astate -> state -> astate -> obs -> dirs 
 
   where "( st , ast , ds ) =[ c ]=> ( stt , astt , os )" := (spec_eval c st ast stt astt os ds).
 
-(* HIDE: Add fences and maybe speculation bit *)
+(* SOONER: Add speculation bit, but without fences it's just a form of
+   instrumentation that doesn't affect the semantics. *)
+
+(* HIDE: Could also add fences, but they are not needed for SLH.  They would add
+   complexity to the big step semantics, since they add like a halt instruction
+   that prematurely ends execution, which means adding a lot more rules
+   (basically an error monad) *)
 
 Definition spec_ct_secure :=
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2 ds,
