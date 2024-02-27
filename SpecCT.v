@@ -493,15 +493,24 @@ Inductive spec_eval : com' -> state -> astate -> state -> astate -> obs -> dirs 
 
   where "( st , ast , ds ) =[ c ]=> ( stt , astt , os )" := (spec_eval c st ast stt astt os ds).
 
+(* HIDE: This semantics already lost one property of Imp, which is only
+   nonterminating executions don't produce a final state. Now if the input
+   directions don't match what the program expects we also get stuck, which for
+   our big-step semantics we can't distinguish from non-termination. Unsure if
+   this a problem, but just wanted to mention it. *)
+
 (* SOONER: Add speculation bit, but without fences it's just a form of
-   instrumentation that doesn't affect the semantics. *)
+   instrumentation that doesn't affect the semantics, minus adding more
+   stuckness for the [_F] rules. *)
 
 (* HIDE: Could also add fences, but they are not needed for SLH. They would add
    a bit of complexity to the big-step semantics, since they behave like a halt
    instruction that prematurely ends execution, which means adding at least one
    more rule for sequencing (basically an error monad, but with a (halt) bit of
    cleverness we can probably avoid extra rules for if and while, since we're
-   just threading through things). *)
+   just threading through things). We likely don't want to treat this stuckness
+   as not producing a final state though, since a stuck fence is probably a
+   final state in their small-step semantics. *)
 
 Definition spec_ct_secure :=
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2 ds,
