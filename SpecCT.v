@@ -34,6 +34,35 @@ Definition FILL_IN_HERE := <{True}>.
     runtime, which leads to accessing memory addresses that can depend
     on secrets, making CCT non-trivial for Imp with arrays. *)
 
+(* HIDE *)
+(* HIDE: This change is too invasive to be worth the trouble for now *)
+(** *** Constant-time conditional *)
+
+(** But first, we extend the arithmetic expressions of Imp with an [b ? e1 : e2]
+    conditional that executes in constant time (for instance using a special
+    constant-time conditional move instruction). This constant-time conditional
+    makes arithmetic and boolean expressions mutually inductive. *)
+
+(* Inductive aexp : Type := *)
+(*   | ANum (n : nat) *)
+(*   | AId (x : string) *)
+(*   | APlus (a1 a2 : aexp) *)
+(*   | AMinus (a1 a2 : aexp) *)
+(*   | AMult (a1 a2 : aexp) *)
+(*   | ACTIf (b:bexp) (a1 a2:aexp) (* <--- NEW *) *)
+(* with bexp : Type := *)
+(*   | BTrue *)
+(*   | BFalse *)
+(*   | BEq (a1 a2 : aexp) *)
+(*   | BNeq (a1 a2 : aexp) *)
+(*   | BLe (a1 a2 : aexp) *)
+(*   | BGt (a1 a2 : aexp) *)
+(*   | BNot (b : bexp) *)
+(*   | BAnd (b1 b2 : bexp). *)
+
+(** *** Now back to adding arrays *)
+(* /HIDE *)
+
 Inductive com' : Type :=
   | Skip
   | Asgn (x : string) (e : aexp)
@@ -467,10 +496,12 @@ Inductive spec_eval : com' -> state -> astate -> state -> astate -> obs -> dirs 
 (* SOONER: Add speculation bit, but without fences it's just a form of
    instrumentation that doesn't affect the semantics. *)
 
-(* HIDE: Could also add fences, but they are not needed for SLH.  They would add
-   complexity to the big step semantics, since they add like a halt instruction
-   that prematurely ends execution, which means adding a lot more rules
-   (basically an error monad) *)
+(* HIDE: Could also add fences, but they are not needed for SLH. They would add
+   a bit of complexity to the big-step semantics, since they behave like a halt
+   instruction that prematurely ends execution, which means adding at least one
+   more rule for sequencing (basically an error monad, but with a (halt) bit of
+   cleverness we can probably avoid extra rules for if and while, since we're
+   just threading through things). *)
 
 Definition spec_ct_secure :=
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2 ds,
