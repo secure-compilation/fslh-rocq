@@ -428,80 +428,85 @@ Inductive direction :=
 Definition dirs := list direction.
 
 Reserved Notation
-         "'(' st , ast , ds ')' '=[' c ']=>' '(' stt , astt , os ')'"
+         "'(' st , ast , b , ds ')' '=[' c ']=>' '(' stt , astt , bb , os ')'"
          (at level 40, c custom com' at level 99,
           st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive spec_eval : com' -> state -> astate -> state -> astate -> obs -> dirs -> Prop :=
-  | Spec_Skip : forall st ast,
-      (st, ast, [DStep]) =[ skip ]=> (st, ast, [])
-  | Spec_Asgn  : forall st ast e n x,
+Inductive spec_eval : com' -> state -> astate -> bool -> dirs ->
+                              state -> astate -> bool -> obs -> Prop :=
+  | Spec_Skip : forall st ast b,
+      (st, ast, b, [DStep]) =[ skip ]=> (st, ast, b, [])
+  | Spec_Asgn  : forall st ast b e n x,
       aeval st e = n ->
-      (st, ast, [DStep]) =[ x := e ]=> (x !-> n; st, ast, [])
-  | Spec_Seq : forall c1 c2 st ast st' ast' st'' ast'' os1 os2 ds1 ds2,
-      (st, ast, ds1) =[ c1 ]=> (st', ast', os1)  ->
-      (st', ast', ds2) =[ c2 ]=> (st'', ast'', os2) ->
-      (st, ast, ds1++ds2)  =[ c1 ; c2 ]=> (st'', ast'', os1++os2)
-  | Spec_If : forall st ast st' ast' b c1 c2 os1 ds,
-      (st, ast, ds) =[ match beval st b with
+      (st, ast, b, [DStep]) =[ x := e ]=> (x !-> n; st, ast, b, [])
+  | Spec_Seq : forall c1 c2 st ast b st' ast' b' st'' ast'' b'' os1 os2 ds1 ds2,
+      (st, ast, b, ds1) =[ c1 ]=> (st', ast', b', os1)  ->
+      (st', ast', b', ds2) =[ c2 ]=> (st'', ast'', b'', os2) ->
+      (st, ast, b, ds1++ds2)  =[ c1 ; c2 ]=> (st'', ast'', b'', os1++os2)
+  | Spec_If : forall st ast b st' ast' b' be c1 c2 os1 ds,
+      (st, ast, b, ds) =[ match beval st be with
                        | true => c1
-                       | false => c2 end ]=> (st', ast', os1) ->
-      (st, ast, DStep :: ds) =[ if b then c1 else c2 end ]=>
-      (st', ast', OBranch (beval st b)::os1)
-  | Spec_If_F : forall st ast st' ast' b c1 c2 os1 ds,
-      (st, ast, ds) =[ match beval st b with
+                       | false => c2 end ]=> (st', ast', b', os1) ->
+      (st, ast, b, DStep :: ds) =[ if be then c1 else c2 end ]=>
+        (st', ast', b', OBranch (beval st be)::os1)
+  | Spec_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
+      (st, ast, true, ds) =[ match beval st be with
                        | true => c2 (* <-- branches swapped *)
-                       | false => c1 end ]=> (st', ast', os1) ->
-      (st, ast, DForce :: ds) =[ if b then c1 else c2 end ]=>
-      (st', ast', OBranch (beval st b)::os1)
-  | Spec_WhileFalse : forall b st ast c,
-      beval st b = false ->
-      (st, ast, [DStep]) =[ while b do c end ]=> (st, ast, [OBranch false])
-  | Spec_WhileFalse_F : forall st st' st'' ast ast' ast'' b c os' os'' ds ds',
-      beval st b = false ->
-      (st, ast, ds)  =[ c ]=> (st', ast', os') ->
-      (st', ast', ds') =[ while b do c end ]=> (st'', ast'', os'') ->
-      (st, ast, DForce::ds++ds') =[ while b do c end ]=> (st'', ast'', OBranch false::os'++os'')
-  | Spec_WhileTrue : forall st st' st'' ast ast' ast'' b c os' os'' ds ds',
-      beval st b = true ->
-      (st, ast, ds)  =[ c ]=> (st', ast', os') ->
-      (st', ast',ds') =[ while b do c end ]=> (st'', ast'', os'') ->
-      (st, ast, DStep::ds++ds')  =[ while b do c end ]=> (st'', ast'', OBranch true::os'++os'')
-  | Spec_WhileTrue_F : forall b st ast c,
-      beval st b = true ->
-      (st, ast, [DForce]) =[ while b do c end ]=> (st, ast, [OBranch true])
-  | Spec_ARead : forall st ast x a ie i,
+                       | false => c1 end ]=> (st', ast', b', os1) ->
+      (st, ast, b, DForce :: ds) =[ if be then c1 else c2 end ]=>
+        (st', ast', b', OBranch (beval st be)::os1)
+  | Spec_WhileFalse : forall be st ast b c,
+      beval st be = false ->
+      (st, ast, b, [DStep]) =[ while be do c end ]=> (st, ast, b, [OBranch false])
+  | Spec_WhileFalse_F : forall st st' st'' ast ast' ast'' b b' b'' be c os1 os2 ds1 ds2,
+      beval st be = false ->
+      (st, ast, true, ds1)  =[ c ]=> (st', ast', b', os1) ->
+      (st', ast', b', ds2) =[ while be do c end ]=> (st'', ast'', b'', os2) ->
+      (st, ast, b, DForce::ds1++ds2) =[ while be do c end ]=>
+        (st'', ast'', b'', OBranch false::os1++os2)
+  | Spec_WhileTrue : forall st st' st'' ast ast' ast'' b b' b'' be c os1 os2 ds1 ds2,
+      beval st be = true ->
+      (st, ast, b, ds1)  =[ c ]=> (st', ast', b', os1) ->
+      (st', ast', b', ds2) =[ while be do c end ]=> (st'', ast'', b'', os2) ->
+      (st, ast, b, DStep::ds1++ds2) =[ while be do c end ]=>
+        (st'', ast'', b'', OBranch true::os1++os2)
+  | Spec_WhileTrue_F : forall be st ast b c,
+      beval st be = true ->
+      (st, ast, b, [DForce]) =[ while be do c end ]=> (st, ast, true, [OBranch true])
+  | Spec_ARead : forall st ast b x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
-      (st, ast, [DStep]) =[ x <- a[[ie]] ]=> (x !-> nth i (ast a) 0; st, ast, [OARead a i])
+      (st, ast, b, [DStep]) =[ x <- a[[ie]] ]=>
+        (x !-> nth i (ast a) 0; st, ast, b, [OARead a i])
   | Spec_ARead_U : forall st ast x a ie i a' i',
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      (st, ast, [DLoad a' i']) =[ x <- a[[ie]] ]=> (x !-> nth i' (ast a') 0; st, ast, [OARead a i])
-  | Spec_Write : forall st ast a ie i e n,
+      (st, ast, true, [DLoad a' i']) =[ x <- a[[ie]] ]=>
+        (x !-> nth i' (ast a') 0; st, ast, true, [OARead a i])
+  | Spec_Write : forall st ast b a ie i e n,
       aeval st e = n ->
       aeval st ie = i ->
       i < length (ast a) ->
-      (st, ast, [DStep]) =[ a[ie] <- e ]=> (st, a !-> upd i (ast a) n; ast, [OAWrite a i])
+      (st, ast, b, [DStep]) =[ a[ie] <- e ]=> (st, a !-> upd i (ast a) n; ast, b, [OAWrite a i])
   | Spec_Write_U : forall st ast a ie i e n a' i',
       aeval st e = n ->
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      (st, ast, [DStore a' i']) =[ a[ie] <- e ]=> (st, a' !-> upd i' (ast a') n; ast, [OAWrite a i])
+      (st, ast, true, [DStore a' i']) =[ a[ie] <- e ]=>
+        (st, a' !-> upd i' (ast a') n; ast, true, [OAWrite a i])
 
-  where "( st , ast , ds ) =[ c ]=> ( stt , astt , os )" := (spec_eval c st ast stt astt os ds).
+  where "( st , ast , b , ds ) =[ c ]=> ( stt , astt , bb , os )" := (spec_eval c st ast b ds stt astt bb os).
 
 (* HIDE: This semantics already lost one property of Imp, which is only
    nonterminating executions don't produce a final state. Now if the input
    directions don't match what the program expects we also get stuck, which for
-   our big-step semantics we can't distinguish from non-termination. Unsure if
-   this a problem, but just wanted to mention it. *)
+   our big-step semantics can't be distinguished from non-termination. This is
+   probably not a problem, but just wanted to mention it. *)
 
-(* SOONER: Add speculation bit, but without fences it's just a form of
-   instrumentation that doesn't affect the semantics, minus adding more
-   stuckness for the [_F] rules. *)
+(** Without fences the speculation bit [b] is just a form of instrumentation
+   that doesn't affect the semantics, minus adding more stuckness for the [_F] rules. *)
 
 (* HIDE: Could also add fences, but they are not needed for SLH. They would add
    a bit of complexity to the big-step semantics, since they behave like a halt
