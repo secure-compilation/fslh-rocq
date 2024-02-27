@@ -517,10 +517,37 @@ Inductive spec_eval : com' -> state -> astate -> bool -> dirs ->
    as not producing a final state though, since a stuck fence is probably a
    final state in their small-step semantics. *)
 
+(* HIDE: Lemma 1: structural properties of execution *)
+
+Lemma speculation_bit_monotonic : forall c s a b ds s' a' b' os,
+  (s, a, b, ds) =[ c ]=> (s', a', b', os) ->
+  b = true ->
+  b' = true.
+Proof.
+  intros c s a b ds s' a' b' os Heval Hb. induction Heval; eauto.
+Qed.
+
+(* HIDE: This one is weaker for big-step semantics *)
+Lemma speculation_needs_force : forall c s a b ds s' a' b' os,
+  (s, a, b, ds) =[ c ]=> (s', a', b', os) ->
+  b = false ->
+  b' = true ->
+  In DForce ds.
+Proof.
+  intros c s a b ds s' a' b' os Heval Hb Hb'.
+  induction Heval; subst; simpl; eauto; try discriminate.
+  - apply in_or_app. destruct b'.
+    + left. apply IHHeval1; reflexivity.
+    + right. apply IHHeval2; reflexivity.
+  - right. apply in_or_app. destruct b'.
+    + left. apply IHHeval1; reflexivity.
+    + right. apply IHHeval2; reflexivity.
+Qed.
+
 Definition spec_ct_secure :=
-  forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2 ds,
+  forall P PA c s1 s2 a1 a2 b1 b2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
     pub_equiv P s1 s2 ->
     pub_equiv PA a1 a2 ->
-    (s1, a1, ds) =[ c ]=> (s1', a1', os1) ->
-    (s2, a2, ds) =[ c ]=> (s2', a2', os2) ->
+    (s1, a1, b1, ds) =[ c ]=> (s1', a1', b1', os1) ->
+    (s2, a2, b2, ds) =[ c ]=> (s2', a2', b2', os2) ->
     os1 = os2.
