@@ -177,47 +177,47 @@ Definition obs := list observation.
 
 (* TERSE: HIDEFROMHTML *)
 Reserved Notation
-         "'(' st , ast ')' '=[' c ']=>' '(' stt , astt , os ')'"
+         "'<(' st , ast ')>' '=[' c ']=>' '<(' stt , astt , os ')>'"
          (at level 40, c custom com' at level 99,
           st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive cteval : com' -> state -> astate -> state -> astate -> obs -> Prop :=
   | CTE_Skip : forall st ast,
-      (st , ast) =[ skip ]=> (st, ast, [])
+      <(st , ast)> =[ skip ]=> <(st, ast, [])>
   | CTE_Asgn  : forall st ast e n x,
       aeval st e = n ->
-      (st, ast) =[ x := e ]=> (x !-> n; st, ast, [])
+      <(st, ast)> =[ x := e ]=> <(x !-> n; st, ast, [])>
   | CTE_Seq : forall c1 c2 st ast st' ast' st'' ast'' os1 os2,
-      (st, ast) =[ c1 ]=> (st', ast', os1)  ->
-      (st', ast') =[ c2 ]=> (st'', ast'', os2) ->
-      (st, ast)  =[ c1 ; c2 ]=> (st'', ast'', os1++os2)
+      <(st, ast)> =[ c1 ]=> <(st', ast', os1)>  ->
+      <(st', ast')> =[ c2 ]=> <(st'', ast'', os2)> ->
+      <(st, ast)>  =[ c1 ; c2 ]=> <(st'', ast'', os1++os2)>
   | CTE_IfTrue : forall st ast st' ast' b c1 c2 os1,
       beval st b = true ->
-      (st, ast) =[ c1 ]=> (st', ast', os1) ->
-      (st, ast) =[ if b then c1 else c2 end]=> (st', ast', OBranch true::os1)
+      <(st, ast)> =[ c1 ]=> <(st', ast', os1)> ->
+      <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', OBranch true::os1)>
   | CTE_IfFalse : forall st ast st' ast' b c1 c2 os1,
       beval st b = false ->
-      (st, ast) =[ c2 ]=> (st', ast', os1) ->
-      (st, ast) =[ if b then c1 else c2 end]=> (st', ast', OBranch false::os1)
+      <(st, ast)> =[ c2 ]=> <(st', ast', os1)> ->
+      <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', OBranch false::os1)>
   | CTE_WhileFalse : forall b st ast c,
       beval st b = false ->
-      (st,ast) =[ while b do c end ]=> (st, ast, [OBranch false])
+      <(st,ast)> =[ while b do c end ]=> <(st, ast, [OBranch false])>
   | CTE_WhileTrue : forall st st' st'' ast ast' ast'' b c os' os'',
       beval st b = true ->
-      (st, ast)  =[ c ]=> (st', ast', os') ->
-      (st', ast') =[ while b do c end ]=> (st'', ast'', os'') ->
-      (st, ast)  =[ while b do c end ]=> (st'', ast'', OBranch true::os'++os'')
+      <(st, ast)>  =[ c ]=> <(st', ast', os')> ->
+      <(st', ast')> =[ while b do c end ]=> <(st'', ast'', os'')> ->
+      <(st, ast)>  =[ while b do c end ]=> <(st'', ast'', OBranch true::os'++os'')>
   | CTE_ARead : forall st ast x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
-      (st, ast) =[ x <- a[[ie]] ]=> (x !-> nth i (ast a) 0; st, ast, [OARead a i])
+      <(st, ast)> =[ x <- a[[ie]] ]=> <(x !-> nth i (ast a) 0; st, ast, [OARead a i])>
   | CTE_Write : forall st ast a ie i e n,
       aeval st e = n ->
       aeval st ie = i ->
       i < length (ast a) ->
-      (st, ast) =[ a[ie] <- e ]=> (st, a !-> upd i (ast a) n; ast, [OAWrite a i])
+      <(st, ast)> =[ a[ie] <- e ]=> <(st, a !-> upd i (ast a) n; ast, [OAWrite a i])>
 
-  where "( st , ast ) =[ c ]=> ( stt , astt , os )" := (cteval c st ast stt astt os).
+  where "<( st , ast )> =[ c ]=> <( stt , astt , os )>" := (cteval c st ast stt astt os).
 (* TERSE: /HIDEFROMHTML *)
 
 (** *** Type system for cryptographic constant-time programming *)
@@ -297,8 +297,8 @@ Theorem ct_well_typed_noninterferent :
     P;; PA |-ct- c ->
     pub_equiv P s1 s2 ->
     pub_equiv PA a1 a2 ->
-    (s1, a1) =[ c ]=> (s1', a1', os1) ->
-    (s2, a2) =[ c ]=> (s2', a2', os2) ->
+    <(s1, a1)> =[ c ]=> <(s1', a1', os1)> ->
+    <(s2, a2)> =[ c ]=> <(s2', a2', os2)> ->
     pub_equiv P s1' s2' /\ pub_equiv PA a1' a2'.
 (* FOLD *)
 Proof.
@@ -364,8 +364,8 @@ Theorem ct_well_typed_ct_secure :
     P;; PA |-ct- c ->
     pub_equiv P s1 s2 ->
     pub_equiv PA a1 a2 ->
-    (s1, a1) =[ c ]=> (s1', a1', os1) ->
-    (s2, a2) =[ c ]=> (s2', a2', os2) ->
+    <(s1, a1)> =[ c ]=> <(s1', a1', os1)> ->
+    <(s2, a2)> =[ c ]=> <(s2', a2', os2)> ->
     os1 = os2.
 (* FOLD *)
 Proof.
@@ -428,76 +428,77 @@ Inductive direction :=
 Definition dirs := list direction.
 
 Reserved Notation
-         "'(' st , ast , b , ds ')' '=[' c ']=>' '(' stt , astt , bb , os ')'"
+         "'<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
          (at level 40, c custom com' at level 99,
           st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive spec_eval : com' -> state -> astate -> bool -> dirs ->
                               state -> astate -> bool -> obs -> Prop :=
   | Spec_Skip : forall st ast b,
-      (st, ast, b, [DStep]) =[ skip ]=> (st, ast, b, [])
+      <(st, ast, b, [DStep])> =[ skip ]=> <(st, ast, b, [])>
   | Spec_Asgn  : forall st ast b e n x,
       aeval st e = n ->
-      (st, ast, b, [DStep]) =[ x := e ]=> (x !-> n; st, ast, b, [])
+      <(st, ast, b, [DStep])> =[ x := e ]=> <(x !-> n; st, ast, b, [])>
   | Spec_Seq : forall c1 c2 st ast b st' ast' b' st'' ast'' b'' os1 os2 ds1 ds2,
-      (st, ast, b, ds1) =[ c1 ]=> (st', ast', b', os1)  ->
-      (st', ast', b', ds2) =[ c2 ]=> (st'', ast'', b'', os2) ->
-      (st, ast, b, ds1++ds2)  =[ c1 ; c2 ]=> (st'', ast'', b'', os1++os2)
+      <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)>  ->
+      <(st', ast', b', ds2)> =[ c2 ]=> <(st'', ast'', b'', os2)> ->
+      <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os1++os2)>
   | Spec_If : forall st ast b st' ast' b' be c1 c2 os1 ds,
-      (st, ast, b, ds) =[ match beval st be with
+      <(st, ast, b, ds)> =[ match beval st be with
                        | true => c1
-                       | false => c2 end ]=> (st', ast', b', os1) ->
-      (st, ast, b, DStep :: ds) =[ if be then c1 else c2 end ]=>
-        (st', ast', b', OBranch (beval st be)::os1)
+                       | false => c2 end ]=> <(st', ast', b', os1)> ->
+      <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
+        <(st', ast', b', OBranch (beval st be)::os1)>
   | Spec_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
-      (st, ast, true, ds) =[ match beval st be with
+      <(st, ast, true, ds)> =[ match beval st be with
                        | true => c2 (* <-- branches swapped *)
-                       | false => c1 end ]=> (st', ast', b', os1) ->
-      (st, ast, b, DForce :: ds) =[ if be then c1 else c2 end ]=>
-        (st', ast', b', OBranch (beval st be)::os1)
+                       | false => c1 end ]=> <(st', ast', b', os1)> ->
+      <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
+        <(st', ast', b', OBranch (beval st be)::os1)>
   | Spec_WhileFalse : forall be st ast b c,
       beval st be = false ->
-      (st, ast, b, [DStep]) =[ while be do c end ]=> (st, ast, b, [OBranch false])
+      <(st, ast, b, [DStep])> =[ while be do c end ]=> <(st, ast, b, [OBranch false])>
   | Spec_WhileFalse_F : forall st st' st'' ast ast' ast'' b b' b'' be c os1 os2 ds1 ds2,
       beval st be = false ->
-      (st, ast, true, ds1)  =[ c ]=> (st', ast', b', os1) ->
-      (st', ast', b', ds2) =[ while be do c end ]=> (st'', ast'', b'', os2) ->
-      (st, ast, b, DForce::ds1++ds2) =[ while be do c end ]=>
-        (st'', ast'', b'', OBranch false::os1++os2)
+      <(st, ast, true, ds1)>  =[ c ]=> <(st', ast', b', os1)> ->
+      <(st', ast', b', ds2)> =[ while be do c end ]=> <(st'', ast'', b'', os2)> ->
+      <(st, ast, b, DForce::ds1++ds2)> =[ while be do c end ]=>
+        <(st'', ast'', b'', OBranch false::os1++os2)>
   | Spec_WhileTrue : forall st st' st'' ast ast' ast'' b b' b'' be c os1 os2 ds1 ds2,
       beval st be = true ->
-      (st, ast, b, ds1)  =[ c ]=> (st', ast', b', os1) ->
-      (st', ast', b', ds2) =[ while be do c end ]=> (st'', ast'', b'', os2) ->
-      (st, ast, b, DStep::ds1++ds2) =[ while be do c end ]=>
-        (st'', ast'', b'', OBranch true::os1++os2)
+      <(st, ast, b, ds1)>  =[ c ]=> <(st', ast', b', os1)> ->
+      <(st', ast', b', ds2)> =[ while be do c end ]=> <(st'', ast'', b'', os2)> ->
+      <(st, ast, b, DStep::ds1++ds2)> =[ while be do c end ]=>
+        <(st'', ast'', b'', OBranch true::os1++os2)>
   | Spec_WhileTrue_F : forall be st ast b c,
       beval st be = true ->
-      (st, ast, b, [DForce]) =[ while be do c end ]=> (st, ast, true, [OBranch true])
+      <(st, ast, b, [DForce])> =[ while be do c end ]=> <(st, ast, true, [OBranch true])>
   | Spec_ARead : forall st ast b x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
-      (st, ast, b, [DStep]) =[ x <- a[[ie]] ]=>
-        (x !-> nth i (ast a) 0; st, ast, b, [OARead a i])
+      <(st, ast, b, [DStep])> =[ x <- a[[ie]] ]=>
+        <(x !-> nth i (ast a) 0; st, ast, b, [OARead a i])>
   | Spec_ARead_U : forall st ast x a ie i a' i',
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      (st, ast, true, [DLoad a' i']) =[ x <- a[[ie]] ]=>
-        (x !-> nth i' (ast a') 0; st, ast, true, [OARead a i])
+      <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
+        <(x !-> nth i' (ast a') 0; st, ast, true, [OARead a i])>
   | Spec_Write : forall st ast b a ie i e n,
       aeval st e = n ->
       aeval st ie = i ->
       i < length (ast a) ->
-      (st, ast, b, [DStep]) =[ a[ie] <- e ]=> (st, a !-> upd i (ast a) n; ast, b, [OAWrite a i])
+      <(st, ast, b, [DStep])> =[ a[ie] <- e ]=>
+        <(st, a !-> upd i (ast a) n; ast, b, [OAWrite a i])>
   | Spec_Write_U : forall st ast a ie i e n a' i',
       aeval st e = n ->
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      (st, ast, true, [DStore a' i']) =[ a[ie] <- e ]=>
-        (st, a' !-> upd i' (ast a') n; ast, true, [OAWrite a i])
+      <(st, ast, true, [DStore a' i'])> =[ a[ie] <- e ]=>
+        <(st, a' !-> upd i' (ast a') n; ast, true, [OAWrite a i])>
 
-  where "( st , ast , b , ds ) =[ c ]=> ( stt , astt , bb , os )" := (spec_eval c st ast b ds stt astt bb os).
+  where "<( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" := (spec_eval c st ast b ds stt astt bb os).
 
 (* HIDE: This semantics already lost one property of Imp, which is only
    nonterminating executions don't produce a final state. Now if the input
@@ -517,11 +518,21 @@ Inductive spec_eval : com' -> state -> astate -> bool -> dirs ->
    as not producing a final state though, since a stuck fence is probably a
    final state in their small-step semantics. *)
 
+(* LATER: Could prove this semantics equivalent to the small-step one from the
+   two IEEE SP 2023 papers. The fact that their rule [Seq-Skip] requires a step
+   seems wrong if first command in the sequence is already skip. Also the way
+   they define final results seem wrong for stuck fences, and that would either
+   need to be fixed to include stuck fences deep inside or to bubble up stuck
+   fences to the top (error monad). *)
+
+(* SOONER: Could add the declassify construct from Spectre Declassified, but for
+   now trying to keep things simple. *)
+
 (* HIDE: Just to warm up tried to formalize the first lemma in the Spectre
    Declassified paper: Lemma 1: structural properties of execution *)
 
 Lemma speculation_bit_monotonic : forall c s a b ds s' a' b' os,
-  (s, a, b, ds) =[ c ]=> (s', a', b', os) ->
+  <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
   b = true ->
   b' = true.
 Proof.
@@ -530,7 +541,7 @@ Qed.
 
 (* HIDE: This one is weaker for big-step semantics *)
 Lemma speculation_needs_force : forall c s a b ds s' a' b' os,
-  (s, a, b, ds) =[ c ]=> (s', a', b', os) ->
+  <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
   b = false ->
   b' = true ->
   In DForce ds.
@@ -547,7 +558,7 @@ Qed.
 
 (* HIDE: Also this one is weaker for big-step semantics *)
 Lemma unsafe_access_needs_speculation : forall c s a b ds s' a' b' os ax i,
-  (s, a, b, ds) =[ c ]=> (s', a', b', os) ->
+  <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
   In (DLoad ax i) ds \/ In (DStore ax i) ds ->
   b = true \/ In DForce ds.
 Proof.
@@ -575,10 +586,20 @@ Proof.
   - admit. (* blah, blah, more of the same nonsense *)
 Admitted.
 
+(** We can recover sequential execution if there is no speculation, so all
+    directives are [DStep] and the speculation flag starts [false]. *)
+
+Definition seq_eval (c:com') (s:state) (a:astate) (b:bool)
+  (s':state) (a':astate) (b':bool) (os:obs) : Prop :=
+  exists ds, (forall d, In d ds -> d = DStep) /\
+    <(s, a, false, ds)> =[ c ]=> <(s', a', b', os)>.
+
+(** Speculative constant-time definition *)
+
 Definition spec_ct_secure :=
   forall P PA c s1 s2 a1 a2 b1 b2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
     pub_equiv P s1 s2 ->
     pub_equiv PA a1 a2 ->
-    (s1, a1, b1, ds) =[ c ]=> (s1', a1', b1', os1) ->
-    (s2, a2, b2, ds) =[ c ]=> (s2', a2', b2', os2) ->
+    <(s1, a1, b1, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
+    <(s2, a2, b2, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
     os1 = os2.
