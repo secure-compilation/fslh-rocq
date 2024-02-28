@@ -517,7 +517,8 @@ Inductive spec_eval : com' -> state -> astate -> bool -> dirs ->
    as not producing a final state though, since a stuck fence is probably a
    final state in their small-step semantics. *)
 
-(* HIDE: Lemma 1: structural properties of execution *)
+(* HIDE: Just to warm up tried to formalize the first lemma in the Spectre
+   Declassified paper: Lemma 1: structural properties of execution *)
 
 Lemma speculation_bit_monotonic : forall c s a b ds s' a' b' os,
   (s, a, b, ds) =[ c ]=> (s', a', b', os) ->
@@ -543,6 +544,36 @@ Proof.
     + left. apply IHHeval1; reflexivity.
     + right. apply IHHeval2; reflexivity.
 Qed.
+
+(* HIDE: Also this one is weaker for big-step semantics *)
+Lemma unsafe_access_needs_speculation : forall c s a b ds s' a' b' os ax i,
+  (s, a, b, ds) =[ c ]=> (s', a', b', os) ->
+  In (DLoad ax i) ds \/ In (DStore ax i) ds ->
+  b = true \/ In DForce ds.
+Proof.
+  intros c s a b ds s' a' b' os ax i Heval Hin.
+  induction Heval; simpl in *; try tauto; try (firstorder; discriminate).
+  - destruct Hin as [Hin | Hin].
+    + apply in_app_or in Hin. destruct Hin as [Hin | Hin].
+      * specialize (IHHeval1 (or_introl _ Hin)). destruct IHHeval1; try tauto.
+        right. apply in_or_app. tauto.
+      * specialize (IHHeval2 (or_introl _ Hin)). destruct IHHeval2; try tauto.
+        { destruct b eqn:Eq; try tauto.
+          (* slightly more interesting case, the rest very boring *)
+          right. apply speculation_needs_force in Heval1; [| reflexivity|assumption].
+          apply in_or_app. tauto. }
+        { right. apply in_or_app. tauto. }
+    + (* very symmetric, mostly copy paste *)
+      apply in_app_or in Hin. destruct Hin as [Hin | Hin].
+      * specialize (IHHeval1 (or_intror _ Hin)). destruct IHHeval1; try tauto.
+        right. apply in_or_app. tauto.
+      * specialize (IHHeval2 (or_intror _ Hin)). destruct IHHeval2; try tauto.
+        { destruct b eqn:Eq; try tauto.
+          right. apply speculation_needs_force in Heval1; [| reflexivity|assumption].
+          apply in_or_app. tauto. }
+        { right. apply in_or_app. tauto. }
+  - admit. (* blah, blah, more of the same nonsense *)
+Admitted.
 
 Definition spec_ct_secure :=
   forall P PA c s1 s2 a1 a2 b1 b2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
