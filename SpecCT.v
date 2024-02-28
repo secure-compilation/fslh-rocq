@@ -594,6 +594,9 @@ Definition seq_eval (c:com') (s:state) (a:astate) (b:bool)
   exists ds, (forall d, In d ds -> d = DStep) /\
     <(s, a, false, ds)> =[ c ]=> <(s', a', b', os)>.
 
+(* LATER: We should be able to prove that [cteval] and [seq_eval] coincide, so
+   by [ct_well_typed_ct_secure] also directly get Lemma 2. *)
+
 (** Speculative constant-time definition *)
 
 Definition spec_ct_secure :=
@@ -603,3 +606,27 @@ Definition spec_ct_secure :=
     <(s1, a1, b1, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
     <(s2, a2, b2, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
     os1 = os2.
+
+(** Selective SLH transformation that enforces speculative constant-time *)
+
+(* SOONER: sel_slh needs constant-time conditional expression; assuming it for now *)
+Axiom ACTIf : bexp -> aexp -> aexp -> aexp.
+
+Fixpoint sel_slh (P:pub_vars) (PA:pub_arrs) (c:com') :=
+  match c with
+  | Skip => Skip
+  | Asgn x e => Asgn x e
+  | Seq c1 c2 => Seq (sel_slh P PA c1) (sel_slh P PA c2)
+  | If be c1 c2 => If be (Seq (Asgn "b" (ACTIf be (AId "b") 1)) (sel_slh P PA c1))
+                         (Seq (Asgn "b" (ACTIf be 1 (AId "b"))) (sel_slh P PA c1))
+  | While be c => While be c (* TODO *)
+  | ARead x a i => if P x then Seq (ARead x a i) (Asgn x (ACTIf (BEq (AId "b") (ANum 1)) (ANum 0) (AId x)))
+                          else ARead x a i
+  | AWrite a i e => AWrite a i e
+  end.
+(* SOONER: <{ ... }> notations could above could help readability *)
+
+(* LATER: Let's start without declassification, but if we add that then the RNI
+   notion of Definition 2 relies on the small-step semantics to stop at the first
+   force directive. Doing that with a big-step semantics seems trickier. We
+   could build a version that halts early on the first force? *)
