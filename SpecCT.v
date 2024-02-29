@@ -457,7 +457,7 @@ Definition pub_arrs := total_map label.
       --------------------------------------------------   (CT_ARead)
                   P ;; PA |-ct- x <- a[[i]]
 
-P |-a- i \in public   P |-a- e \in l   can_flow l (PA a) = true 
+P |-a- i \in public   P |-a- e \in l   can_flow l (PA a) = true
 --------------------------------------------------------------- (CT_AWrite)
                    P ;; PA |-ct- a[i] <- e
 ]]]
@@ -503,7 +503,7 @@ where "P ;; PA '|-ct-' c" := (ct_well_typed P PA c).
 
 Theorem ct_well_typed_noninterferent :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
-    P;; PA |-ct- c ->
+    P ;; PA |-ct- c ->
     pub_equiv P s1 s2 ->
     pub_equiv PA a1 a2 ->
     <(s1, a1)> =[ c ]=> <(s1', a1', os1)> ->
@@ -570,7 +570,7 @@ Qed.
 
 Theorem ct_well_typed_ct_secure :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
-    P;; PA |-ct- c ->
+    P ;; PA |-ct- c ->
     pub_equiv P s1 s2 ->
     pub_equiv PA a1 a2 ->
     <(s1, a1)> =[ c ]=> <(s1', a1', os1)> ->
@@ -932,7 +932,7 @@ Inductive ideal_eval (P:pub_vars) :
 
 (** Let's now prove that the idealized semantics does enforce speculative constant-time *)
 
-(** HIDE: what we need for the noninterference proof in the sequence case;
+(** HIDE: what we need for the noninterference + spec CT proof in the sequence case;
     unclear how we will get it; structured leakage? :) *)
 Lemma need : forall P PA s1 s2 a1 a2 b ds1 ds2 c st1 st2 ast1 ast2 b1 b2 os1 os2 ds1' ds2',
   ds2 ++ ds2' = ds1 ++ ds1' ->
@@ -945,7 +945,7 @@ Admitted.
 
 Lemma ct_well_typed_ideal_noninterferent :
   forall P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds,
-    P;; PA |-ct- c ->    
+    P ;; PA |-ct- c ->
     pub_equiv P s1 s2 ->
     (b = false -> pub_equiv PA a1 a2) ->
     P |- <(s1, a1, b, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
@@ -974,19 +974,77 @@ Proof.
     specialize (IHHeval1_1 H13 _ _ _ Haeq _ _ Heq _ H5).
     destruct IHHeval1_1 as [ IH12eq [IH12b IH12eqa] ]. subst.
     specialize (IHHeval1_2 H14 _ _ _ IH12eqa _ _ IH12eq _ H10). eauto.
-  - assert(G : P;; PA |-ct- (if beval st be then c1 else c2)).
+  - assert(G : P ;; PA |-ct- (if beval st be then c1 else c2)).
     { destruct (beval st be); assumption. }
-    (* specialize (IHHeval1 G _ _ _ Haeq _ _ Heq _ H10). *)
+    erewrite noninterferent_bexp in H10.
+    + specialize (IHHeval1 G _ _ _ Haeq _ _ Heq _ H10). eassumption.
+    + apply pub_equiv_sym. eassumption.
+    + eassumption.
 Admitted.
 
 Theorem ideal_spec_ct_secure :
-  forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
-    P;; PA |-ct- c ->
+  forall P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds,
+    P ;; PA |-ct- c ->
     pub_equiv P s1 s2 ->
-    pub_equiv PA a1 a2 ->
-    P |- <(s1, a1, false, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
-    P |- <(s2, a2, false, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
+    (b = false -> pub_equiv PA a1 a2) ->
+    P |- <(s1, a1, b, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
+    P |- <(s2, a2, b, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
     os1 = os2.
-Admitted.
+Proof.
+  intros P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds
+    Hwt Heq Haeq Heval1 Heval2.
+  generalize dependent s2'. generalize dependent s2.
+  generalize dependent a2'. generalize dependent a2.
+  generalize dependent os2. generalize dependent b2'.
+  induction Heval1; intros b2' os2' a2 Haeq a2' s2 Heq s2' Heval2;
+    inversion Heval2; inversion Hwt; subst.
+  - reflexivity.
+  - reflexivity.
+  - (* seq *) eapply need in H1; [| | | apply Heval1_1 | apply H5 ]; eauto.
+    destruct H1 as [H1 H1']. subst.
+    assert(NI1 : pub_equiv P st' st'0 /\ b' = b'0 /\ (b' = false -> pub_equiv PA ast' ast'0)).
+    { eapply ct_well_typed_ideal_noninterferent; [ | | | eassumption | eassumption]; eauto.}
+    destruct NI1 as [NI1eq [NIb NIaeq] ]. subst.
+    erewrite IHHeval1_2; [erewrite IHHeval1_1 | | | |];
+      try reflexivity; try eassumption.
+  - f_equal.
+    + f_equal. eapply noninterferent_bexp; eassumption.
+    + eapply IHHeval1; try eassumption; try (destruct (beval st be); eassumption).
+      erewrite noninterferent_bexp; eassumption.
+  - f_equal.
+    + f_equal. eapply noninterferent_bexp; eassumption.
+    + eapply IHHeval1; try eassumption; try (destruct (beval st be); eassumption).
+      * intro contra. discriminate contra.
+      * erewrite noninterferent_bexp; eassumption.
+  - (* while false-false *) reflexivity.
+  - (* while contra *) eapply noninterferent_bexp in Heq; [| eassumption]. congruence.
+  - (* while mispeculated true-true ... modified seq case *) f_equal.
+    eapply (need P PA) in H2; [| | | apply Heval1_1 | apply H7 ]; eauto.
+    Focus 2. intro contra. discriminate contra. destruct H2 as [H2 H2']. subst.
+    assert(NI1 : pub_equiv P st' st'0 /\ b' = b'0 /\ (b' = false -> pub_equiv PA ast' ast'0)).
+    { eapply ct_well_typed_ideal_noninterferent; [ | | | eassumption | eassumption]; eauto.
+      intro contra. discriminate contra. }
+    destruct NI1 as [NI1eq [NIb NIaeq] ]. subst.
+    erewrite IHHeval1_2; [erewrite IHHeval1_1 | | | |];
+      try reflexivity; try eassumption.
+    intro contra. discriminate contra.
+  - (* while contra *) eapply noninterferent_bexp in Heq; [| eassumption]. congruence.
+  - (* while contra *) eapply noninterferent_bexp in Heq; [| eassumption]. congruence.
+  - (* while true-true ... less modified seq case *) f_equal.
+    eapply need in H2; [| | | apply Heval1_1 | apply H7 ]; eauto.
+    destruct H2 as [H2 H2']. subst.
+    assert(NI1 : pub_equiv P st' st'0 /\ b' = b'0 /\ (b' = false -> pub_equiv PA ast' ast'0)).
+    { eapply ct_well_typed_ideal_noninterferent; [ | | | eassumption | eassumption]; eauto.}
+    destruct NI1 as [NI1eq [NIb NIaeq] ]. subst.
+    erewrite IHHeval1_2; [erewrite IHHeval1_1 | | | |];
+      try reflexivity; try eassumption.
+  - (* while contra *) eapply noninterferent_bexp in Heq; [| eassumption]. congruence.
+  - (* while mispeculated false-false *) reflexivity.
+  - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+  - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+  - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+  - (* AWrite *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+  - (* AWrite *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+Qed.
 
 (* SOONER: Prove that the idealized semantics is equivalent to [sel_slh] transformation *)
