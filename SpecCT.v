@@ -935,19 +935,28 @@ Inductive ideal_eval (P:pub_vars) :
 Definition prefix {X:Type} (xs ys : list X) : Prop :=
   exists zs, xs = ys ++ zs.
 
-Lemma prefix_app : forall {X:Type} (ds1 ds2 ds0 ds3 : list X),
+Lemma prefix_refl : forall {X:Type} {ds : list X},
+  prefix ds ds.
+Proof. intros X ds. exists []. apply app_nil_end. Qed.
+
+Lemma prefix_app : forall {X:Type} {ds1 ds2 ds0 ds3 : list X},
   prefix (ds1 ++ ds2) (ds0 ++ ds3) ->
   prefix ds1 ds0 \/ prefix ds0 ds1.
 Admitted.
 
-Lemma prefix_cons : forall {X:Type} (d : X) (ds2 ds3 : list X),
+Lemma prefix_cons : forall {X:Type} {d : X} {ds2 ds3 : list X},
   prefix (d :: ds2) (d :: ds3) ->
   prefix ds2 ds3.
 Admitted.
 
-Lemma prefix_append_front : forall {X:Type} (ds1 ds2 ds3 : list X),
+Lemma prefix_append_front : forall {X:Type} {ds1 ds2 ds3 : list X},
   prefix (ds1 ++ ds2) (ds1 ++ ds3) ->
   prefix ds2 ds3.
+Admitted.
+
+Lemma app_eq_prefix : forall {X:Type} {ds1 ds2 ds1' ds2' : list X},
+  ds1 ++ ds2 = ds1' ++ ds2' ->
+  prefix ds1 ds1' \/ prefix ds1' ds1.
 Admitted.
 
 Lemma aux : forall P s1 s2 a1 a2 b1 b2 ds1 ds2 c s1' s2' a1' a2' b1' b2' os1' os2',
@@ -971,18 +980,60 @@ Proof.
     { destruct Hprefix as [Hprefix | Hprefix]; apply prefix_append_front in Hprefix; tauto.}
     eapply IHHeval1_2; eassumption.
   - f_equal. eapply IHHeval1; try eassumption.
-    (* need to combine this with noninterference *)
+    (* need to combine this with noninterference;
+       started below in noninterferent_general *)
 Admitted.
 
-(** HIDE: what we need for the noninterference + spec CT proof in the sequence case;
-    unclear how we will get it; structured leakage? :) *)
-Lemma need : forall P PA s1 s2 a1 a2 b ds1 ds2 c st1 st2 ast1 ast2 b1 b2 os1 os2 ds1' ds2',
-  ds2 ++ ds2' = ds1 ++ ds1' ->
-  pub_equiv P s1 s2 ->
-  (b = false -> pub_equiv PA a1 a2) ->
-  P |- <(s1, a1, b, ds1)> =[ c ]=> <(st1, ast1, b1, os1)>  ->
-  P |- <(s2, a2, b, ds2)> =[ c ]=> <(st2, ast2, b2, os2)> ->
-  ds1 = ds2 /\ ds1' = ds2'.
+Ltac split4 := split; [|split; [| split] ].
+
+Lemma ct_well_typed_ideal_noninterferent_general :
+  forall P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds1 ds2,
+    P ;; PA |-ct- c ->
+    pub_equiv P s1 s2 ->
+    (b = false -> pub_equiv PA a1 a2) ->
+    (prefix ds1 ds2 \/ prefix ds2 ds1) ->
+    P |- <(s1, a1, b, ds1)> =[ c ]=> <(s1', a1', b1', os1)> ->
+    P |- <(s2, a2, b, ds2)> =[ c ]=> <(s2', a2', b2', os2)> ->
+    pub_equiv P s1' s2' /\ b1' = b2' /\
+      (b1' = false -> pub_equiv PA a1' a2') /\ ds1 = ds2.
+Proof.
+  intros P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds1 ds2
+    Hwt Heq Haeq Hds Heval1 Heval2.
+  generalize dependent s2'. generalize dependent s2.
+  generalize dependent a2'. generalize dependent a2.
+  generalize dependent os2. generalize dependent b2'.
+  generalize dependent ds2.
+  induction Heval1; intros ds2X Hds b2' os2' a2 Haeq a2' s2 Heq s2' Heval2;
+    inversion Heval2; inversion Hwt; subst.
+  - auto.
+  - split4; auto.
+    intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
+    + rewrite Hxy. do 2 rewrite t_update_eq.
+      eapply noninterferent_aexp; eauto.
+      subst. rewrite Hy in H14.
+      unfold can_flow in H14. simpl in H14.
+      destruct l; try discriminate. auto.
+    + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
+      apply Heq. apply Hy.
+  - assert (Hds1: prefix ds1 ds0 \/ prefix ds0 ds1).
+    { destruct Hds as [Hds | Hds]; apply prefix_app in Hds; tauto.}
+    assert (ds1 = ds0). { eapply IHHeval1_1; eassumption.} subst. f_equal.
+    assert (Hds2: prefix ds2 ds3 \/ prefix ds3 ds2).
+    { destruct Hds as [Hds | Hds]; apply prefix_append_front in Hds; tauto.}
+    (* TODO: proofs above and below can be better integrated *)
+    specialize (IHHeval1_1 H13 _ Hds1 _ _ _ Haeq _ _ Heq _ H1).
+    destruct IHHeval1_1 as [ IH12eq [IH12b [IH12eqa _] ] ]. subst.
+    specialize (IHHeval1_2 H14 _ Hds2 _ _ _ IH12eqa _ _ IH12eq _ H10).
+    firstorder; subst; reflexivity.
+  - assert(G : P ;; PA |-ct- (if beval st be then c1 else c2)).
+    { destruct (beval st be); assumption. }
+    assert(Gds : prefix ds ds0 \/ prefix ds0 ds).
+    { destruct Hds as [Hds | Hds]; apply prefix_cons in Hds; tauto. }
+    erewrite noninterferent_bexp in H10.
+    + specialize (IHHeval1 G _ Gds _ _ _ Haeq _ _ Heq _ H10).
+      firstorder; congruence.
+    + apply pub_equiv_sym. eassumption.
+    + eassumption.
 Admitted.
 
 Lemma ct_well_typed_ideal_noninterferent :
@@ -996,32 +1047,18 @@ Lemma ct_well_typed_ideal_noninterferent :
 Proof.
   intros P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds
     Hwt Heq Haeq Heval1 Heval2.
-  generalize dependent s2'. generalize dependent s2.
-  generalize dependent a2'. generalize dependent a2.
-  generalize dependent os2. generalize dependent b2'.
-  induction Heval1; intros b2' os2' a2 Haeq a2' s2 Heq s2' Heval2;
-    inversion Heval2; inversion Hwt; subst.
-  - split; [|split]; auto.
-  - split; [|split]; auto.
-    intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
-    + rewrite Hxy. do 2 rewrite t_update_eq.
-      eapply noninterferent_aexp; eauto.
-      subst. rewrite Hy in H13.
-      unfold can_flow in H13. simpl in H13.
-      destruct l; try discriminate. auto.
-    + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
-      apply Heq. apply Hy.
-  - eapply need in H1; [| | | apply Heval1_1 | apply H5 ]; try eassumption.
-    destruct H1 as [H1 H1']. subst.
-    specialize (IHHeval1_1 H13 _ _ _ Haeq _ _ Heq _ H5).
-    destruct IHHeval1_1 as [ IH12eq [IH12b IH12eqa] ]. subst.
-    specialize (IHHeval1_2 H14 _ _ _ IH12eqa _ _ IH12eq _ H10). eauto.
-  - assert(G : P ;; PA |-ct- (if beval st be then c1 else c2)).
-    { destruct (beval st be); assumption. }
-    erewrite noninterferent_bexp in H10.
-    + specialize (IHHeval1 G _ _ _ Haeq _ _ Heq _ H10). eassumption.
-    + apply pub_equiv_sym. eassumption.
-    + eassumption.
+  eapply ct_well_typed_ideal_noninterferent_general in Heval2; eauto; try tauto.
+  left. apply prefix_refl.
+Qed.
+
+(** This should now also follow from noninterferent_general *)
+Lemma need : forall P PA s1 s2 a1 a2 b ds1 ds2 c st1 st2 ast1 ast2 b1 b2 os1 os2 ds1' ds2',
+  ds2 ++ ds2' = ds1 ++ ds1' ->
+  pub_equiv P s1 s2 ->
+  (b = false -> pub_equiv PA a1 a2) ->
+  P |- <(s1, a1, b, ds1)> =[ c ]=> <(st1, ast1, b1, os1)>  ->
+  P |- <(s2, a2, b, ds2)> =[ c ]=> <(st2, ast2, b2, os2)> ->
+  ds1 = ds2 /\ ds1' = ds2'.
 Admitted.
 
 Theorem ideal_spec_ct_secure :
