@@ -9,12 +9,9 @@ From Coq Require Import Arith.Arith.
 From Coq Require Import Arith.EqNat.
 From Coq Require Import Arith.PeanoNat. Import Nat.
 From Coq Require Import Lia.
-From PLF Require Export Imp.
 From Coq Require Import List. Import ListNotations.
-From PLF Require Export StaticIFC.
 Set Default Goal Selector "!".
 
-Definition FILL_IN_HERE := <{True}>.
 (* TERSE: /HIDEFROMHTML *)
 
 (** ** Cryptographic constant-time *)
@@ -34,8 +31,6 @@ Definition FILL_IN_HERE := <{True}>.
     runtime, which leads to accessing memory addresses that can depend
     on secrets, making CCT non-trivial for Imp with arrays. *)
 
-(* HIDE *)
-(* HIDE: This change is too invasive to be worth the trouble for now *)
 (** *** Constant-time conditional *)
 
 (** But first, we extend the arithmetic expressions of Imp with an [b ? e1 : e2]
@@ -43,32 +38,81 @@ Definition FILL_IN_HERE := <{True}>.
     constant-time conditional move instruction). This constant-time conditional
     makes arithmetic and boolean expressions mutually inductive. *)
 
-(* Inductive aexp : Type := *)
-(*   | ANum (n : nat) *)
-(*   | AId (x : string) *)
-(*   | APlus (a1 a2 : aexp) *)
-(*   | AMinus (a1 a2 : aexp) *)
-(*   | AMult (a1 a2 : aexp) *)
-(*   | ACTIf (b:bexp) (a1 a2:aexp) (* <--- NEW *) *)
-(* with bexp : Type := *)
-(*   | BTrue *)
-(*   | BFalse *)
-(*   | BEq (a1 a2 : aexp) *)
-(*   | BNeq (a1 a2 : aexp) *)
-(*   | BLe (a1 a2 : aexp) *)
-(*   | BGt (a1 a2 : aexp) *)
-(*   | BNot (b : bexp) *)
-(*   | BAnd (b1 b2 : bexp). *)
+Inductive aexp : Type :=
+  | ANum (n : nat)
+  | AId (x : string)
+  | APlus (a1 a2 : aexp)
+  | AMinus (a1 a2 : aexp)
+  | AMult (a1 a2 : aexp)
+  | ACTIf (b:bexp) (a1 a2:aexp) (* <--- NEW *)
+with bexp : Type :=
+  | BTrue
+  | BFalse
+  | BEq (a1 a2 : aexp)
+  | BNeq (a1 a2 : aexp)
+  | BLe (a1 a2 : aexp)
+  | BGt (a1 a2 : aexp)
+  | BNot (b : bexp)
+  | BAnd (b1 b2 : bexp).
+
+(** *** Typing Constant-time conditional *)
+
+(** Typing of arithmetic and boolean expressions also becomes mutually inductive. *)
+
+(** [[[
+        P|-b- be \in l   P |-a- a1 \in l1    P |-a- a2 \in l2
+        ----------------------------------------------------- (T_CTIf)
+                 P |-a- be?a1:a2 \in join l (join l1 l2)
+]]]
+*)
+
+(* TERSE: HIDEFROMHTML *)
+Definition W : string := "W".
+Definition X : string := "X".
+Definition Y : string := "Y".
+Definition Z : string := "Z".
+
+Coercion AId : string >-> aexp.
+Coercion ANum : nat >-> aexp.
+
+Declare Custom Entry com.
+Declare Scope com_scope.
+
+Notation "<{ e }>" := e (at level 0, e custom com at level 99) : com_scope.
+Notation "( x )" := x (in custom com, x at level 99) : com_scope.
+Notation "x" := x (in custom com at level 0, x constr at level 0) : com_scope.
+Notation "f x .. y" := (.. (f x) .. y)
+                  (in custom com at level 0, only parsing,
+                  f constr at level 0, x constr at level 9,
+                  y constr at level 9) : com_scope.
+Notation "x + y"   := (APlus x y) (in custom com at level 50, left associativity).
+Notation "x - y"   := (AMinus x y) (in custom com at level 50, left associativity).
+Notation "x * y"   := (AMult x y) (in custom com at level 40, left associativity).
+Notation "be '?' a1 ':' a2"  := (ACTIf be a1 a2)
+                 (in custom com at level 20, no associativity).
+Notation "'true'"  := true (at level 1).
+Notation "'true'"  := BTrue (in custom com at level 0).
+Notation "'false'" := false (at level 1).
+Notation "'false'" := BFalse (in custom com at level 0).
+Notation "x <= y"  := (BLe x y) (in custom com at level 70, no associativity).
+Notation "x > y"   := (BGt x y) (in custom com at level 70, no associativity).
+Notation "x = y"   := (BEq x y) (in custom com at level 70, no associativity).
+Notation "x <> y"  := (BNeq x y) (in custom com at level 70, no associativity).
+Notation "x && y"  := (BAnd x y) (in custom com at level 80, left associativity).
+Notation "'~' b"   := (BNot b) (in custom com at level 75, right associativity).
+
+Open Scope com_scope.
+(* TERSE: /HIDEFROMHTML *)
 
 (** *** Now back to adding arrays *)
 (* /HIDE *)
 
-Inductive com' : Type :=
+Inductive com : Type :=
   | Skip
   | Asgn (x : string) (e : aexp)
-  | Seq (c1 c2 : com')
-  | If (b : bexp) (c1 c2 : com')
-  | While (b : bexp) (c : com')
+  | Seq (c1 c2 : com)
+  | If (b : bexp) (c1 c2 : com)
+  | While (b : bexp) (c : com)
   | ARead (x : string) (a : string) (i : aexp) (* <--- NEW *)
   | AWrite (a : string) (i : aexp) (e : aexp)  (* <--- NEW *).
 
@@ -96,35 +140,33 @@ Inductive com' : Type :=
    for now and only return later to prevent it using static typing? *)
 
 (* TERSE: HIDEFROMHTML *)
-Declare Custom Entry com'.
-Declare Scope com'_scope.
 
-Notation "<{{ e }}>" := e (at level 0, e custom com' at level 99) : com'_scope.
-Notation "( x )" := x (in custom com', x at level 99) : com'_scope.
-Notation "x" := x (in custom com' at level 0, x constr at level 0) : com'_scope.
+Notation "<{{ e }}>" := e (at level 0, e custom com at level 99) : com_scope.
+Notation "( x )" := x (in custom com, x at level 99) : com_scope.
+Notation "x" := x (in custom com at level 0, x constr at level 0) : com_scope.
 Notation "f x .. y" := (.. (f x) .. y)
-                  (in custom com' at level 0, only parsing,
+                  (in custom com at level 0, only parsing,
                   f constr at level 0, x constr at level 9,
-                  y constr at level 9) : com'_scope.
+                  y constr at level 9) : com_scope.
 
-Open Scope com'_scope.
+Open Scope com_scope.
 
 Notation "'skip'"  :=
-  Skip (in custom com' at level 0) : com'_scope.
+  Skip (in custom com at level 0) : com_scope.
 Notation "x := y"  :=
   (Asgn x y)
-    (in custom com' at level 0, x constr at level 0,
-      y custom com at level 85, no associativity) : com'_scope.
+    (in custom com at level 0, x constr at level 0,
+      y custom com at level 85, no associativity) : com_scope.
 Notation "x ; y" :=
   (Seq x y)
-    (in custom com' at level 90, right associativity) : com'_scope.
+    (in custom com at level 90, right associativity) : com_scope.
 Notation "'if' x 'then' y 'else' z 'end'" :=
   (If x y z)
-    (in custom com' at level 89, x custom com at level 99,
-     y at level 99, z at level 99) : com'_scope.
+    (in custom com at level 89, x custom com at level 99,
+     y at level 99, z at level 99) : com_scope.
 Notation "'while' x 'do' y 'end'" :=
   (While x y)
-    (in custom com' at level 89, x custom com at level 99, y at level 99) : com'_scope.
+    (in custom com at level 89, x custom com at level 99, y at level 99) : com_scope.
 
 (* HIDE *)
 Check <{{ skip }}>.
@@ -133,9 +175,9 @@ Check <{ 1 + 2 }>.
 Check <{ 2 = 1 }>.
 Check <{{ Z := X }}>.
 Check <{{ Z := X + 3 }}>.
-Definition func (c : com') : com' := <{{ c ; skip }}>.
+Definition func (c : com) : com := <{{ c ; skip }}>.
 Check <{{ skip; func <{{ skip }}> }}>.
-Definition func2 (c1 c2 : com') : com' := <{{ c1 ; c2 }}>.
+Definition func2 (c1 c2 : com) : com := <{{ c1 ; c2 }}>.
 Check <{{ skip ; func2 <{{skip}}> <{{skip}}> }}>.
 Check <{ true && ~(false && true) }>.
 Check <{{ if true then skip else skip end }}>.
@@ -145,15 +187,38 @@ Check <{{ while Z <> 0 do Y := Y * Z; Z := Z - 1 end }}>.
 
 Notation "x '<-' a '[[' i ']]'"  :=
   (ARead x a i)
-     (in custom com' at level 0, x constr at level 0,
-      a at level 85, i custom com at level 85, no associativity) : com'_scope.
+     (in custom com at level 0, x constr at level 0,
+      a at level 85, i custom com at level 85, no associativity) : com_scope.
 Notation "a '[' i ']'  '<-' e"  :=
   (AWrite a i e)
-     (in custom com' at level 0, a constr at level 0,
+     (in custom com at level 0, a constr at level 0,
       i custom com at level 0, e custom com at level 85,
-         no associativity) : com'_scope.
+         no associativity) : com_scope.
 
+Definition state := total_map nat.
 Definition astate := total_map (list nat).
+
+Fixpoint aeval (st : state) (a : aexp) : nat :=
+  match a with
+  | ANum n => n
+  | AId x => st x
+  | <{a1 + a2}> => (aeval st a1) + (aeval st a2)
+  | <{a1 - a2}> => (aeval st a1) - (aeval st a2)
+  | <{a1 * a2}> => (aeval st a1) * (aeval st a2)
+  | <{b ? a1 : a2}> => if beval st b then aeval st a1
+                                     else aeval st a2
+  end
+with beval (st : state) (b : bexp) : bool :=
+  match b with
+  | <{true}>      => true
+  | <{false}>     => false
+  | <{a1 = a2}>   => (aeval st a1) =? (aeval st a2)
+  | <{a1 <> a2}>  => negb ((aeval st a1) =? (aeval st a2))
+  | <{a1 <= a2}>  => (aeval st a1) <=? (aeval st a2)
+  | <{a1 > a2}>   => negb ((aeval st a1) <=? (aeval st a2))
+  | <{~ b1}>      => negb (beval st b1)
+  | <{b1 && b2}>  => andb (beval st b1) (beval st b2)
+  end.
 
 Fixpoint upd (i:nat) (ns:list nat) (n:nat) : list nat :=
   match i, ns with
@@ -178,10 +243,10 @@ Definition obs := list observation.
 (* TERSE: HIDEFROMHTML *)
 Reserved Notation
          "'<(' st , ast ')>' '=[' c ']=>' '<(' stt , astt , os ')>'"
-         (at level 40, c custom com' at level 99,
+         (at level 40, c custom com at level 99,
           st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive cteval : com' -> state -> astate -> state -> astate -> obs -> Prop :=
+Inductive cteval : com -> state -> astate -> state -> astate -> obs -> Prop :=
   | CTE_Skip : forall st ast,
       <(st , ast)> =[ skip ]=> <(st, ast, [])>
   | CTE_Asgn  : forall st ast e n x,
@@ -222,6 +287,134 @@ Inductive cteval : com' -> state -> astate -> state -> astate -> obs -> Prop :=
 
 (** *** Type system for cryptographic constant-time programming *)
 
+(* TERSE: HIDEFROMHTML *)
+Definition label := bool.
+
+Definition public : label := true.
+Definition secret : label := false.
+
+Definition pub_vars := total_map label.
+
+Definition pub_equiv (P : pub_vars) {X:Type} (s1 s2 : total_map X) :=
+  forall x:string, P x = true -> s1 x = s2 x.
+
+Definition join (l1 l2 : label) : label := l1 && l2.
+
+Lemma join_public : forall {l1 l2},
+  join l1 l2 = public -> l1 = public /\ l2 = public.
+Proof. apply andb_prop. Qed.
+
+Definition can_flow (l1 l2 : label) : bool := l1 || negb l2.
+
+Reserved Notation "P '|-a-' a \in l" (at level 40).
+Reserved Notation "P '|-b-' b \in l" (at level 40).
+
+Inductive aexp_has_label (P:pub_vars) : aexp -> label -> Prop :=
+  | T_Num : forall n,
+       P |-a- (ANum n) \in public
+  | T_Id : forall X,
+       P |-a- (AId X) \in (P X)
+  | T_Plus : forall a1 l1 a2 l2,
+       P |-a- a1 \in l1 ->
+       P |-a- a2 \in l2 ->
+       P |-a- <{ a1 + a2 }> \in (join l1 l2)
+  | T_Minus : forall a1 l1 a2 l2,
+       P |-a- a1 \in l1 ->
+       P |-a- a2 \in l2 ->
+       P |-a- <{ a1 - a2 }> \in (join l1 l2)
+  | T_Mult : forall a1 l1 a2 l2,
+       P |-a- a1 \in l1 ->
+       P |-a- a2 \in l2 ->
+       P |-a- <{ a1 * a2 }> \in (join l1 l2)
+  | T_CTIf : forall be l a1 l1 a2 l2,
+       P |-b- be \in l ->
+       P |-a- a1 \in l1 ->
+       P |-a- a2 \in l2 ->
+       P |-a- <{ be ? a1 : a2 }> \in (join l (join l1 l2))
+
+where "P '|-a-' a '\in' l" := (aexp_has_label P a l)
+
+with bexp_has_label (P:pub_vars) : bexp -> label -> Prop :=
+  | T_True :
+       P |-b- <{ true }> \in public
+  | T_False :
+       P |-b- <{ false }> \in public
+  | T_Eq : forall a1 l1 a2 l2,
+       P |-a- a1 \in l1 ->
+       P |-a- a2 \in l2 ->
+       P |-b- <{ a1 = a2 }> \in (join l1 l2)
+  | T_Neq : forall a1 l1 a2 l2,
+       P |-a- a1 \in l1 ->
+       P |-a- a2 \in l2 ->
+       P |-b- <{ a1 <> a2 }> \in (join l1 l2)
+  | T_Le : forall a1 l1 a2 l2,
+       P |-a- a1 \in l1 ->
+       P |-a- a2 \in l2 ->
+       P |-b- <{ a1 <= a2 }> \in (join l1 l2)
+  | T_Gt : forall a1 l1 a2 l2,
+       P |-a- a1 \in l1 ->
+       P |-a- a2 \in l2 ->
+       P |-b- <{ a1 > a2 }> \in (join l1 l2)
+  | T_Not : forall b l,
+       P |-b- b \in l ->
+       P |-b- <{ ~b }> \in l
+  | T_And : forall b1 l1 b2 l2,
+       P |-b- b1 \in l1 ->
+       P |-b- b2 \in l2 ->
+       P |-b- <{ b1 && b2 }> \in (join l1 l2)
+
+where "P '|-b-' b '\in' l" := (bexp_has_label P b l).
+
+Scheme aexp_bexp_ind := Induction for aexp_has_label Sort Prop
+with bexp_aexp_ind := Induction for bexp_has_label Sort Prop.
+Combined Scheme aexp_bexp_mutind from aexp_bexp_ind,bexp_aexp_ind.
+
+Theorem noninterferent_aexp_bexp : forall P s1 s2,
+  pub_equiv P s1 s2 ->
+  (forall a l, P |-a- a \in l ->
+   l = public -> aeval s1 a = aeval s2 a) /\
+  (forall b l, P |-b- b \in l ->
+   l = public -> beval s1 b = beval s2 b).
+Proof.
+  intros P s1 s2 Heq. apply (aexp_bexp_mutind P);
+    simpl; intros;
+    (repeat match goal with
+    | [Heql : join _ _ = public |- _] =>
+      let G1 := fresh "G1" in
+      let G2 := fresh "G2" in
+      destruct (join_public Heql) as [G1 G2];
+      rewrite G1 in *; rewrite G2 in *
+    end); try reflexivity; eauto; firstorder;
+    (repeat match goal with
+    | [IH : aeval s1 ?a = aeval s2 ?a |- _] => rewrite IH
+    end);
+    (repeat match goal with
+    | [IH : beval s1 ?b = beval s2 ?b |- _] => rewrite IH
+    end); reflexivity.
+Qed.
+
+Theorem noninterferent_aexp : forall {P s1 s2 a},
+  pub_equiv P s1 s2 ->
+  P |-a- a \in public ->
+  aeval s1 a = aeval s2 a.
+Proof.
+  intros P s1 s2 a Heq Ht. remember public as l.
+  generalize dependent Heql. generalize dependent l.
+  apply noninterferent_aexp_bexp. assumption.
+Qed.
+
+Theorem noninterferent_bexp : forall {P s1 s2 b},
+  pub_equiv P s1 s2 ->
+  P |-b- b \in public ->
+  beval s1 b = beval s2 b.
+Proof.
+  intros P s1 s2 b Heq Ht. remember public as l.
+  generalize dependent Heql. generalize dependent l.
+  apply noninterferent_aexp_bexp. assumption.
+Qed.
+
+(* TERSE: /HIDEFROMHTML *)
+
 Definition pub_arrs := total_map label.
 
 (** [[[
@@ -257,7 +450,7 @@ P |-a- i \in public   P |-a- e \in l   can_flow l (PA a) = true
 (* TERSE: HIDEFROMHTML *)
 Reserved Notation "P ';;' PA '|-ct-' c" (at level 40).
 
-Inductive ct_well_typed (P:pub_vars) (PA:pub_arrs) : com' -> Prop :=
+Inductive ct_well_typed (P:pub_vars) (PA:pub_arrs) : com -> Prop :=
   | CT_Com :
       P ;; PA |-ct- <{{ skip }}>
   | CT_Asgn : forall X a l,
@@ -429,10 +622,10 @@ Definition dirs := list direction.
 
 Reserved Notation
          "'<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
-         (at level 40, c custom com' at level 99,
+         (at level 40, c custom com at level 99,
           st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive spec_eval : com' -> state -> astate -> bool -> dirs ->
+Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
                               state -> astate -> bool -> obs -> Prop :=
   | Spec_Skip : forall st ast b,
       <(st, ast, b, [DStep])> =[ skip ]=> <(st, ast, b, [])>
@@ -589,7 +782,7 @@ Admitted.
 (** We can recover sequential execution if there is no speculation, so all
     directives are [DStep] and the speculation flag starts [false]. *)
 
-Definition seq_eval (c:com') (s:state) (a:astate) (b:bool)
+Definition seq_eval (c:com) (s:state) (a:astate) (b:bool)
   (s':state) (a':astate) (b':bool) (os:obs) : Prop :=
   exists ds, (forall d, In d ds -> d = DStep) /\
     <(s, a, false, ds)> =[ c ]=> <(s', a', b', os)>.
@@ -609,15 +802,10 @@ Definition spec_ct_secure :=
 
 (** Selective SLH transformation that enforces speculative constant-time *)
 
-(* SOONER: sel_slh needs constant-time conditional expression; assuming it for now *)
-Axiom ACTIf : bexp -> aexp -> aexp -> aexp.
-Notation "be '?' a1 ':' a2"  := (ACTIf be a1 a2)
-  (in custom com at level 20, no associativity).
-
 Require Import String.
 Open Scope string_scope.
 
-Fixpoint sel_slh (P:pub_vars) (PA:pub_arrs) (c:com') :=
+Fixpoint sel_slh (P:pub_vars) (PA:pub_arrs) (c:com) :=
   match c with
   | <{{skip}}> => <{{skip}}>
   | <{{x := e}}> => <{{x := e}}>
