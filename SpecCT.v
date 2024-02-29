@@ -611,20 +611,31 @@ Definition spec_ct_secure :=
 
 (* SOONER: sel_slh needs constant-time conditional expression; assuming it for now *)
 Axiom ACTIf : bexp -> aexp -> aexp -> aexp.
+Notation "be '?' a1 ':' a2"  := (ACTIf be a1 a2)
+  (in custom com at level 20, no associativity).
+
+Require Import String.
+Open Scope string_scope.
 
 Fixpoint sel_slh (P:pub_vars) (PA:pub_arrs) (c:com') :=
   match c with
-  | Skip => Skip
-  | Asgn x e => Asgn x e
-  | Seq c1 c2 => Seq (sel_slh P PA c1) (sel_slh P PA c2)
-  | If be c1 c2 => If be (Seq (Asgn "b" (ACTIf be (AId "b") 1)) (sel_slh P PA c1))
-                         (Seq (Asgn "b" (ACTIf be 1 (AId "b"))) (sel_slh P PA c1))
-  | While be c => While be c (* TODO *)
-  | ARead x a i => if P x then Seq (ARead x a i) (Asgn x (ACTIf (BEq (AId "b") (ANum 1)) (ANum 0) (AId x)))
-                          else ARead x a i
-  | AWrite a i e => AWrite a i e
+  | <{{skip}}> => <{{skip}}>
+  | <{{x := e}}> => <{{x := e}}>
+  | <{{c1; c2}}> => <{{ sel_slh P PA c1; sel_slh P PA c2}}>
+  | <{{if be then c1 else c2 end}}> =>
+      <{{if be then "b" := (be ? "b" : 1); sel_slh P PA c1
+               else "b" := (be ? 1 : "b"); sel_slh P PA c1 end}}>
+  | <{{while be do c end}}> =>
+      <{{while be do "b" := (be ? "b" : 1); sel_slh P PA c end;
+         "b" := (be ? 1 : "b")}}>
+  | <{{x <- a[[i]]}}> =>
+      if P x then <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
+             else <{{x <- a[[i]]}}>
+  | <{{a[i] <- e}}> => <{{a[i] <- e}}>
   end.
-(* SOONER: <{ ... }> notations could above could help readability *)
+
+(** HIDE: All results below will have to assume that [c] doesn't already use the
+    variable ["b"] *)
 
 (* LATER: Let's start without declassification, but if we add that then the RNI
    notion of Definition 2 relies on the small-step semantics to stop at the first
