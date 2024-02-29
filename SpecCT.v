@@ -607,8 +607,6 @@ Qed.
 
 (** ** Speculative constant-time *)
 
-(* SOONER: Add constant-time if-then-else to the expression language (used for SLH) *)
-
 (** The observations are the same, so we can just reuse them. *)
 Print observation.
 
@@ -691,7 +689,8 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
       <(st, ast, true, [DStore a' i'])> =[ a[ie] <- e ]=>
         <(st, a' !-> upd i' (ast a') n; ast, true, [OAWrite a i])>
 
-  where "<( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" := (spec_eval c st ast b ds stt astt bb os).
+  where "<( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
+    (spec_eval c st ast b ds stt astt bb os).
 
 (* HIDE: This semantics already lost one property of Imp, which is only
    nonterminating executions don't produce a final state. Now if the input
@@ -718,8 +717,11 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    need to be fixed to include stuck fences deep inside or to bubble up stuck
    fences to the top (error monad). *)
 
-(* SOONER: Could add the declassify construct from Spectre Declassified, but for
-   now trying to keep things simple. *)
+(* LATER: Could add the declassify construct from Spectre Declassified, but for
+   now trying to keep things simple. If we add that then the RNI notion of
+   Definition 2 relies on the small-step semantics to stop at the first force
+   directive. Doing that with a big-step semantics seems trickier. We could
+   build a version that halts early on the first force? *)
 
 (* HIDE: Just to warm up tried to formalize the first lemma in the Spectre
    Declassified paper: Lemma 1: structural properties of execution *)
@@ -793,28 +795,27 @@ Definition seq_eval (c:com) (s:state) (a:astate) (b:bool)
 (** Speculative constant-time definition *)
 
 Definition spec_ct_secure :=
-  forall P PA c s1 s2 a1 a2 b1 b2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
+  forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
     pub_equiv P s1 s2 ->
     pub_equiv PA a1 a2 ->
-    <(s1, a1, b1, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
-    <(s2, a2, b2, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
+    <(s1, a1, false, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
+    <(s2, a2, false, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
     os1 = os2.
 
-(** Selective SLH transformation that enforces speculative constant-time *)
+(** Selective SLH transformation that we will show enforces speculative constant-time *)
 
-Require Import String.
 Open Scope string_scope.
 
-Fixpoint sel_slh (P:pub_vars) (PA:pub_arrs) (c:com) :=
+Fixpoint sel_slh (P:pub_vars) (c:com) :=
   match c with
   | <{{skip}}> => <{{skip}}>
   | <{{x := e}}> => <{{x := e}}>
-  | <{{c1; c2}}> => <{{ sel_slh P PA c1; sel_slh P PA c2}}>
+  | <{{c1; c2}}> => <{{ sel_slh P c1; sel_slh P c2}}>
   | <{{if be then c1 else c2 end}}> =>
-      <{{if be then "b" := (be ? "b" : 1); sel_slh P PA c1
-               else "b" := (be ? 1 : "b"); sel_slh P PA c1 end}}>
+      <{{if be then "b" := (be ? "b" : 1); sel_slh P c1
+               else "b" := (be ? 1 : "b"); sel_slh P c1 end}}>
   | <{{while be do c end}}> =>
-      <{{while be do "b" := (be ? "b" : 1); sel_slh P PA c end;
+      <{{while be do "b" := (be ? "b" : 1); sel_slh P c end;
          "b" := (be ? 1 : "b")}}>
   | <{{x <- a[[i]]}}> =>
       if P x then <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
@@ -822,10 +823,117 @@ Fixpoint sel_slh (P:pub_vars) (PA:pub_arrs) (c:com) :=
   | <{{a[i] <- e}}> => <{{a[i] <- e}}>
   end.
 
+Close Scope string_scope.
+
 (** HIDE: All results below will have to assume that [c] doesn't already use the
     variable ["b"] *)
 
-(* LATER: Let's start without declassification, but if we add that then the RNI
-   notion of Definition 2 relies on the small-step semantics to stop at the first
-   force directive. Doing that with a big-step semantics seems trickier. We
-   could build a version that halts early on the first force? *)
+(** To prove this transformation secure Spectre Declassified uses an idealized semantics *)
+
+Reserved Notation
+         "P '|-' '<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
+         (at level 40, c custom com at level 99,
+          st constr, ast constr, stt constr, astt constr at next level).
+
+Inductive ideal_eval (P:pub_vars) :
+    com -> state -> astate -> bool -> dirs ->
+           state -> astate -> bool -> obs -> Prop :=
+  | Ideal_Skip : forall st ast b,
+      P |- <(st, ast, b, [DStep])> =[ skip ]=> <(st, ast, b, [])>
+  | Ideal_Asgn  : forall st ast b e n x,
+      aeval st e = n ->
+      P |- <(st, ast, b, [DStep])> =[ x := e ]=> <(x !-> n; st, ast, b, [])>
+  | Ideal_Seq : forall c1 c2 st ast b st' ast' b' st'' ast'' b'' os1 os2 ds1 ds2,
+      P |- <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)>  ->
+      P |- <(st', ast', b', ds2)> =[ c2 ]=> <(st'', ast'', b'', os2)> ->
+      P |- <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os1++os2)>
+  | Ideal_If : forall st ast b st' ast' b' be c1 c2 os1 ds,
+      P |- <(st, ast, b, ds)> =[ match beval st be with
+                                 | true => c1
+                                 | false => c2 end ]=> <(st', ast', b', os1)> ->
+      P |- <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
+        <(st', ast', b', OBranch (beval st be)::os1)>
+  | Ideal_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
+      P |- <(st, ast, true, ds)> =[ match beval st be with
+                                    | true => c2 (* <-- branches swapped *)
+                                    | false => c1 end ]=> <(st', ast', b', os1)> ->
+      P |- <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
+        <(st', ast', b', OBranch (beval st be)::os1)>
+  | Ideal_WhileFalse : forall be st ast b c,
+      beval st be = false ->
+      P |- <(st, ast, b, [DStep])> =[ while be do c end ]=> <(st, ast, b, [OBranch false])>
+  | Ideal_WhileFalse_F : forall st st' st'' ast ast' ast'' b b' b'' be c os1 os2 ds1 ds2,
+      beval st be = false ->
+      P |- <(st, ast, true, ds1)>  =[ c ]=> <(st', ast', b', os1)> ->
+      P |- <(st', ast', b', ds2)> =[ while be do c end ]=> <(st'', ast'', b'', os2)> ->
+      P |- <(st, ast, b, DForce::ds1++ds2)> =[ while be do c end ]=>
+        <(st'', ast'', b'', OBranch false::os1++os2)>
+  | Ideal_WhileTrue : forall st st' st'' ast ast' ast'' b b' b'' be c os1 os2 ds1 ds2,
+      beval st be = true ->
+      P |- <(st, ast, b, ds1)>  =[ c ]=> <(st', ast', b', os1)> ->
+      P |- <(st', ast', b', ds2)> =[ while be do c end ]=> <(st'', ast'', b'', os2)> ->
+      P |- <(st, ast, b, DStep::ds1++ds2)> =[ while be do c end ]=>
+        <(st'', ast'', b'', OBranch true::os1++os2)>
+  | Ideal_WhileTrue_F : forall be st ast b c,
+      beval st be = true ->
+      P |- <(st, ast, b, [DForce])> =[ while be do c end ]=> <(st, ast, true, [OBranch true])>
+  | Ideal_ARead : forall st ast x a ie i,
+      aeval st ie = i ->
+      i < length (ast a) ->
+      P |- <(st, ast, false, [DStep])> =[ x <- a[[ie]] ]=>  (* <-- NEW: only for sequential executions *)
+        <(x !-> nth i (ast a) 0; st, ast, false, [OARead a i])>
+  | Ideal_ARead_U : forall st ast x a ie i a' i',
+      P x = secret -> (* <-- NEW: this rule applies now only for loads into secret variables *)
+      aeval st ie = i ->
+      i >= length (ast a) ->
+      i' < length (ast a') ->
+      P |- <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
+        <(x !-> nth i' (ast a') 0; st, ast, true, [OARead a i])>
+  | Ideal_ARead_Prot : forall st ast x a ie i,
+      P x = public ->  (* <-- NEW: new rule for loads into public variables *)
+      aeval st ie = i ->
+      i >= length (ast a) ->
+      P |- <(st, ast, true, [DStep])> =[ x <- a[[ie]] ]=>
+        <(x !-> 0; st, ast, true, [OARead a i])>
+  | Ideal_Write : forall st ast b a ie i e n,
+      aeval st e = n ->
+      aeval st ie = i ->
+      i < length (ast a) ->
+      P |- <(st, ast, b, [DStep])> =[ a[ie] <- e ]=>
+        <(st, a !-> upd i (ast a) n; ast, b, [OAWrite a i])>
+  | Ideal_Write_U : forall st ast a ie i e n a' i',
+      aeval st e = n ->
+      aeval st ie = i ->
+      i >= length (ast a) ->
+      i' < length (ast a') ->
+      P |- <(st, ast, true, [DStore a' i'])> =[ a[ie] <- e ]=>
+        <(st, a' !-> upd i' (ast a') n; ast, true, [OAWrite a i])>
+
+  where "P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
+    (ideal_eval P c st ast b ds stt astt bb os).
+
+(* SOONER: Show that on sequential executions this is equivalent to [seq_eval] (Lemma 3) *)
+
+(** Let's now prove that the idealized semantics does enforce speculative constant-time *)
+
+Lemma ideal_spec_ct_secure_generalized :
+  forall P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds,
+    pub_equiv P s1 s2 ->
+    pub_equiv PA a1 a2 ->
+    P |- <(s1, a1, b, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
+    P |- <(s2, a2, b, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
+    os1 = os2 /\ b1' = b2'.
+Proof.
+Admitted.
+
+Theorem ideal_spec_ct_secure :
+  forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
+    pub_equiv P s1 s2 ->
+    pub_equiv PA a1 a2 ->
+    P |- <(s1, a1, false, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
+    P |- <(s2, a2, false, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
+    os1 = os2.
+Proof.
+Admitted.
+
+(* SOONER: Prove that the idealized semantics is equivalent to [sel_slh] transformation *)
