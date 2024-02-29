@@ -932,6 +932,48 @@ Inductive ideal_eval (P:pub_vars) :
 
 (** Let's now prove that the idealized semantics does enforce speculative constant-time *)
 
+Definition prefix {X:Type} (xs ys : list X) : Prop :=
+  exists zs, xs = ys ++ zs.
+
+Lemma prefix_app : forall {X:Type} (ds1 ds2 ds0 ds3 : list X),
+  prefix (ds1 ++ ds2) (ds0 ++ ds3) ->
+  prefix ds1 ds0 \/ prefix ds0 ds1.
+Admitted.
+
+Lemma prefix_cons : forall {X:Type} (d : X) (ds2 ds3 : list X),
+  prefix (d :: ds2) (d :: ds3) ->
+  prefix ds2 ds3.
+Admitted.
+
+Lemma prefix_append_front : forall {X:Type} (ds1 ds2 ds3 : list X),
+  prefix (ds1 ++ ds2) (ds1 ++ ds3) ->
+  prefix ds2 ds3.
+Admitted.
+
+Lemma aux : forall P s1 s2 a1 a2 b1 b2 ds1 ds2 c s1' s2' a1' a2' b1' b2' os1' os2',
+  (prefix ds1 ds2 \/ prefix ds2 ds1) ->
+  P |- <(s1, a1, b1, ds1)> =[ c ]=> <(s1', a1', b1', os1')>  ->
+  P |- <(s2, a2, b2, ds2)> =[ c ]=> <(s2', a2', b2', os2')> ->
+  ds1 = ds2.
+Proof.
+  intros P s1 s2 a1 a2 b1 b2 ds1 ds2 c s1' s2' a1' a2' b1' b2' os1' os2'
+    Hprefix Heval1 Heval2.
+  generalize dependent s2'. generalize dependent s2.
+  generalize dependent a2'. generalize dependent a2.
+  generalize dependent os2'. generalize dependent b2.
+  generalize dependent b2'. generalize dependent ds2.
+  induction Heval1; intros ds2X Hprefix b2 b2' os2' a2 a2' s2 s2' Heval2;
+    inversion Heval2; subst; try reflexivity.
+  - assert (H1prefix: prefix ds1 ds0 \/ prefix ds0 ds1).
+    { destruct Hprefix as [Hprefix | Hprefix]; apply prefix_app in Hprefix; tauto.}
+    assert (ds1 = ds0). { eapply IHHeval1_1; eassumption.} subst. f_equal.
+    assert (H2prefix: prefix ds2 ds3 \/ prefix ds3 ds2).
+    { destruct Hprefix as [Hprefix | Hprefix]; apply prefix_append_front in Hprefix; tauto.}
+    eapply IHHeval1_2; eassumption.
+  - f_equal. eapply IHHeval1; try eassumption.
+    (* need to combine this with noninterference *)
+Admitted.
+
 (** HIDE: what we need for the noninterference + spec CT proof in the sequence case;
     unclear how we will get it; structured leakage? :) *)
 Lemma need : forall P PA s1 s2 a1 a2 b ds1 ds2 c st1 st2 ast1 ast2 b1 b2 os1 os2 ds1' ds2',
