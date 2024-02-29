@@ -48,20 +48,20 @@ Definition pub_equiv (P : pub_vars) {X:Type} (s1 s2 : total_map X) :=
     symmetric, and transitive. *)
 
 (* TERSE: HIDEFROMHTML *)
-Lemma pub_equiv_refl : forall (P : pub_vars) (s : state),
+Lemma pub_equiv_refl : forall {X:Type} (P : pub_vars) (s : total_map X),
   pub_equiv P s s.
-Proof. intros P s x Hx. reflexivity. Qed.
+Proof. intros X P s x Hx. reflexivity. Qed.
 
-Lemma pub_equiv_sym : forall (P : pub_vars) (s1 s2 : state),
+Lemma pub_equiv_sym : forall {X:Type} (P : pub_vars) (s1 s2 : total_map X),
   pub_equiv P s1 s2 ->
   pub_equiv P s2 s1.
-Proof. unfold pub_equiv. intros P s1 s2 H x Px. rewrite H; auto. Qed.
+Proof. unfold pub_equiv. intros X P s1 s2 H x Px. rewrite H; auto. Qed.
 
-Lemma pub_equiv_trans : forall (P : pub_vars) (s1 s2 s3 : state),
+Lemma pub_equiv_trans : forall {X:Type} (P : pub_vars) (s1 s2 s3 : total_map X),
   pub_equiv P s1 s2 ->
   pub_equiv P s2 s3 ->
   pub_equiv P s1 s3.
-Proof. unfold pub_equiv. intros P s1 s2 s3 H12 H23 x Px.
+Proof. unfold pub_equiv. intros X P s1 s2 s3 H12 H23 x Px.
        rewrite H12; try rewrite H23; auto. Qed.
 (* TERSE: /HIDEFROMHTML *)
 

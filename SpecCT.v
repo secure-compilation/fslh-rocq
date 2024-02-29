@@ -206,7 +206,7 @@ Fixpoint aeval (st : state) (a : aexp) : nat :=
   | <{a1 - a2}> => (aeval st a1) - (aeval st a2)
   | <{a1 * a2}> => (aeval st a1) * (aeval st a2)
   | <{b ? a1 : a2}> => if beval st b then aeval st a1
-                                     else aeval st a2
+          (* ^- NEW -> *)            else aeval st a2
   end
 with beval (st : state) (b : bexp) : bool :=
   match b with
@@ -297,6 +297,22 @@ Definition pub_vars := total_map label.
 
 Definition pub_equiv (P : pub_vars) {X:Type} (s1 s2 : total_map X) :=
   forall x:string, P x = true -> s1 x = s2 x.
+
+Lemma pub_equiv_refl : forall {X:Type} (P : pub_vars) (s : total_map X),
+  pub_equiv P s s.
+Proof. intros X P s x Hx. reflexivity. Qed.
+
+Lemma pub_equiv_sym : forall {X:Type} (P : pub_vars) (s1 s2 : total_map X),
+  pub_equiv P s1 s2 ->
+  pub_equiv P s2 s1.
+Proof. unfold pub_equiv. intros X P s1 s2 H x Px. rewrite H; auto. Qed.
+
+Lemma pub_equiv_trans : forall {X:Type} (P : pub_vars) (s1 s2 s3 : total_map X),
+  pub_equiv P s1 s2 ->
+  pub_equiv P s2 s3 ->
+  pub_equiv P s1 s3.
+Proof. unfold pub_equiv. intros X P s1 s2 s3 H12 H23 x Px.
+       rewrite H12; try rewrite H23; auto. Qed.
 
 Definition join (l1 l2 : label) : label := l1 && l2.
 
@@ -916,24 +932,61 @@ Inductive ideal_eval (P:pub_vars) :
 
 (** Let's now prove that the idealized semantics does enforce speculative constant-time *)
 
-Lemma ideal_spec_ct_secure_generalized :
+(** HIDE: what we need for the noninterference proof in the sequence case;
+    unclear how we will get it; structured leakage? :) *)
+Lemma need : forall P PA s1 s2 a1 a2 b ds1 ds2 c st1 st2 ast1 ast2 b1 b2 os1 os2 ds1' ds2',
+  ds2 ++ ds2' = ds1 ++ ds1' ->
+  pub_equiv P s1 s2 ->
+  (b = false -> pub_equiv PA a1 a2) ->
+  P |- <(s1, a1, b, ds1)> =[ c ]=> <(st1, ast1, b1, os1)>  ->
+  P |- <(s2, a2, b, ds2)> =[ c ]=> <(st2, ast2, b2, os2)> ->
+  ds1 = ds2 /\ ds1' = ds2'.
+Admitted.
+
+Lemma ct_well_typed_ideal_noninterferent :
   forall P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds,
+    P;; PA |-ct- c ->    
     pub_equiv P s1 s2 ->
-    pub_equiv PA a1 a2 ->
+    (b = false -> pub_equiv PA a1 a2) ->
     P |- <(s1, a1, b, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
     P |- <(s2, a2, b, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
-    os1 = os2 /\ b1' = b2'.
+    pub_equiv P s1' s2' /\ b1' = b2' /\ (b1' = false -> pub_equiv PA a1' a2').
 Proof.
+  intros P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds
+    Hwt Heq Haeq Heval1 Heval2.
+  generalize dependent s2'. generalize dependent s2.
+  generalize dependent a2'. generalize dependent a2.
+  generalize dependent os2. generalize dependent b2'.
+  induction Heval1; intros b2' os2' a2 Haeq a2' s2 Heq s2' Heval2;
+    inversion Heval2; inversion Hwt; subst.
+  - split; [|split]; auto.
+  - split; [|split]; auto.
+    intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
+    + rewrite Hxy. do 2 rewrite t_update_eq.
+      eapply noninterferent_aexp; eauto.
+      subst. rewrite Hy in H13.
+      unfold can_flow in H13. simpl in H13.
+      destruct l; try discriminate. auto.
+    + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
+      apply Heq. apply Hy.
+  - eapply need in H1; [| | | apply Heval1_1 | apply H5 ]; try eassumption.
+    destruct H1 as [H1 H1']. subst.
+    specialize (IHHeval1_1 H13 _ _ _ Haeq _ _ Heq _ H5).
+    destruct IHHeval1_1 as [ IH12eq [IH12b IH12eqa] ]. subst.
+    specialize (IHHeval1_2 H14 _ _ _ IH12eqa _ _ IH12eq _ H10). eauto.
+  - assert(G : P;; PA |-ct- (if beval st be then c1 else c2)).
+    { destruct (beval st be); assumption. }
+    (* specialize (IHHeval1 G _ _ _ Haeq _ _ Heq _ H10). *)
 Admitted.
 
 Theorem ideal_spec_ct_secure :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
+    P;; PA |-ct- c ->
     pub_equiv P s1 s2 ->
     pub_equiv PA a1 a2 ->
     P |- <(s1, a1, false, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
     P |- <(s2, a2, false, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
     os1 = os2.
-Proof.
 Admitted.
 
 (* SOONER: Prove that the idealized semantics is equivalent to [sel_slh] transformation *)
