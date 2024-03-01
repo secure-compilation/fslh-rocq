@@ -11,7 +11,6 @@ From Coq Require Import Arith.PeanoNat. Import Nat.
 From Coq Require Import Lia.
 From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
-
 (* TERSE: /HIDEFROMHTML *)
 
 (** ** Cryptographic constant-time *)
@@ -264,14 +263,10 @@ Inductive cteval : com -> state -> astate -> state -> astate -> obs -> Prop :=
       beval st b = false ->
       <(st, ast)> =[ c2 ]=> <(st', ast', os1)> ->
       <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', OBranch false::os1)>
-  | CTE_WhileFalse : forall b st ast c,
-      beval st b = false ->
-      <(st,ast)> =[ while b do c end ]=> <(st, ast, [OBranch false])>
-  | CTE_WhileTrue : forall st st' st'' ast ast' ast'' b c os' os'',
-      beval st b = true ->
-      <(st, ast)>  =[ c ]=> <(st', ast', os')> ->
-      <(st', ast')> =[ while b do c end ]=> <(st'', ast'', os'')> ->
-      <(st, ast)>  =[ while b do c end ]=> <(st'', ast'', OBranch true::os'++os'')>
+  | CTE_While : forall b st ast st' ast' os c,
+      <(st,ast)> =[ if b then c; while b do c end else skip end ]=>
+        <(st', ast', os)> -> (* <^- Nice trick; from small-step semantics *)
+      <(st,ast)> =[ while b do c end ]=> <(st', ast', os)>
   | CTE_ARead : forall st ast x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
@@ -537,14 +532,7 @@ Proof.
   - rewrite (noninterferent_bexp Heq H13) in H.
     rewrite H in H8. discriminate H8.
   - eapply IHHeval1; eassumption.
-  - split; auto.
-  - rewrite (noninterferent_bexp Heq H12) in H.
-    rewrite H in H2. discriminate H2.
-  - rewrite (noninterferent_bexp Heq H10) in H.
-    rewrite H in H7. discriminate H7.
-  - edestruct IHHeval1_2; eauto.
-    + eapply IHHeval1_1; eauto.
-    + eapply IHHeval1_1; eauto.
+  - eapply IHHeval1; eauto. repeat constructor; eassumption.
   - (* NEW CASE: ARead *)
     split; eauto.
     erewrite noninterferent_aexp; eauto.
@@ -601,19 +589,7 @@ Proof.
   - rewrite (noninterferent_bexp Heq H13) in H.
     rewrite H in H8. discriminate H8.
   - f_equal. eapply IHHeval1; eassumption.
-  - reflexivity.
-  - rewrite (noninterferent_bexp Heq H12) in H.
-    rewrite H in H2. discriminate H2.
-  - rewrite (noninterferent_bexp Heq H10) in H.
-    rewrite H in H7. discriminate H7.
-  - erewrite IHHeval1_2; [erewrite IHHeval1_1 | | | |];
-      try reflexivity; try eassumption.
-    + eapply ct_well_typed_noninterferent;
-        [ | eassumption | eassumption | eassumption | eassumption ];
-        eassumption.
-    + eapply ct_well_typed_noninterferent;
-        [ | eassumption | eassumption | eassumption | eassumption ];
-        eassumption.
+  - eapply IHHeval1; eauto. repeat constructor; eassumption.
   - (* NEW CASE: ARead *)
     f_equal. f_equal. eapply noninterferent_aexp; eassumption.
   - (* NEW CASE: AWrite *)
@@ -662,24 +638,10 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
                        | false => c1 end ]=> <(st', ast', b', os1)> ->
       <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
         <(st', ast', b', OBranch (beval st be)::os1)>
-  | Spec_WhileFalse : forall be st ast b c,
-      beval st be = false ->
-      <(st, ast, b, [DStep])> =[ while be do c end ]=> <(st, ast, b, [OBranch false])>
-  | Spec_WhileFalse_F : forall st st' st'' ast ast' ast'' b b' b'' be c os1 os2 ds1 ds2,
-      beval st be = false ->
-      <(st, ast, true, ds1)>  =[ c ]=> <(st', ast', b', os1)> ->
-      <(st', ast', b', ds2)> =[ while be do c end ]=> <(st'', ast'', b'', os2)> ->
-      <(st, ast, b, DForce::ds1++ds2)> =[ while be do c end ]=>
-        <(st'', ast'', b'', OBranch false::os1++os2)>
-  | Spec_WhileTrue : forall st st' st'' ast ast' ast'' b b' b'' be c os1 os2 ds1 ds2,
-      beval st be = true ->
-      <(st, ast, b, ds1)>  =[ c ]=> <(st', ast', b', os1)> ->
-      <(st', ast', b', ds2)> =[ while be do c end ]=> <(st'', ast'', b'', os2)> ->
-      <(st, ast, b, DStep::ds1++ds2)> =[ while be do c end ]=>
-        <(st'', ast'', b'', OBranch true::os1++os2)>
-  | Spec_WhileTrue_F : forall be st ast b c,
-      beval st be = true ->
-      <(st, ast, b, [DForce])> =[ while be do c end ]=> <(st, ast, true, [OBranch true])>
+  | Spec_While : forall be st ast b ds st' ast' b' os c,
+      <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
+        <(st', ast', b', os)> ->
+      <(st, ast, b, ds)> =[ while be do c end ]=> <(st', ast', b', os)>
   | Spec_ARead : forall st ast b x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
@@ -762,9 +724,6 @@ Proof.
   - apply in_or_app. destruct b'.
     + left. apply IHHeval1; reflexivity.
     + right. apply IHHeval2; reflexivity.
-  - right. apply in_or_app. destruct b'.
-    + left. apply IHHeval1; reflexivity.
-    + right. apply IHHeval2; reflexivity.
 Qed.
 
 (* HIDE: Also this one is weaker for big-step semantics *)
@@ -794,8 +753,7 @@ Proof.
           right. apply speculation_needs_force in Heval1; [| reflexivity|assumption].
           apply in_or_app. tauto. }
         { right. apply in_or_app. tauto. }
-  - admit. (* blah, blah, more of the same nonsense *)
-Admitted.
+Qed.
 
 (** We can recover sequential execution if there is no speculation, so all
     directives are [DStep] and the speculation flag starts [false]. *)
@@ -875,24 +833,10 @@ Inductive ideal_eval (P:pub_vars) :
                                     | false => c1 end ]=> <(st', ast', b', os1)> ->
       P |- <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
         <(st', ast', b', OBranch (beval st be)::os1)>
-  | Ideal_WhileFalse : forall be st ast b c,
-      beval st be = false ->
-      P |- <(st, ast, b, [DStep])> =[ while be do c end ]=> <(st, ast, b, [OBranch false])>
-  | Ideal_WhileFalse_F : forall st st' st'' ast ast' ast'' b b' b'' be c os1 os2 ds1 ds2,
-      beval st be = false ->
-      P |- <(st, ast, true, ds1)>  =[ c ]=> <(st', ast', b', os1)> ->
-      P |- <(st', ast', b', ds2)> =[ while be do c end ]=> <(st'', ast'', b'', os2)> ->
-      P |- <(st, ast, b, DForce::ds1++ds2)> =[ while be do c end ]=>
-        <(st'', ast'', b'', OBranch false::os1++os2)>
-  | Ideal_WhileTrue : forall st st' st'' ast ast' ast'' b b' b'' be c os1 os2 ds1 ds2,
-      beval st be = true ->
-      P |- <(st, ast, b, ds1)>  =[ c ]=> <(st', ast', b', os1)> ->
-      P |- <(st', ast', b', ds2)> =[ while be do c end ]=> <(st'', ast'', b'', os2)> ->
-      P |- <(st, ast, b, DStep::ds1++ds2)> =[ while be do c end ]=>
-        <(st'', ast'', b'', OBranch true::os1++os2)>
-  | Ideal_WhileTrue_F : forall be st ast b c,
-      beval st be = true ->
-      P |- <(st, ast, b, [DForce])> =[ while be do c end ]=> <(st, ast, true, [OBranch true])>
+  | Ideal_While : forall be st ast b ds st' ast' b' os c,
+      P |- <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
+        <(st', ast', b', os)> ->
+      P |- <(st, ast, b, ds)> =[ while be do c end ]=> <(st', ast', b', os)>
   | Ideal_ARead : forall st ast x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
@@ -1095,30 +1039,7 @@ Proof.
     + eapply IHHeval1; try eassumption; try (destruct (beval st be); eassumption).
       * intro contra. discriminate contra.
       * erewrite noninterferent_bexp; eassumption.
-  - (* while false-false *) reflexivity.
-  - (* while contra *) eapply noninterferent_bexp in Heq; [| eassumption]. congruence.
-  - (* while mispeculated true-true ... modified seq case *) f_equal.
-    eapply (need P PA) in H2; [| | | apply Heval1_1 | apply H7 ]; eauto.
-    Focus 2. intro contra. discriminate contra. destruct H2 as [H2 H2']. subst.
-    assert(NI1 : pub_equiv P st' st'0 /\ b' = b'0 /\ (b' = false -> pub_equiv PA ast' ast'0)).
-    { eapply ct_well_typed_ideal_noninterferent; [ | | | eassumption | eassumption]; eauto.
-      intro contra. discriminate contra. }
-    destruct NI1 as [NI1eq [NIb NIaeq] ]. subst.
-    erewrite IHHeval1_2; [erewrite IHHeval1_1 | | | |];
-      try reflexivity; try eassumption.
-    intro contra. discriminate contra.
-  - (* while contra *) eapply noninterferent_bexp in Heq; [| eassumption]. congruence.
-  - (* while contra *) eapply noninterferent_bexp in Heq; [| eassumption]. congruence.
-  - (* while true-true ... less modified seq case *) f_equal.
-    eapply need in H2; [| | | apply Heval1_1 | apply H7 ]; eauto.
-    destruct H2 as [H2 H2']. subst.
-    assert(NI1 : pub_equiv P st' st'0 /\ b' = b'0 /\ (b' = false -> pub_equiv PA ast' ast'0)).
-    { eapply ct_well_typed_ideal_noninterferent; [ | | | eassumption | eassumption]; eauto.}
-    destruct NI1 as [NI1eq [NIb NIaeq] ]. subst.
-    erewrite IHHeval1_2; [erewrite IHHeval1_1 | | | |];
-      try reflexivity; try eassumption.
-  - (* while contra *) eapply noninterferent_bexp in Heq; [| eassumption]. congruence.
-  - (* while mispeculated false-false *) reflexivity.
+  - eapply IHHeval1; eauto. repeat constructor; eassumption.
   - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
   - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
   - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.

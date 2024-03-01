@@ -1198,14 +1198,9 @@ Definition branches := list bool.
        --------------------------------------------------       (E_IfFalse)
        st =[ if b then c1 else c2 end ]=> st', false::bs2
 
-                    beval st b = false
-            --------------------------------------           (E_WhileFalse)
-            st =[ while b do c end ]=> st, [false]
-
-           beval st b = true    st =[ c ]=> st', bs'
-              st' =[ while b do c end ]=> st'', bs''
-       -------------------------------------------------      (E_WhileTrue)
-       st  =[ while b do c end ]=> st'', true::bs'++bs''
+  st =[ if b then c; while b do c end else skip end ]=> st, os
+  ------------------------------------------------------------    (E_While)
+            st =[ while b do c end ]=> st, os
 ]]]
 *)
 
@@ -1233,21 +1228,22 @@ Inductive pceval : com -> state -> state -> branches -> Prop :=
       beval st b = false ->
       st =[ c2 ]=> st', bs1 ->
       st =[ if b then c1 else c2 end]=> st', (false::bs1)
-  | E_WhileFalse : forall b st c,
-      beval st b = false ->
-      st =[ while b do c end ]=> st, [false]
-  | E_WhileTrue : forall st st' st'' b c bs' bs'',
-      beval st b = true ->
-      st  =[ c ]=> st', bs' ->
-      st' =[ while b do c end ]=> st'', bs'' ->
-      st  =[ while b do c end ]=> st'', (true::bs'++bs'')
+  | E_While : forall b st os c, (* <- Nice trick; from small-step semantics *)
+      st =[ if b then c; while b do c end else skip end ]=> st, os ->
+      st =[ while b do c end ]=> st, os
 
   where "st =[ c ]=> st' , bs" := (pceval c st st' bs).
 
 Lemma pceval_ceval : forall c st st' bs,
   st =[ c ]=> st', bs ->
   st =[ c ]=> st'.
-Proof. intros c st st' bs H. induction H; econstructor; eassumption. Qed.
+Proof.
+  intros c st st' bs H. induction H; try (econstructor; eassumption).
+  - (* need to justify the while trick *)
+    inversion IHpceval.
+    + inversion H6. subst. eapply E_WhileTrue; eauto.
+    + eapply E_WhileFalse; eauto.
+Qed.
 (* TERSE: /HIDEFROMHTML *)
 
 (** *** Program counter security definition *)
@@ -1291,16 +1287,7 @@ Proof.
   - rewrite (noninterferent_bexp Heq H11) in H.
     rewrite H in H6. discriminate H6.
   - f_equal. eapply IHHeval1; eassumption.
-  - reflexivity.
-  - rewrite (noninterferent_bexp Heq H10) in H.
-    rewrite H in H2. discriminate H2.
-  - rewrite (noninterferent_bexp Heq H8) in H.
-    rewrite H in H5. discriminate H5.
-  - erewrite IHHeval1_2; [erewrite IHHeval1_1 | | |];
-      try reflexivity; try eassumption.
-    eapply pc_well_typed_noninterferent;
-      [ | eassumption | eapply pceval_ceval; eassumption
-                      | eapply pceval_ceval; eassumption ]; eassumption.
+  - eapply IHHeval1; try eassumption. repeat constructor; eassumption.
 Qed.
 (* /FOLD *)
 
