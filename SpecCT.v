@@ -852,7 +852,6 @@ Inductive ideal_eval (P:pub_vars) :
   | Ideal_ARead_Prot : forall st ast x a ie i,
       P x = public ->  (* <-- NEW: new rule for loads into public variables *)
       aeval st ie = i ->
-      i >= length (ast a) ->
       P |- <(st, ast, true, [DStep])> =[ x <- a[[ie]] ]=>
         <(x !-> 0; st, ast, true, [OARead a i])>
   | Ideal_Write : forall st ast b a ie i e n,
@@ -903,31 +902,6 @@ Lemma app_eq_prefix : forall {X:Type} {ds1 ds2 ds1' ds2' : list X},
   prefix ds1 ds1' \/ prefix ds1' ds1.
 Admitted.
 
-Lemma aux : forall P s1 s2 a1 a2 b1 b2 ds1 ds2 c s1' s2' a1' a2' b1' b2' os1' os2',
-  (prefix ds1 ds2 \/ prefix ds2 ds1) ->
-  P |- <(s1, a1, b1, ds1)> =[ c ]=> <(s1', a1', b1', os1')>  ->
-  P |- <(s2, a2, b2, ds2)> =[ c ]=> <(s2', a2', b2', os2')> ->
-  ds1 = ds2.
-Proof.
-  intros P s1 s2 a1 a2 b1 b2 ds1 ds2 c s1' s2' a1' a2' b1' b2' os1' os2'
-    Hprefix Heval1 Heval2.
-  generalize dependent s2'. generalize dependent s2.
-  generalize dependent a2'. generalize dependent a2.
-  generalize dependent os2'. generalize dependent b2.
-  generalize dependent b2'. generalize dependent ds2.
-  induction Heval1; intros ds2X Hprefix b2 b2' os2' a2 a2' s2 s2' Heval2;
-    inversion Heval2; subst; try reflexivity.
-  - assert (H1prefix: prefix ds1 ds0 \/ prefix ds0 ds1).
-    { destruct Hprefix as [Hprefix | Hprefix]; apply prefix_app in Hprefix; tauto.}
-    assert (ds1 = ds0). { eapply IHHeval1_1; eassumption.} subst. f_equal.
-    assert (H2prefix: prefix ds2 ds3 \/ prefix ds3 ds2).
-    { destruct Hprefix as [Hprefix | Hprefix]; apply prefix_append_front in Hprefix; tauto.}
-    eapply IHHeval1_2; eassumption.
-  - f_equal. eapply IHHeval1; try eassumption.
-    (* need to combine this with noninterference;
-       started below in noninterferent_general *)
-Admitted.
-
 Ltac split4 := split; [|split; [| split] ].
 
 Lemma ct_well_typed_ideal_noninterferent_general :
@@ -935,7 +909,7 @@ Lemma ct_well_typed_ideal_noninterferent_general :
     P ;; PA |-ct- c ->
     pub_equiv P s1 s2 ->
     (b = false -> pub_equiv PA a1 a2) ->
-    (prefix ds1 ds2 \/ prefix ds2 ds1) ->
+    (prefix ds1 ds2 \/ prefix ds2 ds1) -> (* <- interesting generalization *)
     P |- <(s1, a1, b, ds1)> =[ c ]=> <(s1', a1', b1', os1)> ->
     P |- <(s2, a2, b, ds2)> =[ c ]=> <(s2', a2', b2', os2)> ->
     pub_equiv P s1' s2' /\ b1' = b2' /\
@@ -949,8 +923,8 @@ Proof.
   generalize dependent ds2.
   induction Heval1; intros ds2X Hds b2' os2' a2 Haeq a2' s2 Heq s2' Heval2;
     inversion Heval2; inversion Hwt; subst.
-  - auto.
-  - split4; auto.
+  - (* skip *) auto.
+  - (* assign *) split4; auto.
     intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
     + rewrite Hxy. do 2 rewrite t_update_eq.
       eapply noninterferent_aexp; eauto.
@@ -959,7 +933,7 @@ Proof.
       destruct l; try discriminate. auto.
     + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
       apply Heq. apply Hy.
-  - assert (Hds1: prefix ds1 ds0 \/ prefix ds0 ds1).
+  - (* seq *) assert (Hds1: prefix ds1 ds0 \/ prefix ds0 ds1).
     { destruct Hds as [Hds | Hds]; apply prefix_app in Hds; tauto.}
     assert (ds1 = ds0). { eapply IHHeval1_1; eassumption.} subst. f_equal.
     assert (Hds2: prefix ds2 ds3 \/ prefix ds3 ds2).
@@ -969,7 +943,8 @@ Proof.
     destruct IHHeval1_1 as [ IH12eq [IH12b [IH12eqa _] ] ]. subst.
     specialize (IHHeval1_2 H14 _ Hds2 _ _ _ IH12eqa _ _ IH12eq _ H10).
     firstorder; subst; reflexivity.
-  - assert(G : P ;; PA |-ct- (if beval st be then c1 else c2)).
+  - (* if (If) *)
+    assert(G : P ;; PA |-ct- (if beval st be then c1 else c2)).
     { destruct (beval st be); assumption. }
     assert(Gds : prefix ds ds0 \/ prefix ds0 ds).
     { destruct Hds as [Hds | Hds]; apply prefix_cons in Hds; tauto. }
@@ -978,7 +953,75 @@ Proof.
       firstorder; congruence.
     + apply pub_equiv_sym. eassumption.
     + eassumption.
-Admitted.
+  - (* if contra *) unfold prefix in Hds.
+    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
+  - (* if contra *) unfold prefix in Hds.
+    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
+  - (* if (If_F) - very similar If *)
+    assert(G : P ;; PA |-ct- (if beval st be then c2 else c1)).
+    { destruct (beval st be); assumption. }
+    assert(Gds : prefix ds ds0 \/ prefix ds0 ds).
+    { destruct Hds as [Hds | Hds]; apply prefix_cons in Hds; tauto. }
+    erewrite noninterferent_bexp in H10.
+    + assert(GG: true = false -> pub_equiv PA ast a2). (* <- only difference *)
+      { intro Hc. discriminate. }
+      specialize (IHHeval1 G _ Gds _ _ _ GG _ _ Heq _ H10).
+      firstorder; congruence.
+    + apply pub_equiv_sym. eassumption.
+    + eassumption.
+  - (* while *) eapply IHHeval1; try eassumption. repeat constructor; eassumption.
+  - (* array read (ARead) *) split4; eauto.
+    intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
+    + rewrite Hxy. do 2 rewrite t_update_eq.
+      subst. rewrite Hy in *.
+      rewrite Haeq; eauto.
+      * erewrite noninterferent_aexp; eauto.
+      * now destruct (PA a).
+    + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
+      apply Heq. apply Hy.
+  - (* array read (ARead_U) *) split4; eauto.
+    + intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
+      * rewrite Hxy. do 2 rewrite t_update_eq.
+        subst. rewrite Hy in *.
+        rewrite Haeq; eauto.
+        { unfold prefix in Hds.
+          destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds;
+            inversion Hds; reflexivity. }
+        { now destruct (PA a).}
+      * do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
+        apply Heq. apply Hy.
+    + unfold prefix in Hds.
+      destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds; reflexivity.
+  - (* array read contra *) unfold prefix in Hds.
+    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
+  - (* array read contra *) unfold prefix in Hds.
+    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
+  - (* array read (ARead_Prot) *) split4; eauto.
+    intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
+    + rewrite Hxy. do 2 rewrite t_update_eq. reflexivity.
+    + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
+      apply Heq. apply Hy.
+  - (* array write (Write) *) split4; eauto. intro Hb2'.
+    erewrite noninterferent_aexp; eauto.
+    intros y Hy.
+    destruct (String.eqb_spec a y) as [Hay | Hay].
+    + rewrite Hay. do 2 rewrite t_update_eq.
+      subst. rewrite Hy in *.
+      rewrite Haeq; eauto.
+      erewrite (noninterferent_aexp Heq); eauto. now destruct l.
+    + do 2 rewrite (t_update_neq _ _ _ _ _ Hay).
+      apply Haeq; assumption.
+  - (* array write contra *) unfold prefix in Hds.
+    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
+  - (* array write contra *) unfold prefix in Hds.
+    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
+  - (* array write (Write_U) *) split4; eauto.
+    + intro contra. discriminate contra.
+    + unfold prefix in Hds.
+      destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds; reflexivity.
+Qed.
+
+(* SOONER: The cases for arrays above are repetitive. Spin off some lemmas. *)
 
 Lemma ct_well_typed_ideal_noninterferent :
   forall P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds,
@@ -995,15 +1038,26 @@ Proof.
   left. apply prefix_refl.
 Qed.
 
-(** This should now also follow from noninterferent_general *)
-Lemma need : forall P PA s1 s2 a1 a2 b ds1 ds2 c st1 st2 ast1 ast2 b1 b2 os1 os2 ds1' ds2',
+(** This auxiliary lemma also follows from noninterferent_general *)
+Lemma aux : forall P PA s1 s2 a1 a2 b ds1 ds2 c st1 st2 ast1 ast2 b1 b2 os1 os2 ds1' ds2',
   ds2 ++ ds2' = ds1 ++ ds1' ->
+  P ;; PA |-ct- c ->
   pub_equiv P s1 s2 ->
   (b = false -> pub_equiv PA a1 a2) ->
   P |- <(s1, a1, b, ds1)> =[ c ]=> <(st1, ast1, b1, os1)>  ->
   P |- <(s2, a2, b, ds2)> =[ c ]=> <(st2, ast2, b2, os2)> ->
   ds1 = ds2 /\ ds1' = ds2'.
-Admitted.
+Proof.
+  intros P PA s1 s2 a1 a2 b ds1 ds2 c st1 st2 ast1 ast2 b1 b2 os1 os2 ds1' ds2'
+    Hds Hwt Heq Haeq Heval1 Heval2.
+  pose proof Hds as H.
+  symmetry in H.
+  apply app_eq_prefix in H.
+  eapply ct_well_typed_ideal_noninterferent_general in H;
+    [ | | | | apply Heval1 | apply Heval2]; try eassumption.
+  - destruct H as [ _ [ _ [ _ H] ] ]. subst. split; [reflexivity|].
+    apply app_inv_head in Hds. congruence.
+Qed.
 
 Theorem ideal_spec_ct_secure :
   forall P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds,
@@ -1023,7 +1077,7 @@ Proof.
     inversion Heval2; inversion Hwt; subst.
   - reflexivity.
   - reflexivity.
-  - (* seq *) eapply need in H1; [| | | apply Heval1_1 | apply H5 ]; eauto.
+  - (* seq *) eapply aux in H1; [| | | | apply Heval1_1 | apply H5 ]; eauto.
     destruct H1 as [H1 H1']. subst.
     assert(NI1 : pub_equiv P st' st'0 /\ b' = b'0 /\ (b' = false -> pub_equiv PA ast' ast'0)).
     { eapply ct_well_typed_ideal_noninterferent; [ | | | eassumption | eassumption]; eauto.}
@@ -1041,8 +1095,8 @@ Proof.
       * erewrite noninterferent_bexp; eassumption.
   - eapply IHHeval1; eauto. repeat constructor; eassumption.
   - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
-  - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
-  - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+  - (* ARead_U *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+  - (* ARead_Prot *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
   - (* AWrite *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
   - (* AWrite *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
 Qed.
