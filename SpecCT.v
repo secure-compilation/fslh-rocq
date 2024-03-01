@@ -129,7 +129,7 @@ Inductive com : Type :=
    accessed without triggering observable events, so our
    noninterference for expressions doesn't change, which is good.  *)
 
-(* SOONER: CH: Maybe a good way to get the best of both worlds would
+(* HIDE: CH: Maybe a good way to get the best of both worlds would
    be to use a type system to combine the two states into one, yet to
    keep accessing the arrays only with the special ARead and AWrite
    operations above. This would make this part of the chapter depend
@@ -236,7 +236,7 @@ Inductive observation : Type :=
 
 Definition obs := list observation.
 
-(** We define an instrumented operational semantics based on these
+(** We define an instrumented big-step operational semantics based on these
    observations. *)
 
 (* TERSE: HIDEFROMHTML *)
@@ -602,6 +602,9 @@ Qed.
 (** The observations are the same, so we can just reuse them. *)
 Print observation.
 
+(** We additionally add adversary provided directions to our semantics, which
+    control speculation behavior. *)
+
 Inductive direction :=
 | DStep
 | DForce
@@ -616,7 +619,7 @@ Reserved Notation
           st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
-                              state -> astate -> bool -> obs -> Prop :=
+                             state -> astate -> bool -> obs -> Prop :=
   | Spec_Skip : forall st ast b,
       <(st, ast, b, [DStep])> =[ skip ]=> <(st, ast, b, [])>
   | Spec_Asgn  : forall st ast b e n x,
@@ -677,23 +680,24 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    probably not a problem, but just wanted to mention it. *)
 
 (** Without fences the speculation bit [b] is just a form of instrumentation
-   that doesn't affect the semantics, minus adding more stuckness for the [_F] rules. *)
+    that doesn't affect the semantics, except adding more stuckness for the [_U] rules. *)
 
-(* HIDE: Could also add fences, but they are not needed for SLH. They would add
+(* LATER: Could also add fences, but they are not needed for SLH. They would add
    a bit of complexity to the big-step semantics, since they behave like a halt
    instruction that prematurely ends execution, which means adding at least one
    more rule for sequencing (basically an error monad, but with a (halt) bit of
    cleverness we can probably avoid extra rules for if and while, since we're
    just threading through things). We likely don't want to treat this stuckness
-   as not producing a final state though, since a stuck fence is probably a
-   final state in their small-step semantics. *)
+   as not producing a final state though, since a stuck fence should be final
+   state in their small-step semantics (actually the messed that up,
+   see next point). *)
 
 (* LATER: Could prove this semantics equivalent to the small-step one from the
    two IEEE SP 2023 papers. The fact that their rule [Seq-Skip] requires a step
    seems wrong if first command in the sequence is already skip. Also the way
    they define final results seem wrong for stuck fences, and that would either
    need to be fixed to include stuck fences deep inside or to bubble up stuck
-   fences to the top (error monad). *)
+   fences to the top (error monad, see prev point). *)
 
 (* LATER: Could add the declassify construct from Spectre Declassified, but for
    now trying to keep things simple. If we add that then the RNI notion of
@@ -701,16 +705,14 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    directive. Doing that with a big-step semantics seems trickier. We could
    build a version that halts early on the first force? *)
 
-(* HIDE: Just to warm up tried to formalize the first lemma in the Spectre
-   Declassified paper: Lemma 1: structural properties of execution *)
+(* HIDE: Just to warm up formalized the first lemma in the Spectre Declassified
+   paper: Lemma 1: structural properties of execution *)
 
 Lemma speculation_bit_monotonic : forall c s a b ds s' a' b' os,
   <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
   b = true ->
   b' = true.
-Proof.
-  intros c s a b ds s' a' b' os Heval Hb. induction Heval; eauto.
-Qed.
+Proof. intros c s a b ds s' a' b' os Heval Hb. induction Heval; eauto. Qed.
 
 (* HIDE: This one is weaker for big-step semantics *)
 Lemma speculation_needs_force : forall c s a b ds s' a' b' os,
@@ -755,8 +757,8 @@ Proof.
         { right. apply in_or_app. tauto. }
 Qed.
 
-(** We can recover sequential execution if there is no speculation, so all
-    directives are [DStep] and the speculation flag starts [false]. *)
+(** We can recover sequential execution from [spec_eval] if there is no
+    speculation, so all directives are [DStep] and speculation flag starts [false]. *)
 
 Definition seq_eval (c:com) (s:state) (a:astate) (b:bool)
   (s':state) (a':astate) (b':bool) (os:obs) : Prop :=
@@ -764,9 +766,9 @@ Definition seq_eval (c:com) (s:state) (a:astate) (b:bool)
     <(s, a, false, ds)> =[ c ]=> <(s', a', b', os)>.
 
 (* LATER: We should be able to prove that [cteval] and [seq_eval] coincide, so
-   by [ct_well_typed_ct_secure] also directly get Lemma 2. *)
+   by [ct_well_typed_ct_secure] also directly get their Lemma 2. *)
 
-(** Speculative constant-time definition *)
+(** *** Speculative constant-time security definition *)
 
 Definition spec_ct_secure :=
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
@@ -798,9 +800,6 @@ Fixpoint sel_slh (P:pub_vars) (c:com) :=
   end.
 
 Close Scope string_scope.
-
-(** HIDE: All results below will have to assume that [c] doesn't already use the
-    variable ["b"] *)
 
 (** To prove this transformation secure Spectre Declassified uses an idealized semantics *)
 
@@ -1038,8 +1037,8 @@ Proof.
   left. apply prefix_refl.
 Qed.
 
-(** This auxiliary lemma also follows from noninterferent_general *)
-Lemma aux : forall P PA s1 s2 a1 a2 b ds1 ds2 c st1 st2 ast1 ast2 b1 b2 os1 os2 ds1' ds2',
+(** This corollary (used below) also follows from [noninterferent_general] *)
+Corollary aux : forall P PA s1 s2 a1 a2 b ds1 ds2 c st1 st2 ast1 ast2 b1 b2 os1 os2 ds1' ds2',
   ds2 ++ ds2' = ds1 ++ ds1' ->
   P ;; PA |-ct- c ->
   pub_equiv P s1 s2 ->
@@ -1101,4 +1100,32 @@ Proof.
   - (* AWrite *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
 Qed.
 
-(* SOONER: Prove that the idealized semantics is equivalent to [sel_slh] transformation *)
+(* SOONER: Prove that the idealized semantics is equivalent to [sel_slh]
+   transformation (Lemma 6 and the more precise Lemma 7). Unclear if we need to
+   define any erasure function, since in our semantics we already erased the
+   silent observations by working with observation lists and adding nothing to
+   them for silent observations. That's convenient. Q: Is that correct though?
+   Or does it weaken our attacker model and we need to switch to options? *)
+
+(** SOONER: All results about [sel_slh] will have to assume that [c] doesn't
+    already use the variable ["b"] ... see below: *)
+
+Open Scope string_scope.
+
+Lemma ideal_sel_slh : forall P s a b ds c s' a' b' os,
+  P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
+  <("b" !-> (if b then 1 else 0); s, a, b, ds)> =[ sel_slh P c ]=>
+    <("b" !-> (if b' then 1 else 0); s', a', b', os)>.
+Proof.
+  intros P s a b ds c s' a' b' os Heval. induction Heval; simpl.
+  - constructor.
+  - rewrite t_update_permute.
+    + apply Spec_Asgn. admit. (* only correct if "b" is not used *)
+    + admit. (* again, x shouldn't be "b" *)
+Admitted.
+
+Lemma sel_slh_ideal : forall P s a (b:bool) ds c s' a' (b':bool) os,
+  <("b" !-> (if b then 1 else 0); s, a, b, ds)> =[ sel_slh P c ]=>
+    <("b" !-> (if b' then 1 else 0); s', a', b', os)> ->
+  P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)>.
+Admitted.
