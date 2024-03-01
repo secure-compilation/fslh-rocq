@@ -1107,25 +1107,66 @@ Qed.
    them for silent observations. That's convenient. Q: Is that correct though?
    Or does it weaken our attacker model and we need to switch to options? *)
 
-(** SOONER: All results about [sel_slh] will have to assume that [c] doesn't
-    already use the variable ["b"] ... see below: *)
+(** All results about [sel_slh] have to assume that [c] doesn't already use the
+    variable ["b"]. *)
+
+Fixpoint a_unused (x:string) (a:aexp) : Prop :=
+  match a with
+  | ANum n      => True
+  | AId y       => y <> x
+  | <{a1 + a2}>
+  | <{a1 - a2}>
+  | <{a1 * a2}> => a_unused x a1 /\ a_unused x a2
+  | <{b ? a1 : a2}> => b_unused x b /\ a_unused x a1 /\ a_unused x a2
+  end
+with b_unused (x:string) (b:bexp) : Prop :=
+  match b with
+  | <{true}>
+  | <{false}>     => True
+  | <{a1 = a2}>
+  | <{a1 <> a2}>
+  | <{a1 <= a2}>
+  | <{a1 > a2}>   => a_unused x a1 /\ a_unused x a2
+  | <{~ b1}>      => b_unused x b1
+  | <{b1 && b2}>  => b_unused x b1 /\ b_unused x b2
+  end.
+
+Fixpoint c_unused (x:string) (c:com) : Prop :=
+  match c with
+  | <{{skip}}> => True
+  | <{{y := e}}> => y <> x /\ a_unused x e
+  | <{{c1; c2}}> => c_unused x c1 /\ c_unused x c2
+  | <{{if be then c1 else c2 end}}> =>
+      b_unused x be /\ c_unused x c1 /\ c_unused x c2
+  | <{{while be do c end}}> => b_unused x be /\ c_unused x c
+  | <{{y <- a[[i]]}}> => y <> x /\ a_unused x i
+  | <{{a[i] <- e}}> => a_unused x i /\ a_unused x e
+  end.
 
 Open Scope string_scope.
 
 Lemma ideal_sel_slh : forall P s a b ds c s' a' b' os,
+  c_unused "b" c ->
   P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
   <("b" !-> (if b then 1 else 0); s, a, b, ds)> =[ sel_slh P c ]=>
     <("b" !-> (if b' then 1 else 0); s', a', b', os)>.
 Proof.
-  intros P s a b ds c s' a' b' os Heval. induction Heval; simpl.
+  intros P s a b ds c s' a' b' os Hunused Heval.
+  induction Heval; simpl in *.
   - constructor.
-  - rewrite t_update_permute.
-    + apply Spec_Asgn. admit. (* only correct if "b" is not used *)
-    + admit. (* again, x shouldn't be "b" *)
+  - simpl in Hunused. destruct Hunused as [Hx He].
+    rewrite t_update_permute; [| assumption].
+    apply Spec_Asgn. (* need lemma about update and aeval and a_unused *)
 Admitted.
 
-Lemma sel_slh_ideal : forall P s a (b:bool) ds c s' a' (b':bool) os,
-  <("b" !-> (if b then 1 else 0); s, a, b, ds)> =[ sel_slh P c ]=>
-    <("b" !-> (if b' then 1 else 0); s', a', b', os)> ->
-  P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)>.
+Lemma sel_slh_ideal : forall c P s a (b:bool) ds s' a' (b':bool) os,
+  c_unused "b" c ->
+  s "b" = (if b then 1 else 0) ->
+  s' "b" = (if b' then 1 else 0) ->
+  <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
+  P |- <(s, a, b, ds)> =[ c ]=> <("b" !-> s "b"; s', a', b', os)>.
+Proof.
+  induction c; intros P s aa bb ds s' a' b' os Hunused Hsb Hs'b Heval;
+    simpl in *; inversion Heval.
+  - rewrite t_update_same. constructor.
 Admitted.
