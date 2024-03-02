@@ -1143,15 +1143,31 @@ Fixpoint c_unused (x:string) (c:com) : Prop :=
 
 Open Scope string_scope.
 
+(** To simplify some proofs we also restrict to while-free programs for now. *)
+
+(* SOONER: Even something as simple as [sel_slh_flag] below turns out to be hard
+   for while loops, since it has the flavour of backwards compiler
+   correctness. For backwards compiler correctness with while we probably need
+   to use a small-step semantics and a simulation direction flipping trick? *)
+
+Fixpoint c_no_while (c:com) : Prop :=
+  match c with
+  | <{{while _ do _ end}}> => False
+  | <{{if _ then c1 else c2 end}}>
+  | <{{c1; c2}}> => c_no_while c1 /\ c_no_while c2
+  | _ => True
+  end.
+
 (** As a warm-up now prove that [sel_slh] properly updates the variable "b". *)
 
 Lemma sel_slh_flag : forall c P s a (b:bool) ds s' a' (b':bool) os,
   c_unused "b" c ->
+  c_no_while c ->
   s "b" = (if b then 1 else 0) ->
   <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
   s' "b" = (if b' then 1 else 0).
 Proof.
-  induction c; intros P s aa bb ds s' a' b' os Hunused Hsb Heval;
+  induction c; intros P s aa bb ds s' a' b' os Hunused Hnowhile Hsb Heval;
     simpl in *; try (inversion Heval; subst; now eauto).
   - inversion Heval; subst. rewrite t_update_neq; tauto.
   - inversion Heval; subst.
@@ -1168,61 +1184,51 @@ Proof.
         simpl. rewrite Eqbe. rewrite t_update_eq. reflexivity.
       + eapply IHc1; try tauto; [|eassumption].
         simpl. rewrite Eqbe. rewrite t_update_eq. reflexivity. }
-  - inversion Heval; inversion H10; subst. rewrite t_update_eq. simpl.
-    inversion H1; inversion H11; subst.
-    + destruct (beval s b) eqn:Eqbe.
-      * inversion H23; inversion H2; inversion H16; subst.
-        apply IHc in H26; try tauto.
-        Focus 2. rewrite t_update_eq. simpl. rewrite Eqbe. assumption.
-        admit. (* TODO: induction c doesn't seem to interact well with while loops *)
-      * inversion H23; subst. rewrite Eqbe. assumption.
-    + admit. (* symmetric *)
   - destruct (P x) eqn:Heq.
     + inversion Heval; inversion H10; subst.
       rewrite t_update_neq; try tauto.
       inversion H1; subst; rewrite t_update_neq; tauto.
     + inversion Heval; subst; rewrite t_update_neq; try tauto.
-Abort.
-
-Lemma sel_slh_flag : forall c P s a (b:bool) ds s' a' (b':bool) os,
-  c_unused "b" c ->
-  s "b" = (if b then 1 else 0) ->
-  <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
-  s' "b" = (if b' then 1 else 0).
-Proof.
-  intros c P s aa bb ds s' a' b' os Hunused Hsb Heval.
-  remember (sel_slh P c) as cslh eqn:Eqcslh.
-  generalize dependent c. generalize dependent P.
-  induction Heval; intros P cc Hunused Eqcslh; (* <-- long shot! *)
-    destruct cc; simpl in *; inversion Eqcslh; subst; eauto.
-  - rewrite t_update_neq; tauto.
-  - destruct (P x0); inversion Eqcslh.
-  - eapply IHHeval2; eauto; try tauto.
-    eapply IHHeval1; eauto; tauto.
-  - (* seq + while *) admit.
-  - (* seq + array update *) admit.
-Abort.
-
-(* SOONER: Even this simple lemma turns out to be hard, since it has the flavour
-   of backwards compiler correctness. Can we use a simulation direction
-   flipping trick? Could it anyway be that we need to use a small-step semantics?
-
-   One way to avoid this problem would be to only prove this theorem for
-   while-free programs?  (then induction on [c] will just work?) *)
+Qed.
 
 (** We now prove that [sel_slh] implies the ideal semantics. *)
 
+Lemma ideal_unused_update : forall P s a b ds c s' a' b' os s0,
+  c_unused "b" c ->
+  P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
+  P |- <("b" !-> s0 "b"; s, a, b, ds)> =[ c ]=> <(s', a', b', os)>.
+Admitted.
+
+Lemma spec_unused_same : forall s a b ds c s' a' b' os,
+  c_unused "b" c ->
+  <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
+  s' "b" = s "b".
+Admitted.
+
+Lemma c_unused_sel_slh : forall x c P,
+  c_unused x c ->
+  c_unused x (sel_slh P c).
+Admitted.
+
 Lemma sel_slh_ideal : forall c P s a (b:bool) ds s' a' (b':bool) os,
   c_unused "b" c ->
-  s "b" = (if b then 1 else 0) ->
+  c_no_while c ->
+  s "b" = (if b then 1 else 0) -> (* TODO: is this really needed? we will see *)
   <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
-  s' "b" = (if b' then 1 else 0) /\ (* TODO: turned this into separate lemma above *)
-    P |- <(s, a, b, ds)> =[ c ]=> <("b" !-> s "b"; s', a', b', os)>.
+  P |- <(s, a, b, ds)> =[ c ]=> <("b" !-> s "b"; s', a', b', os)>.
 Proof.
-  (* unclear how induction c will interact with while loops; see problem above *)
-  induction c; intros P s aa bb ds s' a' b' os Hunused Hsb Heval;
+  induction c; intros P s aa bb ds s' a' b' os Hunused Hnowhile Hsb Heval;
     simpl in *; inversion Heval; subst.
-  - split; [assumption| ]. rewrite t_update_same. constructor.
+  - rewrite t_update_same. constructor.
+  - rewrite t_update_permute; [| tauto]. rewrite t_update_same.
+    constructor. reflexivity.
+  - econstructor.
+    + apply IHc1; try tauto; eassumption.
+    + eapply IHc2 in H10; try tauto.
+      * eapply ideal_unused_update; try tauto.
+        apply spec_unused_same in H1; [| apply c_unused_sel_slh; tauto].
+        rewrite H1 in H10. apply H10.
+      * eapply sel_slh_flag; eauto; tauto.
 Admitted.
 
 (** Finally, we use this to prove spec_ct for sel_slh. *)
@@ -1248,8 +1254,9 @@ Proof.
   eapply ideal_spec_ct_secure; eauto.
 Qed.
 
-(* HIDE: The less useful direction of the the idealized semantics
-   being equivalent to [sel_slh]; probably easier to prove. *)
+(* HIDE: The less useful direction of the the idealized semantics being
+   equivalent to [sel_slh]; probably easier to prove (forwards compiler
+   correctness). *)
 
 Lemma ideal_sel_slh : forall P s a b ds c s' a' b' os,
   c_unused "b" c ->
