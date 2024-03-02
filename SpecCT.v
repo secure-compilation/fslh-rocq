@@ -780,16 +780,14 @@ Definition spec_ct_secure :=
 
 (** Selective SLH transformation that we will show enforces speculative constant-time *)
 
-Open Scope string_scope.
-
 Fixpoint sel_slh (P:pub_vars) (c:com) :=
-  match c with
+  (match c with
   | <{{skip}}> => <{{skip}}>
   | <{{x := e}}> => <{{x := e}}>
   | <{{c1; c2}}> => <{{ sel_slh P c1; sel_slh P c2}}>
   | <{{if be then c1 else c2 end}}> =>
       <{{if be then "b" := (be ? "b" : 1); sel_slh P c1
-               else "b" := (be ? 1 : "b"); sel_slh P c1 end}}>
+               else "b" := (be ? 1 : "b"); sel_slh P c2 end}}>
   | <{{while be do c end}}> =>
       <{{while be do "b" := (be ? "b" : 1); sel_slh P c end;
          "b" := (be ? 1 : "b")}}>
@@ -797,9 +795,7 @@ Fixpoint sel_slh (P:pub_vars) (c:com) :=
       if P x then <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
              else <{{x <- a[[i]]}}>
   | <{{a[i] <- e}}> => <{{a[i] <- e}}>
-  end.
-
-Close Scope string_scope.
+  end)%string.
 
 (** To prove this transformation secure Spectre Declassified uses an idealized semantics *)
 
@@ -1100,15 +1096,17 @@ Proof.
   - (* AWrite *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
 Qed.
 
-(* SOONER: Prove that the idealized semantics is equivalent to [sel_slh]
-   transformation (Lemma 6 and the more precise Lemma 7). Unclear if we need to
-   define any erasure function, since in our semantics we already erased the
-   silent observations by working with observation lists and adding nothing to
-   them for silent observations. That's convenient. Q: Is that correct though?
+(** We now prove that the idealized semantics is equivalent to [sel_slh]
+   transformation (Lemma 6 and the more precise Lemma 7). *)
+
+(* SOONER: Unclear if we need to define any erasure function, since in our
+   semantics we already erased the silent observations by working with
+   observation lists and adding nothing to them for silent observations.
+   That's convenient. Q: Is that correct though?
    Or does it weaken our attacker model and we need to switch to options? *)
 
-(** All results about [sel_slh] have to assume that [c] doesn't already use the
-    variable ["b"]. *)
+(** All results about [sel_slh] below assume that the original [c] doesn't
+    already use the variable ["b"] needed by the [sel_slh] translation. *)
 
 Fixpoint a_unused (x:string) (a:aexp) : Prop :=
   match a with
@@ -1145,6 +1143,88 @@ Fixpoint c_unused (x:string) (c:com) : Prop :=
 
 Open Scope string_scope.
 
+(** As a warm-up now prove that [sel_slh] properly updates the variable "b". *)
+
+Lemma sel_slh_flag : forall c P s a (b:bool) ds s' a' (b':bool) os,
+  c_unused "b" c ->
+  s "b" = (if b then 1 else 0) ->
+  <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
+  s' "b" = (if b' then 1 else 0).
+Proof.
+  induction c; intros P s aa bb ds s' a' b' os Hunused Hsb Heval;
+    simpl in *; try (inversion Heval; subst; now eauto).
+  - inversion Heval; subst. rewrite t_update_neq; tauto.
+  - inversion Heval; subst.
+    eapply IHc2; try tauto; [|eassumption].
+    eapply IHc1; try tauto; eassumption.
+  - inversion Heval; subst; eauto.
+    { destruct (beval s b) eqn:Eqbe; inversion H10; inversion H1; subst.
+      + eapply IHc1; try tauto; [|eassumption].
+        simpl. rewrite Eqbe. rewrite t_update_eq. assumption.
+      + eapply IHc2; try tauto; [|eassumption].
+        simpl. rewrite Eqbe. rewrite t_update_eq. assumption.}
+    { destruct (beval s b) eqn:Eqbe; inversion H10; inversion H1; subst.
+      + eapply IHc2; try tauto; [|eassumption].
+        simpl. rewrite Eqbe. rewrite t_update_eq. reflexivity.
+      + eapply IHc1; try tauto; [|eassumption].
+        simpl. rewrite Eqbe. rewrite t_update_eq. reflexivity. }
+  - inversion Heval; inversion H10; subst. rewrite t_update_eq. simpl.
+    inversion H1; inversion H11; subst.
+    + destruct (beval s b) eqn:Eqbe.
+      * inversion H23; inversion H2; inversion H16; subst.
+        apply IHc in H26; try tauto.
+        Focus 2. rewrite t_update_eq. simpl. rewrite Eqbe. assumption.
+        admit. (* TODO: induction c doesn't seem to interact well with while loops *)
+      * inversion H23; subst. rewrite Eqbe. assumption.
+    + admit. (* symmetric *)
+  - destruct (P x) eqn:Heq.
+    + inversion Heval; inversion H10; subst.
+      rewrite t_update_neq; try tauto.
+      inversion H1; subst; rewrite t_update_neq; tauto.
+    + inversion Heval; subst; rewrite t_update_neq; try tauto.
+Admitted.
+
+(** We now prove that [sel_slh] implies the ideal semantics. *)
+
+Lemma sel_slh_ideal : forall c P s a (b:bool) ds s' a' (b':bool) os,
+  c_unused "b" c ->
+  s "b" = (if b then 1 else 0) ->
+  <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
+  s' "b" = (if b' then 1 else 0) /\ (* TODO: turned this into separate lemma above *)
+    P |- <(s, a, b, ds)> =[ c ]=> <("b" !-> s "b"; s', a', b', os)>.
+Proof.
+  (* unclear how induction c will interact with while loops; see problem above *)
+  induction c; intros P s aa bb ds s' a' b' os Hunused Hsb Heval;
+    simpl in *; inversion Heval; subst.
+  - split; [assumption| ]. rewrite t_update_same. constructor.
+Admitted.
+
+(** Finally, we use this to prove spec_ct for sel_slh. *)
+
+Theorem sel_slh_spec_ct_secure :
+  forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
+    P ;; PA |-ct- c ->
+    pub_equiv P s1 s2 ->
+    pub_equiv PA a1 a2 ->
+    c_unused "b" c ->
+    s1 "b" = 0 ->
+    s2 "b" = 0 ->
+    <(s1, a1, false, ds)> =[ sel_slh P c ]=> <(s1', a1', b1', os1)> ->
+    <(s2, a2, false, ds)> =[ sel_slh P c ]=> <(s2', a2', b2', os2)> ->
+    os1 = os2.
+Proof.
+  intros P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds
+    Hwt Heq Haeq Hunused Hs1b Hs2b Heval1 Heval2.
+  eapply sel_slh_ideal in Heval1; try assumption.
+  destruct Heval1 as [_ Heval1].
+  eapply sel_slh_ideal in Heval2; try assumption.
+  destruct Heval2 as [_ Heval2].
+  eapply ideal_spec_ct_secure; eauto.
+Qed.
+
+(* HIDE: The less useful direction of the the idealized semantics
+   being equivalent to [sel_slh]; probably easier to prove. *)
+
 Lemma ideal_sel_slh : forall P s a b ds c s' a' b' os,
   c_unused "b" c ->
   P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
@@ -1157,16 +1237,4 @@ Proof.
   - simpl in Hunused. destruct Hunused as [Hx He].
     rewrite t_update_permute; [| assumption].
     apply Spec_Asgn. (* need lemma about update and aeval and a_unused *)
-Admitted.
-
-Lemma sel_slh_ideal : forall c P s a (b:bool) ds s' a' (b':bool) os,
-  c_unused "b" c ->
-  s "b" = (if b then 1 else 0) ->
-  s' "b" = (if b' then 1 else 0) ->
-  <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
-  P |- <(s, a, b, ds)> =[ c ]=> <("b" !-> s "b"; s', a', b', os)>.
-Proof.
-  induction c; intros P s aa bb ds s' a' b' os Hunused Hsb Hs'b Heval;
-    simpl in *; inversion Heval.
-  - rewrite t_update_same. constructor.
 Admitted.
