@@ -1182,7 +1182,33 @@ Proof.
       rewrite t_update_neq; try tauto.
       inversion H1; subst; rewrite t_update_neq; tauto.
     + inversion Heval; subst; rewrite t_update_neq; try tauto.
-Admitted.
+Abort.
+
+Lemma sel_slh_flag : forall c P s a (b:bool) ds s' a' (b':bool) os,
+  c_unused "b" c ->
+  s "b" = (if b then 1 else 0) ->
+  <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
+  s' "b" = (if b' then 1 else 0).
+Proof.
+  intros c P s aa bb ds s' a' b' os Hunused Hsb Heval.
+  remember (sel_slh P c) as cslh eqn:Eqcslh.
+  generalize dependent c. generalize dependent P.
+  induction Heval; intros P cc Hunused Eqcslh; (* <-- long shot! *)
+    destruct cc; simpl in *; inversion Eqcslh; subst; eauto.
+  - rewrite t_update_neq; tauto.
+  - destruct (P x0); inversion Eqcslh.
+  - eapply IHHeval2; eauto; try tauto.
+    eapply IHHeval1; eauto; tauto.
+  - (* seq + while *) admit.
+  - (* seq + array update *) admit.
+Abort.
+
+(* SOONER: Even this simple lemma turns out to be hard, since it has the flavour
+   of backwards compiler correctness. Can we use a simulation direction
+   flipping trick? Could it anyway be that we need to use a small-step semantics?
+
+   One way to avoid this problem would be to only prove this theorem for
+   while-free programs?  (then induction on [c] will just work?) *)
 
 (** We now prove that [sel_slh] implies the ideal semantics. *)
 
