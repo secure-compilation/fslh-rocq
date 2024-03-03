@@ -1158,7 +1158,7 @@ Fixpoint c_no_while (c:com) : Prop :=
   | _ => True
   end.
 
-(** As a warm-up now prove that [sel_slh] properly updates the variable "b". *)
+(** As a warm-up we prove that [sel_slh] properly updates the variable "b". *)
 
 Lemma sel_slh_flag : forall c P s a (b:bool) ds s' a' (b':bool) os,
   c_unused "b" c ->
@@ -1229,6 +1229,16 @@ Proof.
         apply spec_unused_same in H1; [| apply c_unused_sel_slh; tauto].
         rewrite H1 in H10. apply H10.
       * eapply sel_slh_flag; eauto; tauto.
+  - destruct (beval s b) eqn:Eqbe; inversion H10; inversion H1; subst.
+      + eapply IHc1 in H11; try tauto.
+        Focus 2. rewrite t_update_eq. simpl. rewrite Eqbe. assumption.
+        replace (OBranch true) with (OBranch (beval s b)) by now rewrite <- Eqbe.
+        simpl. eapply Ideal_If. rewrite Eqbe.
+        simpl in H11. rewrite Eqbe in H11. rewrite t_update_same in H11.
+        clear H10 H1 Heval.
+        admit. (* Need to erase some DSteps, otherwise statement doesn't hold!?
+        Maybe a better fix would be to change semantics so that sequential code
+        doesn't need DSteps. *)
 Admitted.
 
 (** Finally, we use this to prove spec_ct for sel_slh. *)
@@ -1239,6 +1249,7 @@ Theorem sel_slh_spec_ct_secure :
     pub_equiv P s1 s2 ->
     pub_equiv PA a1 a2 ->
     c_unused "b" c ->
+    c_no_while c ->
     s1 "b" = 0 ->
     s2 "b" = 0 ->
     <(s1, a1, false, ds)> =[ sel_slh P c ]=> <(s1', a1', b1', os1)> ->
@@ -1246,11 +1257,9 @@ Theorem sel_slh_spec_ct_secure :
     os1 = os2.
 Proof.
   intros P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds
-    Hwt Heq Haeq Hunused Hs1b Hs2b Heval1 Heval2.
+    Hwt Heq Haeq Hunused Hnowhile Hs1b Hs2b Heval1 Heval2.
   eapply sel_slh_ideal in Heval1; try assumption.
-  destruct Heval1 as [_ Heval1].
   eapply sel_slh_ideal in Heval2; try assumption.
-  destruct Heval2 as [_ Heval2].
   eapply ideal_spec_ct_secure; eauto.
 Qed.
 
