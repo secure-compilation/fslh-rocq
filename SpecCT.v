@@ -621,10 +621,10 @@ Reserved Notation
 Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
                              state -> astate -> bool -> obs -> Prop :=
   | Spec_Skip : forall st ast b,
-      <(st, ast, b, [DStep])> =[ skip ]=> <(st, ast, b, [])>
+      <(st, ast, b, [])> =[ skip ]=> <(st, ast, b, [])>
   | Spec_Asgn  : forall st ast b e n x,
       aeval st e = n ->
-      <(st, ast, b, [DStep])> =[ x := e ]=> <(x !-> n; st, ast, b, [])>
+      <(st, ast, b, [])> =[ x := e ]=> <(x !-> n; st, ast, b, [])>
   | Spec_Seq : forall c1 c2 st ast b st' ast' b' st'' ast'' b'' os1 os2 ds1 ds2,
       <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)>  ->
       <(st', ast', b', ds2)> =[ c2 ]=> <(st'', ast'', b'', os2)> ->
@@ -645,11 +645,11 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
       <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
       <(st, ast, b, ds)> =[ while be do c end ]=> <(st', ast', b', os)>
-  | Spec_ARead : forall st ast b x a ie i,
+  | Spec_ARead : forall st ast x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
-      <(st, ast, b, [DStep])> =[ x <- a[[ie]] ]=>
-        <(x !-> nth i (ast a) 0; st, ast, b, [OARead a i])>
+      <(st, ast, false, [DStep])> =[ x <- a[[ie]] ]=>
+        <(x !-> nth i (ast a) 0; st, ast, false, [OARead a i])>
   | Spec_ARead_U : forall st ast x a ie i a' i',
       aeval st ie = i ->
       i >= length (ast a) ->
@@ -698,6 +698,18 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    they define final results seem wrong for stuck fences, and that would either
    need to be fixed to include stuck fences deep inside or to bubble up stuck
    fences to the top (error monad, see prev point). *)
+
+(* HIDE: Another fix I did to their semantics is in the (Spec_ARead) rule, which
+   here requires no speculation, and in (Ideal_ARead_Prot) which takes the same
+   direction as (Spec_Ared_U, not Spec_Aread). This reduces rule overlap, makes
+   the Spec_ and Ideal_ semantics more aligned, and thus makes the SLH
+   translation more correct. *)
+
+(* HIDE: One design decision here is to neither consume DSteps not to generate
+   dummy observations for skip and (register) assignment commands. This leads to
+   simpler proofs (e.g. no need for erasure) and it also seems sensible: it's
+   not like a skip takes the same time as an assignment anyway, so making these
+   things observable was anyway questionable! *)
 
 (* LATER: Could add the declassify construct from Spectre Declassified, but for
    now trying to keep things simple. If we add that then the RNI notion of
@@ -808,10 +820,10 @@ Inductive ideal_eval (P:pub_vars) :
     com -> state -> astate -> bool -> dirs ->
            state -> astate -> bool -> obs -> Prop :=
   | Ideal_Skip : forall st ast b,
-      P |- <(st, ast, b, [DStep])> =[ skip ]=> <(st, ast, b, [])>
+      P |- <(st, ast, b, [])> =[ skip ]=> <(st, ast, b, [])>
   | Ideal_Asgn  : forall st ast b e n x,
       aeval st e = n ->
-      P |- <(st, ast, b, [DStep])> =[ x := e ]=> <(x !-> n; st, ast, b, [])>
+      P |- <(st, ast, b, [])> =[ x := e ]=> <(x !-> n; st, ast, b, [])>
   | Ideal_Seq : forall c1 c2 st ast b st' ast' b' st'' ast'' b'' os1 os2 ds1 ds2,
       P |- <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)>  ->
       P |- <(st', ast', b', ds2)> =[ c2 ]=> <(st'', ast'', b'', os2)> ->
@@ -835,7 +847,7 @@ Inductive ideal_eval (P:pub_vars) :
   | Ideal_ARead : forall st ast x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
-      P |- <(st, ast, false, [DStep])> =[ x <- a[[ie]] ]=>  (* <-- NEW: only for sequential executions *)
+      P |- <(st, ast, false, [DStep])> =[ x <- a[[ie]] ]=>
         <(x !-> nth i (ast a) 0; st, ast, false, [OARead a i])>
   | Ideal_ARead_U : forall st ast x a ie i a' i',
       P x = secret -> (* <-- NEW: this rule applies now only for loads into secret variables *)
@@ -844,10 +856,11 @@ Inductive ideal_eval (P:pub_vars) :
       i' < length (ast a') ->
       P |- <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
         <(x !-> nth i' (ast a') 0; st, ast, true, [OARead a i])>
-  | Ideal_ARead_Prot : forall st ast x a ie i,
+  | Ideal_ARead_Prot : forall st ast x a ie i a' i',
       P x = public ->  (* <-- NEW: new rule for loads into public variables *)
       aeval st ie = i ->
-      P |- <(st, ast, true, [DStep])> =[ x <- a[[ie]] ]=>
+      i' < length (ast a') ->
+      P |- <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
         <(x !-> 0; st, ast, true, [OARead a i])>
   | Ideal_Write : forall st ast b a ie i e n,
       aeval st e = n ->
@@ -987,11 +1000,12 @@ Proof.
         apply Heq. apply Hy.
     + unfold prefix in Hds.
       destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds; reflexivity.
-  - (* array read contra *) unfold prefix in Hds.
-    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
-  - (* array read contra *) unfold prefix in Hds.
-    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
-  - (* array read (ARead_Prot) *) split4; eauto.
+  - (* array read contra *) rewrite H in *. discriminate.
+  - (* array read contra *) rewrite H in *. discriminate.
+  - (* array read (ARead_Prot) *)
+    assert(G : DLoad a' i' = DLoad a'0 i'0).
+    { destruct Hds as [Hds | Hds]; inversion Hds; inversion H0; subst; reflexivity. }
+    inversion G; subst. split4; eauto.
     intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
     + rewrite Hxy. do 2 rewrite t_update_eq. reflexivity.
     + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
@@ -1090,20 +1104,16 @@ Proof.
       * erewrite noninterferent_bexp; eassumption.
   - eapply IHHeval1; eauto. repeat constructor; eassumption.
   - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
-  - (* ARead_U *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
-  - (* ARead_Prot *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+  - (* ARead_U/Prot *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+  - (* ARead_U/Prot *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+  - (* ARead_U/Prot *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+  - (* ARead_U/Prot *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
   - (* AWrite *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
   - (* AWrite *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
 Qed.
 
 (** We now prove that the idealized semantics is equivalent to [sel_slh]
    transformation (Lemma 6 and the more precise Lemma 7). *)
-
-(* SOONER: Unclear if we need to define any erasure function, since in our
-   semantics we already erased the silent observations by working with
-   observation lists and adding nothing to them for silent observations.
-   That's convenient. Q: Is that correct though?
-   Or does it weaken our attacker model and we need to switch to options? *)
 
 (** All results about [sel_slh] below assume that the original [c] doesn't
     already use the variable ["b"] needed by the [sel_slh] translation. *)
@@ -1193,10 +1203,10 @@ Qed.
 
 (** We now prove that [sel_slh] implies the ideal semantics. *)
 
-Lemma ideal_unused_update : forall P s a b ds c s' a' b' os s0,
+Lemma ideal_unused_update : forall P s a b ds c s' a' b' os X,
   c_unused "b" c ->
-  P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
-  P |- <("b" !-> s0 "b"; s, a, b, ds)> =[ c ]=> <(s', a', b', os)>.
+  P |- <("b" !-> X; s, a, b, ds)> =[ c ]=> <("b" !-> X; s', a', b', os)> ->
+  P |- <(s, a, b, ds)> =[ c ]=> <("b" !-> s "b"; s', a', b', os)>.
 Admitted.
 
 Lemma spec_unused_same : forall s a b ds c s' a' b' os,
@@ -1225,20 +1235,53 @@ Proof.
   - econstructor.
     + apply IHc1; try tauto; eassumption.
     + eapply IHc2 in H10; try tauto.
-      * eapply ideal_unused_update; try tauto.
-        apply spec_unused_same in H1; [| apply c_unused_sel_slh; tauto].
-        rewrite H1 in H10. apply H10.
+      * assert(Gst : st' "b" = s "b").
+        { eapply spec_unused_same; eauto. apply c_unused_sel_slh. tauto. }
+        rewrite <- Gst. rewrite t_update_same. eassumption.
       * eapply sel_slh_flag; eauto; tauto.
   - destruct (beval s b) eqn:Eqbe; inversion H10; inversion H1; subst.
-      + eapply IHc1 in H11; try tauto.
-        Focus 2. rewrite t_update_eq. simpl. rewrite Eqbe. assumption.
-        replace (OBranch true) with (OBranch (beval s b)) by now rewrite <- Eqbe.
+    + eapply IHc1 in H11; try tauto.
+      * replace (OBranch true) with (OBranch (beval s b)) by now rewrite <- Eqbe.
         simpl. eapply Ideal_If. rewrite Eqbe.
         simpl in H11. rewrite Eqbe in H11. rewrite t_update_same in H11.
-        clear H10 H1 Heval.
-        admit. (* Need to erase some DSteps, otherwise statement doesn't hold!?
-        Maybe a better fix would be to change semantics so that sequential code
-        doesn't need DSteps. *)
+        apply H11.
+      * rewrite t_update_eq. simpl. rewrite Eqbe. assumption.
+    + eapply IHc2 in H11; try tauto.
+      * replace (OBranch false) with (OBranch (beval s b)) by now rewrite <- Eqbe.
+        simpl. eapply Ideal_If. rewrite Eqbe.
+        simpl in H11. rewrite Eqbe in H11. rewrite t_update_same in H11.
+        apply H11.
+      * rewrite t_update_eq. simpl. rewrite Eqbe. assumption.
+  - (* Ideal_If_F *)
+    destruct (beval s b) eqn:Eqbe; inversion H10; inversion H1; subst; simpl in *;
+      rewrite Eqbe in H11.
+    + replace (OBranch true) with (OBranch (beval s b)) by now rewrite <- Eqbe.
+      eapply Ideal_If_F. rewrite Eqbe.
+      eapply IHc2 in H11; try tauto. rewrite t_update_eq in H11.
+      eapply ideal_unused_update in H11; tauto. 
+    + replace (OBranch false) with (OBranch (beval s b)) by now rewrite <- Eqbe.
+      eapply Ideal_If_F. rewrite Eqbe.
+      eapply IHc1 in H11; try tauto. rewrite t_update_eq in H11.
+      eapply ideal_unused_update in H11; tauto.
+  - tauto.
+  - destruct (P x) eqn:Heq; discriminate.
+  - destruct (P x) eqn:Heq; discriminate.
+  - destruct (P x) eqn:Heq; try discriminate. inversion H; clear H; subst.
+    inversion H1; clear H1; subst. repeat rewrite <- app_nil_end in *.
+    inversion H0; clear H0; subst; simpl.
+    * rewrite t_update_neq; [| tauto]. rewrite Hsb.
+      rewrite t_update_shadow. rewrite t_update_permute; [| tauto].
+(*
+      destruct b'; simpl.
+      { rewrite <- Hsb. rewrite t_update_same. apply Ideal_ARead_Prot. constructor; tauto. }
+      { rewrite <- Hsb at 1. rewrite t_update_same. rewrite t_update_eq. constructor; tauto. }
+   * rewrite t_update_neq; [| tauto]. rewrite Hsb.
+     rewrite t_update_shadow. rewrite t_update_permute; [| tauto]. 
+     simpl. rewrite <- Hsb at 1. rewrite t_update_same. apply Ideal_ARead_Prot. constructor; tauto.
+     destruct b'; simpl.
+     { rewrite <- Hsb. rewrite t_update_same. constructor; tauto. }
+     { rewrite <- Hsb at 1. rewrite t_update_same. rewrite t_update_eq. constructor; tauto. }
+     admit. *)
 Admitted.
 
 (** Finally, we use this to prove spec_ct for sel_slh. *)
