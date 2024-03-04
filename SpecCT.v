@@ -1223,7 +1223,7 @@ Admitted.
 Lemma sel_slh_ideal : forall c P s a (b:bool) ds s' a' (b':bool) os,
   c_unused "b" c ->
   c_no_while c ->
-  s "b" = (if b then 1 else 0) -> (* TODO: is this really needed? we will see *)
+  s "b" = (if b then 1 else 0) ->
   <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
   P |- <(s, a, b, ds)> =[ c ]=> <("b" !-> s "b"; s', a', b', os)>.
 Proof.
@@ -1258,7 +1258,7 @@ Proof.
     + replace (OBranch true) with (OBranch (beval s b)) by now rewrite <- Eqbe.
       eapply Ideal_If_F. rewrite Eqbe.
       eapply IHc2 in H11; try tauto. rewrite t_update_eq in H11.
-      eapply ideal_unused_update in H11; tauto. 
+      eapply ideal_unused_update in H11; tauto.
     + replace (OBranch false) with (OBranch (beval s b)) by now rewrite <- Eqbe.
       eapply Ideal_If_F. rewrite Eqbe.
       eapply IHc1 in H11; try tauto. rewrite t_update_eq in H11.
@@ -1266,23 +1266,32 @@ Proof.
   - tauto.
   - destruct (P x) eqn:Heq; discriminate.
   - destruct (P x) eqn:Heq; discriminate.
-  - destruct (P x) eqn:Heq; try discriminate. inversion H; clear H; subst.
+  - destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
     inversion H1; clear H1; subst. repeat rewrite <- app_nil_end in *.
-    inversion H0; clear H0; subst; simpl.
+    inversion H0; clear H0; subst; simpl in *.
     * rewrite t_update_neq; [| tauto]. rewrite Hsb.
       rewrite t_update_shadow. rewrite t_update_permute; [| tauto].
-(*
-      destruct b'; simpl.
-      { rewrite <- Hsb. rewrite t_update_same. apply Ideal_ARead_Prot. constructor; tauto. }
-      { rewrite <- Hsb at 1. rewrite t_update_same. rewrite t_update_eq. constructor; tauto. }
-   * rewrite t_update_neq; [| tauto]. rewrite Hsb.
-     rewrite t_update_shadow. rewrite t_update_permute; [| tauto]. 
-     simpl. rewrite <- Hsb at 1. rewrite t_update_same. apply Ideal_ARead_Prot. constructor; tauto.
-     destruct b'; simpl.
-     { rewrite <- Hsb. rewrite t_update_same. constructor; tauto. }
-     { rewrite <- Hsb at 1. rewrite t_update_same. rewrite t_update_eq. constructor; tauto. }
-     admit. *)
-Admitted.
+      rewrite t_update_eq. simpl.
+      rewrite <- Hsb at 1. rewrite t_update_same.
+      constructor; tauto.
+    * rewrite t_update_neq; [| tauto]. rewrite Hsb.
+      rewrite t_update_shadow. rewrite t_update_permute; [| tauto].
+      simpl. rewrite <- Hsb at 1. rewrite t_update_same. apply Ideal_ARead_Prot; tauto.
+  - destruct (P x) eqn:Heq; discriminate H.
+  - destruct (P x) eqn:Heq; discriminate H.
+  - destruct (P x) eqn:Heq; discriminate H.
+  - destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
+    rewrite t_update_permute; [| tauto]. rewrite t_update_same.
+    constructor; tauto.
+  - (* same *)
+    destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
+    rewrite t_update_permute; [| tauto]. rewrite t_update_same.
+    constructor; tauto.
+  - destruct (P x) eqn:Heq; discriminate H.
+  - destruct (P x) eqn:Heq; discriminate H.
+  - rewrite t_update_same. constructor; tauto.
+  - rewrite t_update_same. constructor; tauto.
+Qed.
 
 (** Finally, we use this to prove spec_ct for sel_slh. *)
 
