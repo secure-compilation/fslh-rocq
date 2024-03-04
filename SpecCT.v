@@ -859,6 +859,7 @@ Inductive ideal_eval (P:pub_vars) :
   | Ideal_ARead_Prot : forall st ast x a ie i a' i',
       P x = public ->  (* <-- NEW: new rule for loads into public variables *)
       aeval st ie = i ->
+      i >= length (ast a) ->
       i' < length (ast a') ->
       P |- <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
         <(x !-> 0; st, ast, true, [OARead a i])>
@@ -1319,6 +1320,16 @@ Qed.
    equivalent to [sel_slh]; probably easier to prove (forwards compiler
    correctness). *)
 
+Lemma aeval_unused_update : forall X st e n,
+  a_unused X e ->
+  aeval (X !-> n; st) e = aeval st e.
+Admitted.
+
+Lemma beval_unused_update : forall X st be n,
+  b_unused X be ->
+  beval (X !-> n; st) be = beval st be.
+Admitted.
+
 Lemma ideal_sel_slh : forall P s a b ds c s' a' b' os,
   c_unused "b" c ->
   P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
@@ -1328,7 +1339,87 @@ Proof.
   intros P s a b ds c s' a' b' os Hunused Heval.
   induction Heval; simpl in *.
   - constructor.
-  - simpl in Hunused. destruct Hunused as [Hx He].
+  - destruct Hunused as [Hx He].
     rewrite t_update_permute; [| assumption].
-    apply Spec_Asgn. (* need lemma about update and aeval and a_unused *)
+    apply Spec_Asgn. rewrite aeval_unused_update; assumption.
+  - eapply Spec_Seq.
+    + eapply IHHeval1. tauto.
+    + eapply IHHeval2. tauto.
+  - replace (beval st be) with (beval ("b" !-> (if b then 1 else 0); st) be)
+      by (apply beval_unused_update; tauto).
+    apply Spec_If. rewrite beval_unused_update; [| tauto].
+    destruct (beval st be) eqn:Eqbeval.
+    + replace ds with ([]++ds)%list by reflexivity.
+      replace os1 with ([]++os1)%list by reflexivity.
+      eapply Spec_Seq.
+      * apply Spec_Asgn. reflexivity.
+      * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
+        rewrite t_update_same. apply IHHeval. tauto.
+    + (* same *)
+      replace ds with ([]++ds)%list by reflexivity.
+      replace os1 with ([]++os1)%list by reflexivity.
+      eapply Spec_Seq.
+      * apply Spec_Asgn. reflexivity.
+      * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
+        rewrite t_update_same. apply IHHeval. tauto.
+  - replace (beval st be) with (beval ("b" !-> (if b then 1 else 0); st) be)
+      by (apply beval_unused_update; tauto).
+    apply Spec_If_F. rewrite beval_unused_update; [| tauto].
+    destruct (beval st be) eqn:Eqbeval.
+    + replace ds with ([]++ds)%list by reflexivity.
+      replace os1 with ([]++os1)%list by reflexivity.
+      eapply Spec_Seq.
+      * apply Spec_Asgn. reflexivity.
+      * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
+        rewrite t_update_shadow. apply IHHeval. tauto.
+    + (* same *)
+      replace ds with ([]++ds)%list by reflexivity.
+      replace os1 with ([]++os1)%list by reflexivity.
+      eapply Spec_Seq.
+      * apply Spec_Asgn. reflexivity.
+      * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
+        rewrite t_update_shadow. apply IHHeval. tauto.
+  - (* while case; seems difficult; unclear if it will work
+       (unclear whether defining while in terms of if helps here) *)
+    assert(G : b_unused "b" be /\
+      (c_unused "b" c /\ b_unused "b" be /\ c_unused "b" c) /\ True) by tauto.
+    specialize (IHHeval G). clear G.
+    replace ds with (ds++[])%list by apply app_nil_r.
+    replace os with (os++[])%list by apply app_nil_r.
+    inversion IHHeval; clear IHHeval; subst.
+    + (* Spec_If *)
+      eapply Spec_Seq.
+      * apply Spec_While. apply Spec_If.
+        destruct (beval ("b" !-> (if b then 1 else 0); st)) eqn:Eqbeval; admit.
+      * constructor. simpl. admit.
+    + admit.
+  - rewrite t_update_permute; [| tauto]. destruct (P x) eqn:EqPx.
+    * replace [DStep] with ([DStep]++[])%list by apply app_nil_r.
+      replace [OARead a i] with ([OARead a i]++[])%list by apply app_nil_r.
+      eapply Spec_Seq.
+      { apply Spec_ARead; [| tauto]. rewrite aeval_unused_update; tauto. }
+      { assert (G : (x !-> nth i (ast a) 0; "b" !-> 0; st) =
+                    (x !-> aeval (x !-> nth i (ast a) 0; "b" !-> 0; st)
+                                 <{{("b" = 1) ? 0 : x}}>;
+                    x !-> nth i (ast a) 0; "b" !-> 0; st)).
+        { simpl. rewrite t_update_neq; [|tauto]. rewrite t_update_eq. simpl.
+          rewrite t_update_same. reflexivity. }
+        rewrite G at 2. apply Spec_Asgn. reflexivity. }
+    * apply Spec_ARead; [| tauto]. rewrite aeval_unused_update; tauto.
+  - rewrite H. unfold secret. rewrite t_update_permute; [| tauto].
+    apply Spec_ARead_U; try tauto. rewrite aeval_unused_update; tauto.
+  - rewrite H. unfold public.
+    replace [DLoad a' i'] with ([DLoad a' i']++[])%list by apply app_nil_r.
+    replace [OARead a i] with ([OARead a i]++[])%list by apply app_nil_r.
+    eapply Spec_Seq.
+    + apply Spec_ARead_U; try tauto. rewrite aeval_unused_update; tauto.
+    + assert (G : ("b" !-> 1; x !-> 0; st) =
+                  (x !-> aeval (x !-> nth i' (ast a') 0; "b" !-> 1; st)
+                               <{{("b" = 1) ? 0 : x}}>;
+                   x !-> nth i' (ast a') 0; "b" !-> 1; st)).
+      { simpl. rewrite t_update_neq; [|tauto]. rewrite t_update_eq. simpl.
+        rewrite t_update_permute; [| tauto]. rewrite t_update_shadow. reflexivity. }
+      rewrite G. simpl. apply Spec_Asgn. reflexivity.
+  - constructor; try rewrite aeval_unused_update; tauto.
+  - constructor; try rewrite aeval_unused_update; tauto.
 Admitted.
