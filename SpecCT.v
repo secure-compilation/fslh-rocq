@@ -1316,9 +1316,8 @@ Proof.
   eapply ideal_spec_ct_secure; eauto.
 Qed.
 
-(* HIDE: The less useful direction of the the idealized semantics being
-   equivalent to [sel_slh]; probably easier to prove (forwards compiler
-   correctness). *)
+(* HIDE: The less useful for security direction of the idealized semantics being
+   equivalent to [sel_slh]; easier to prove (forwards compiler correctness). *)
 
 Lemma aeval_unused_update : forall X st e n,
   a_unused X e ->
@@ -1328,6 +1327,16 @@ Admitted.
 Lemma beval_unused_update : forall X st be n,
   b_unused X be ->
   beval (X !-> n; st) be = beval st be.
+Admitted.
+
+Lemma spec_seq_assoc3 : forall st ast b ds c1 c2 c3 st' ast' b' os,
+  <( st, ast, b, ds )> =[ c1; c2; c3 ]=> <( st', ast', b', os )> ->
+  <( st, ast, b, ds )> =[ (c1; c2); c3 ]=> <( st', ast', b', os )>.
+Admitted.
+
+Lemma spec_seq_assoc4 : forall st ast b ds c1 c2 c3 c4 st' ast' b' os,
+  <( st, ast, b, ds )> =[ c1; c2; c3; c4 ]=> <( st', ast', b', os )> ->
+  <( st, ast, b, ds )> =[ (c1; c2; c3); c4 ]=> <( st', ast', b', os )>.
 Admitted.
 
 Lemma ideal_sel_slh : forall P s a b ds c s' a' b' os,
@@ -1379,20 +1388,49 @@ Proof.
       * apply Spec_Asgn. reflexivity.
       * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
         rewrite t_update_shadow. apply IHHeval. tauto.
-  - (* while case; seems difficult; unclear if it will work
-       (unclear whether defining while in terms of if helps here) *)
+  - (* while (most difficult case); it works though
+       - proved mispeculation subcase, and the other case should be the same
+       - TODO: clean up the proof of the mispeculation subcase before copy pasting *)
     assert(G : b_unused "b" be /\
       (c_unused "b" c /\ b_unused "b" be /\ c_unused "b" c) /\ True) by tauto.
     specialize (IHHeval G). clear G.
-    replace ds with (ds++[])%list by apply app_nil_r.
-    replace os with (os++[])%list by apply app_nil_r.
-    inversion IHHeval; clear IHHeval; subst.
-    + (* Spec_If *)
+    inversion IHHeval; clear IHHeval; subst. (* Spec_If *)
+    + replace (DStep :: ds0) with ((DStep :: ds0)++[])%list by apply app_nil_r.
+      replace (OBranch (beval ("b" !-> (if b then 1 else 0); st) be) :: os1)
+        with ((OBranch (beval ("b" !-> (if b then 1 else 0); st) be) :: os1)++[])%list
+        by apply app_nil_r.
       eapply Spec_Seq.
       * apply Spec_While. apply Spec_If.
+        rewrite beval_unused_update; [| tauto].
         destruct (beval ("b" !-> (if b then 1 else 0); st)) eqn:Eqbeval; admit.
       * constructor. simpl. admit.
-    + admit.
+    + (* mispeculated while *)
+      rewrite beval_unused_update in H10; try tauto.
+      destruct (beval st be) eqn:Eqbeval.
+      * inversion H10; inversion H11; subst.
+        replace (DForce :: ds1 ++ [])%list
+          with ([DForce] ++ ds1)%list by (rewrite app_nil_r; reflexivity).
+        replace (OBranch (beval ("b" !-> (if b then 1 else 0); st) be) :: os0 ++ [])
+          with ([OBranch (beval ("b" !-> (if b then 1 else 0); st) be)] ++ os0)%list
+          by (rewrite app_nil_r; reflexivity).
+        eapply Spec_Seq; [| eassumption].
+        apply Spec_While. apply Spec_If_F.
+        rewrite beval_unused_update; [| tauto].
+        rewrite Eqbeval. apply Spec_Skip.
+      * rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
+        apply spec_seq_assoc4 in H10.
+        inversion H10; subst.
+        replace (DForce :: ds1 ++ ds2)%list
+          with ((DForce :: ds1) ++ ds2)%list by reflexivity.
+        replace (OBranch false :: os0 ++ os2)%list
+          with ((OBranch false :: os0) ++ os2)%list by reflexivity.
+        eapply Spec_Seq; [| eassumption].
+        apply Spec_While.
+        (* going back and forth *)
+        replace (OBranch false) with (OBranch (beval ("b" !-> (if b then 1 else 0); st) be))
+          by now (rewrite beval_unused_update; [| tauto]; rewrite <- Eqbeval).
+        eapply Spec_If_F. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
+        apply spec_seq_assoc3. assumption.
   - rewrite t_update_permute; [| tauto]. destruct (P x) eqn:EqPx.
     * replace [DStep] with ([DStep]++[])%list by apply app_nil_r.
       replace [OARead a i] with ([OARead a i]++[])%list by apply app_nil_r.
@@ -1422,4 +1460,4 @@ Proof.
       rewrite G. simpl. apply Spec_Asgn. reflexivity.
   - constructor; try rewrite aeval_unused_update; tauto.
   - constructor; try rewrite aeval_unused_update; tauto.
-Admitted.
+Admitted. (* only a symmetric case left for properly speculated while loops *)
