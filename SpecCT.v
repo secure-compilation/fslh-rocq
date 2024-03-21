@@ -494,7 +494,7 @@ Inductive ct_well_typed (P:pub_vars) (PA:pub_arrs) : com -> Prop :=
 where "P ;; PA '|-ct-' c" := (ct_well_typed P PA c).
 (* TERSE: /HIDEFROMHTML *)
 
-(** *** Final theorems *)
+(** *** Final theorems: noninterference and constant-time security *)
 
 Theorem ct_well_typed_noninterferent :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
@@ -599,7 +599,11 @@ Qed.
 
 (** ** Speculative constant-time *)
 
-(** The observations are the same, so we can just reuse them. *)
+(** This part is based on the "Spectre Declassified" paper from IEEE SP 2023,
+    just in simplified form. *)
+
+(** The observations are the same as above, so we can just reuse them. *)
+
 Print observation.
 
 (** We additionally add adversary provided directions to our semantics, which
@@ -676,10 +680,10 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
 (* HIDE: This semantics already lost one property of Imp, which is only
    nonterminating executions don't produce a final state. Now if the input
    directions don't match what the program expects we also get stuck, which for
-   our big-step semantics can't be distinguished from non-termination. This is
+   our big-step semantics can't be distinguished from nontermination. This is
    probably not a problem, but just wanted to mention it. *)
 
-(** Without fences the speculation bit [b] is just a form of instrumentation
+(** HIDE: Without fences the speculation bit [b] is just a form of instrumentation
     that doesn't affect the semantics, except adding more stuckness for the [_U] rules. *)
 
 (* LATER: Could also add fences, but they are not needed for SLH. They would add
@@ -689,7 +693,7 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    cleverness we can probably avoid extra rules for if and while, since we're
    just threading through things). We likely don't want to treat this stuckness
    as not producing a final state though, since a stuck fence should be final
-   state in their small-step semantics (actually the messed that up,
+   state in their small-step semantics (actually they messed that up,
    see next point). *)
 
 (* LATER: Could prove this semantics equivalent to the small-step one from the
@@ -701,7 +705,7 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
 
 (* HIDE: Another fix I did to their semantics is in the (Spec_ARead) rule, which
    here requires no speculation, and in (Ideal_ARead_Prot) which takes the same
-   direction as (Spec_Ared_U, not Spec_Aread). This reduces rule overlap, makes
+   direction as (Spec_Aread_U, not Spec_Aread). This reduces rule overlap, makes
    the Spec_ and Ideal_ semantics more aligned, and thus makes the SLH
    translation more correct. *)
 
@@ -709,7 +713,7 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    dummy observations for skip and (register) assignment commands. This leads to
    simpler proofs (e.g. no need for erasure) and it also seems sensible: it's
    not like a skip takes the same time as an assignment anyway, so making these
-   things observable was anyway questionable! *)
+   things observable with the same dummy event seems anyway questionable! *)
 
 (* LATER: Could add the declassify construct from Spectre Declassified, but for
    now trying to keep things simple. If we add that then the RNI notion of
@@ -790,7 +794,8 @@ Definition spec_ct_secure :=
     <(s2, a2, false, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
     os1 = os2.
 
-(** Selective SLH transformation that we will show enforces speculative constant-time *)
+(** Selective SLH transformation that we will show enforces speculative
+    constant-time security. *)
 
 Fixpoint sel_slh (P:pub_vars) (c:com) :=
   (match c with
@@ -809,7 +814,7 @@ Fixpoint sel_slh (P:pub_vars) (c:com) :=
   | <{{a[i] <- e}}> => <{{a[i] <- e}}>
   end)%string.
 
-(** To prove this transformation secure Spectre Declassified uses an idealized semantics *)
+(** To prove this transformation secure, Spectre Declassified uses an idealized semantics *)
 
 Reserved Notation
          "P '|-' '<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
@@ -1114,7 +1119,7 @@ Proof.
 Qed.
 
 (** We now prove that the idealized semantics is equivalent to [sel_slh]
-   transformation (Lemma 6 and the more precise Lemma 7). *)
+    transformation (Lemma 6 and the more precise Lemma 7). *)
 
 (** All results about [sel_slh] below assume that the original [c] doesn't
     already use the variable ["b"] needed by the [sel_slh] translation. *)
@@ -1317,7 +1322,8 @@ Proof.
 Qed.
 
 (* HIDE: The less useful for security direction of the idealized semantics being
-   equivalent to [sel_slh]; easier to prove (forwards compiler correctness). *)
+   equivalent to [sel_slh]; easier to prove even for while (forwards compiler
+   correctness). *)
 
 Lemma aeval_unused_update : forall X st e n,
   a_unused X e ->
@@ -1461,3 +1467,7 @@ Proof.
   - constructor; try rewrite aeval_unused_update; tauto.
   - constructor; try rewrite aeval_unused_update; tauto.
 Admitted. (* only a symmetric case left for properly speculated while loops *)
+
+(* HIDE: Moving syntactic constraints about ds and os out of the conclusions of
+   rules and into equality premises could make this proof script less
+   verbose. Maybe just define "smart constructors" for that? *)
