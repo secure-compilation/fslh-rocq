@@ -29,11 +29,11 @@
     own definitions and theorems the same as their counterparts in the
     standard library, wherever they overlap. *)
 
-From Coq Require Import Arith.Arith.
-From Coq Require Import Bool.Bool.
-Require Export Coq.Strings.String.
-From Coq Require Import Logic.FunctionalExtensionality.
-From Coq Require Import Lists.List.
+From Coq Require Import Arith.
+From Coq Require Import Bool.
+From Coq Require Export Strings.String.
+From Coq Require Import FunctionalExtensionality.
+From Coq Require Import List.
 Import ListNotations.
 Set Default Goal Selector "!".
 
@@ -379,4 +379,4 @@ Qed.
     used to keep track of which program variables are defined in a
     given scope. *)
 
-(* 2023-10-10 18:01 *)
+(* 2025-04-09 13:06 *)

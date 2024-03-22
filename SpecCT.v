@@ -3,7 +3,7 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
-From PLF Require Import Maps.
+From SECF Require Import Maps.
 From Coq Require Import Bool.Bool.
 From Coq Require Import Arith.Arith.
 From Coq Require Import Arith.EqNat.
@@ -13,7 +13,7 @@ From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
 
-(** ** Cryptographic constant-time *)
+(** * Cryptographic constant-time *)
 
 (** Cryptographic constant-time (CCT) is a software countermeasure
     against cache-based timing attacks, a class of side-channel
@@ -30,7 +30,7 @@ Set Default Goal Selector "!".
     runtime, which leads to accessing memory addresses that can depend
     on secrets, making CCT non-trivial for Imp with arrays. *)
 
-(** *** Constant-time conditional *)
+(** ** Constant-time conditional *)
 
 (** But first, we extend the arithmetic expressions of Imp with an [b ? e1 : e2]
     conditional that executes in constant time (for instance using a special
@@ -54,7 +54,7 @@ with bexp : Type :=
   | BNot (b : bexp)
   | BAnd (b1 b2 : bexp).
 
-(** *** Typing Constant-time conditional *)
+(** ** Typing Constant-time conditional *)
 
 (** Typing of arithmetic and boolean expressions also becomes mutually inductive. *)
 
@@ -103,8 +103,7 @@ Notation "'~' b"   := (BNot b) (in custom com at level 75, right associativity).
 Open Scope com_scope.
 (* TERSE: /HIDEFROMHTML *)
 
-(** *** Now back to adding arrays *)
-(* /HIDE *)
+(** ** Now back to adding arrays *)
 
 Inductive com : Type :=
   | Skip
@@ -227,7 +226,7 @@ Fixpoint upd (i:nat) (ns:list nat) (n:nat) : list nat :=
   end.
 (* TERSE: /HIDEFROMHTML *)
 
-(** *** Observations *)
+(** ** Observations *)
 
 Inductive observation : Type :=
   | OBranch (b : bool)
@@ -280,7 +279,7 @@ Inductive cteval : com -> state -> astate -> state -> astate -> obs -> Prop :=
   where "<( st , ast )> =[ c ]=> <( stt , astt , os )>" := (cteval c st ast stt astt os).
 (* TERSE: /HIDEFROMHTML *)
 
-(** *** Type system for cryptographic constant-time programming *)
+(** ** Type system for cryptographic constant-time programming *)
 
 (* TERSE: HIDEFROMHTML *)
 Definition label := bool.
@@ -494,7 +493,7 @@ Inductive ct_well_typed (P:pub_vars) (PA:pub_arrs) : com -> Prop :=
 where "P ;; PA '|-ct-' c" := (ct_well_typed P PA c).
 (* TERSE: /HIDEFROMHTML *)
 
-(** *** Final theorems: noninterference and constant-time security *)
+(** ** Final theorems: noninterference and constant-time security *)
 
 Theorem ct_well_typed_noninterferent :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
@@ -597,7 +596,7 @@ Proof.
 Qed.
 (* /FOLD *)
 
-(** ** Speculative constant-time *)
+(** * Speculative constant-time *)
 
 (** This part is based on the "Spectre Declassified" paper from IEEE SP 2023,
     just in simplified form. *)
@@ -784,7 +783,7 @@ Definition seq_eval (c:com) (s:state) (a:astate) (b:bool)
 (* LATER: We should be able to prove that [cteval] and [seq_eval] coincide, so
    by [ct_well_typed_ct_secure] also directly get their Lemma 2. *)
 
-(** *** Speculative constant-time security definition *)
+(** ** Speculative constant-time security definition *)
 
 Definition spec_ct_secure :=
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
@@ -948,10 +947,10 @@ Proof.
     + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
       apply Heq. apply Hy.
   - (* seq *) assert (Hds1: prefix ds1 ds0 \/ prefix ds0 ds1).
-    { destruct Hds as [Hds | Hds]; apply prefix_app in Hds; tauto.}
-    assert (ds1 = ds0). { eapply IHHeval1_1; eassumption.} subst. f_equal.
+    { destruct Hds as [Hds | Hds]; apply prefix_app in Hds; tauto. }
+    assert (ds1 = ds0). { eapply IHHeval1_1; eassumption. } subst. f_equal.
     assert (Hds2: prefix ds2 ds3 \/ prefix ds3 ds2).
-    { destruct Hds as [Hds | Hds]; apply prefix_append_front in Hds; tauto.}
+    { destruct Hds as [Hds | Hds]; apply prefix_append_front in Hds; tauto. }
     (* TODO: proofs above and below can be better integrated *)
     specialize (IHHeval1_1 H13 _ Hds1 _ _ _ Haeq _ _ Heq _ H1).
     destruct IHHeval1_1 as [ IH12eq [IH12b [IH12eqa _] ] ]. subst.
@@ -1001,7 +1000,7 @@ Proof.
         { unfold prefix in Hds.
           destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds;
             inversion Hds; reflexivity. }
-        { now destruct (PA a).}
+        { now destruct (PA a). }
       * do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
         apply Heq. apply Hy.
     + unfold prefix in Hds.
@@ -1095,7 +1094,7 @@ Proof.
   - (* seq *) eapply aux in H1; [| | | | apply Heval1_1 | apply H5 ]; eauto.
     destruct H1 as [H1 H1']. subst.
     assert(NI1 : pub_equiv P st' st'0 /\ b' = b'0 /\ (b' = false -> pub_equiv PA ast' ast'0)).
-    { eapply ct_well_typed_ideal_noninterferent; [ | | | eassumption | eassumption]; eauto.}
+    { eapply ct_well_typed_ideal_noninterferent; [ | | | eassumption | eassumption]; eauto. }
     destruct NI1 as [NI1eq [NIb NIaeq] ]. subst.
     erewrite IHHeval1_2; [erewrite IHHeval1_1 | | | |];
       try reflexivity; try eassumption.
@@ -1194,7 +1193,7 @@ Proof.
       + eapply IHc1; try tauto; [|eassumption].
         simpl. rewrite Eqbe. rewrite t_update_eq. assumption.
       + eapply IHc2; try tauto; [|eassumption].
-        simpl. rewrite Eqbe. rewrite t_update_eq. assumption.}
+        simpl. rewrite Eqbe. rewrite t_update_eq. assumption. }
     { destruct (beval s b) eqn:Eqbe; inversion H10; inversion H1; subst.
       + eapply IHc2; try tauto; [|eassumption].
         simpl. rewrite Eqbe. rewrite t_update_eq. reflexivity.

@@ -3,22 +3,22 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
-From PLF Require Import Maps.
+From SECF Require Import Maps.
 From Coq Require Import Bool.Bool.
 From Coq Require Import Arith.Arith.
 From Coq Require Import Arith.EqNat.
 From Coq Require Import Arith.PeanoNat. Import Nat.
 From Coq Require Import Lia.
-From PLF Require Export Imp.
+From SECF Require Export Imp.
 From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
 
 Definition FILL_IN_HERE := <{True}>.
 (* TERSE: /HIDEFROMHTML *)
 
-(** ** Noninterference *)
+(** * Noninterference *)
 
-(** As explained in Noninterference.v and \CHAP{RelHoare}, data
+(** As explained in \CHAP{Noninterference} and \CHAP{RelHoare}, data
     confidentiality is most often expressed formally as a property
     called _noninterference_.
 
@@ -33,7 +33,7 @@ Definition secret : label := false.
 
 Definition pub_vars := total_map label.
 
-(** TERSE: *** Publicly equivalent states *)
+(** TERSE: ** Publicly equivalent states *)
 
 (** A noninterference attacker can only observe the values of public
     variables, not of secret ones. We formalize this as a notion of
@@ -65,7 +65,7 @@ Proof. unfold pub_equiv. intros X P s1 s2 s3 H12 H23 x Px.
        rewrite H12; try rewrite H23; auto. Qed.
 (* TERSE: /HIDEFROMHTML *)
 
-(** TERSE: *** Noninterference *)
+(** TERSE: ** Noninterference *)
 
 (** Program [c] is _noninterferent_ if whenever it has two terminating
     runs from two publicly equivalent initial states [s1] and [s2],
@@ -82,12 +82,12 @@ Definition noninterferent P c := forall s1 s2 s1' s2',
     public variables in the initial state, and do not depend on the
     initial value of secret variables. *)
 
-(** TERSE: *** *)
+(** TERSE: ** *)
 
 (** TERSE: A first noninterferent program *)
 
 (** For instance, consider the following command
-    (taken from Noninterference.v): *)
+    (taken from \CHAP{Noninterference}): *)
 
 Definition secure_com : com := <{ X := X+1; Y := X+Y*2 }>.
 
@@ -100,13 +100,13 @@ Definition noninterferent_secure_com :=
   noninterferent xpub secure_com.
 
 (** We have already proved that [secure_com] is indeed noninterferent
-    both directly using the semantics (in Noninterference.v) and using
+    both directly using the semantics (in \CHAP{Noninterference}) and using
     RHL (in \CHAP{RelHoare}). Both these proofs were manual though,
     while in this chapter we will show how this proof can be done more
     syntactically using several _information flow control_ (IFC) type
     systems that enforce noninterference for all well-typed programs. *)
 
-(** TERSE: *** Explicit flows *)
+(** TERSE: ** Explicit flows *)
 
 (** Not all programs are noninterferent though. For instance, a
     program that reads the contents of a secret variable and uses that
@@ -115,7 +115,7 @@ Definition noninterferent_secure_com :=
     systems will prevent _all_ explicit flows.
 
     Here is a program that has an explicit flow, which breaks
-    noninterference, as we already proved in Noninterference.v. *)
+    noninterference, as we already proved in \CHAP{Noninterference}. *)
 
 Definition insecure_com1 : com :=
   <{ X := Y+1; (* <- bad explicit flow! *)
@@ -124,7 +124,7 @@ Definition insecure_com1 : com :=
 Definition interferent_insecure_com1 :=
   ~noninterferent xpub insecure_com1.
 
-(** TERSE: *** Not all explicit flows are harmful *)
+(** TERSE: ** Not all explicit flows are harmful *)
 
 (** Not all explicit flows break noninterference though. For instance,
     the following variant of [insecure_com1] is noninterferent even if
@@ -144,7 +144,7 @@ Definition secure_com1' : com :=
     As usual, our type systems will only provide sound syntactic
     overapproximations of the semantic property of noninterference. *)
 
-(** TERSE: *** Implicit flows *)
+(** TERSE: ** Implicit flows *)
 
 (** Explicit flows are not the only way to leak secrets: one can also
     leak secrets using the control flow of the program, by branching
@@ -162,11 +162,11 @@ Definition insecure_com2 : com :=
     a secret condition [Y = 0], so we are indirectly leaking
     information about the value of [Y]. In this case we can infer that
     if [X] gets incremented the value of [Y] is not [0]. We have
-    proved in Noninterference.v that this program is insecure, so it
+    proved in \CHAP{Noninterference} that this program is insecure, so it
     will be rejected by our type systems, which enforce noninterference
     by preventing _all_ implicit flows. *)
 
-(** TERSE: *** Not all implicit flows are harmful *)
+(** TERSE: ** Not all implicit flows are harmful *)
 
 (** Not all implicit flows break noninterference though. For instance,
     in \CHAP{RelHoare} we saw a program that we proved to be
@@ -184,7 +184,7 @@ Definition secure_p2 :=
     leaked. Still, our type systems will reject programs containing
     any explicit or implicit flows, this one included. C'est la vie! *)
 
-(** ** Type system for noninterference of expressions *)
+(** * Type system for noninterference of expressions *)
 
 (* HIDE: CH: The big duplication in expressions is awkward.  Is the
    typed version of Imp that got hidden in Types.v better? Maybe a
@@ -228,7 +228,7 @@ Definition secure_p2 :=
     - Given variable [X1] with label [l1] and variable [X2] with
       label [l2], what should be the label of [X1 + X2] though? *)
 
-(** *** Combining labels *)
+(** ** Combining labels *)
 
 (** We need a way to combine the labels of two sub-expressions, which
     we call the _join_ (or least upper bound) of the two labels: *)
@@ -259,7 +259,7 @@ Lemma join_secret_l : forall {l},
   join secret l = secret.
 Proof. reflexivity. Qed.
 
-(** TERSE: *** Typing of arithmetic expressions *)
+(** TERSE: ** Typing of arithmetic expressions *)
 
 (** [[[
                           -------------------                  (T_Num)
@@ -282,7 +282,7 @@ Proof. reflexivity. Qed.
 ]]]
 *)
 
-(** TERSE: *** *)
+(** TERSE: ** *)
 
 (* TERSE: HIDEFROMHTML *)
 Reserved Notation "P '|-a-' a \in l" (at level 40).
@@ -308,7 +308,7 @@ Inductive aexp_has_label (P:pub_vars) : aexp -> label -> Prop :=
 
 where "P '|-a-' a '\in' l" := (aexp_has_label P a l).
 
-(** TERSE: *** Noninterference by typing for arithmetic expressions *)
+(** TERSE: ** Noninterference by typing for arithmetic expressions *)
 
 Theorem noninterferent_aexp : forall {P s1 s2 a},
   pub_equiv P s1 s2 ->
@@ -344,7 +344,7 @@ Proof. intro Hc. inversion Hc. Qed.
        judgement that checks whether an expression is public?  *)
 (* /HIDE *)
 
-(** TERSE: *** Typing of Boolean expressions *)
+(** TERSE: ** Typing of Boolean expressions *)
 
 (** [[[
                          ----------------------               (T_True)
@@ -404,7 +404,7 @@ Inductive bexp_has_label (P:pub_vars) : bexp -> label -> Prop :=
 where "P '|-b-' b '\in' l" := (bexp_has_label P b l).
 (* TERSE: /HIDEFROMHTML *)
 
-(** TERSE: *** Noninterference by typing for Boolean expressions *)
+(** TERSE: ** Noninterference by typing for Boolean expressions *)
 
 Theorem noninterferent_bexp : forall {P s1 s2 b},
   pub_equiv P s1 s2 ->
@@ -434,7 +434,7 @@ Proof.
 Qed.
 (* /FOLD *)
 
-(** ** Restrictive type system prohibiting branching on secrets *)
+(** * Restrictive type system prohibiting branching on secrets *)
 
 (** For commands, we start with a simple type system that doesn't
     allow any branching on secrets, which prevents all implicit flows. *)
@@ -505,7 +505,7 @@ Lemma can_flow_join_r2 : forall l l1 l2,
 Proof. intros l l1 l2 H. destruct l; destruct l1; simpl in *; auto. Qed.
 (* TERSE: /HIDEFROMHTML *)
 
-(** TERSE: *** IFC typing of commands ([pc_well_typed] relation) *)
+(** TERSE: ** IFC typing of commands ([pc_well_typed] relation) *)
 
 (** [[[
                             ------------                    (PCWT_Skip)
@@ -556,7 +556,7 @@ Inductive pc_well_typed (P:pub_vars) : com -> Prop :=
 where "P '|-pc-' c" := (pc_well_typed P c).
 (* TERSE: /HIDEFROMHTML *)
 
-(** *** Secure program that is [pc_well_typed]: *)
+(** ** Secure program that is [pc_well_typed]: *)
 
 Example swt_secure_com :
   xpub |-pc- <{ X := X+1;  (* check: can_flow public public (OK!)  *)
@@ -581,7 +581,7 @@ Proof.
 Qed.
 (* /FOLD *)
 
-(** *** Explicit flow prevented by [pc_well_typed]: *)
+(** ** Explicit flow prevented by [pc_well_typed]: *)
 
 Example not_swt_insecure_com1 :
   ~ xpub |-pc- <{ X := Y+1;  (* check: can_flow secret public (FAILS!) *)
@@ -602,7 +602,7 @@ Proof.
 Qed.
 (* /FOLD *)
 
-(** *** Implicit flow prevented by [pc_well_typed]: *)
+(** ** Implicit flow prevented by [pc_well_typed]: *)
 
 Example not_swt_insecure_com2 :
   ~ xpub |-pc- <{ if Y=0  (* check: P |-b- Y=0 \in public (FAILS!) *)
@@ -623,7 +623,7 @@ Qed.
 
 (** SOONER: Add an example of a non-interferent program that is rejected? *)
 
-(** TERSE: *** *)
+(** TERSE: ** *)
 
 (** We show that [pc_well_typed] commands are [noninterferent]. *)
 
@@ -696,7 +696,7 @@ forall s1 s2 s1' s2',
       If [P X == secret] then the value of [X] doesn't matter
       for determining whether the final states are [pub_equiv]. *)
 
-(** *** [pc_well_typed] too strong for noninterference *)
+(** ** [pc_well_typed] too strong for noninterference *)
 
 (** While we have just proved that [pc_well_typed] implies
     noninterference, this is too strong a restriction for just
@@ -761,7 +761,7 @@ Qed.
     side-channel attacks and which also serves as the base for
     cryptographic constant-time. *)
 
-(** ** IFC type system allowing branching on secrets *)
+(** * IFC type system allowing branching on secrets *)
 
 (** We now instead extend this to a more permissive type system for
     noninterference in which we do allow branching on secrets.
@@ -822,7 +822,7 @@ Inductive well_typed (P:pub_vars) : label -> com -> Prop :=
 where "P ';;' pc '|--' c" := (well_typed P pc c).
 (* TERSE: /HIDEFROMHTML *)
 
-(** *** *)
+(** ** *)
 
 (** With this more permissive type system we can accept more
     noninterferent programs that were rejected by [pc_well_typed]. *)
@@ -891,7 +891,7 @@ Proof.
 Qed.
 (* TERSE: /HIDEFROMHTML *)
 
-(** *** Dealing with unsynchronized executions running different code *)
+(** ** Dealing with unsynchronized executions running different code *)
 
 Lemma secret_run : forall {P c s s'},
   P;; secret |-- c ->
@@ -930,7 +930,7 @@ Proof.
 Qed.
 (* /FOLD *)
 
-(** *** We show that [well_typed] commands are [noninterferent]. *)
+(** ** We show that [well_typed] commands are [noninterferent]. *)
 
 Theorem well_typed_noninterferent : forall P c,
   P;; public |-- c ->
@@ -989,12 +989,14 @@ Qed.
     Another key ingredient for having a simple noninterference proof
     is working with a big-step semantics. *)
 
-(** ** Type system for termination-sensitive noninterference *)
+(* SOONER: Implement a type-checker for this type system (easy). *)
+
+(** * Type system for termination-sensitive noninterference *)
 
 (** The noninterference notion we used above was "termination
     insensitive". If we prevent loop conditions depending on secrets
     we can actually enforce termination-sensitive noninterference
-    (TSNI), which we defined in [Noninterference.v] as follows: *)
+    (TSNI), which we defined in \CHAP{Noninterference} as follows: *)
 
 Definition tsni P c :=
   forall s1 s2 s1',
@@ -1007,7 +1009,7 @@ Definition tsni P c :=
     if-then-else conditions to depend on secrets. So we define a new
     type system that only prevents _loop_ conditions to depend on secrets. *)
 
-(** *** We just need to update the while rule of [well_typed]: *)
+(** ** We just need to update the while rule of [well_typed]: *)
 
 (** Old rule for noninterference:
 [[[
@@ -1055,7 +1057,7 @@ Inductive ts_well_typed (P:pub_vars) : label -> com -> Prop :=
 where "P ';;' pc '|-ts-' c" := (ts_well_typed P pc c).
 (* TERSE: /HIDEFROMHTML *)
 
-(** *** We prove that [ts_well_typed] enforces TSNI. *)
+(** ** We prove that [ts_well_typed] enforces TSNI. *)
 
 (** For this we show that [ts_well_typed] implies [well_typed], so
     by our previous theorem also [noninterference].
@@ -1159,7 +1161,7 @@ Proof.
 Qed.
 (* /FOLD *)
 
-(** ** Program counter security *)
+(** * Program counter security *)
 
 (** Especially for cryptographic code one is also worried about
     side-channel attacks, in which secrets are for instance leaked via
@@ -1176,7 +1178,7 @@ Qed.
 
 Definition branches := list bool.
 
-(** *** Instrumented semantics with branches *)
+(** ** Instrumented semantics with branches *)
 (**
 [[[
                      ---------------------                         (E_Skip)
@@ -1246,7 +1248,7 @@ Proof.
 Qed.
 (* TERSE: /HIDEFROMHTML *)
 
-(** *** Program counter security definition *)
+(** ** Program counter security definition *)
 
 (** Using the instrumented semantics we define program counter security: *)
 
