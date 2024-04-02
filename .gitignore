@@ -8,3 +8,4 @@
 Makefile.coq
 Makefile.coq.conf
 .lia.cache
+makefile_alternative_for_windows.ps1
