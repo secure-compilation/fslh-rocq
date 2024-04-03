@@ -461,7 +461,7 @@ P |-a- i \in public   P |-a- e \in l   can_flow l (PA a) = true
 Reserved Notation "P ';;' PA '|-ct-' c" (at level 40).
 
 Inductive ct_well_typed (P:pub_vars) (PA:pub_arrs) : com -> Prop :=
-  | CT_Com :
+  | CT_Skip :
       P ;; PA |-ct- <{{ skip }}>
   | CT_Asgn : forall X a l,
       P |-a- a \in l ->
