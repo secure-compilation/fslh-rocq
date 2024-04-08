@@ -924,37 +924,28 @@ Lemma prefix_cons : forall {X :Type} (d :X) (ds1 ds2: list X),
 Proof.
   intros X d ds1 ds2. split; [unfold prefix| ]; intros H.
   - destruct H; subst.
-  eexists; simpl; eauto.
+    eexists; simpl; eauto.
   - apply prefix_heads_and_tails in H. destruct H as [_ H]. assumption.
-Qed.
-  
-Lemma prefix_app_pre : forall {X:Type} {ds1 ds2 ds3 : list X},
-  prefix (ds1 ++ ds2) ds3 ->
-  prefix ds1 ds3 \/ prefix ds3 ds1.
-Proof.
-  intros X ds1. induction ds1 as [| d1 ds1' IH]; intros ds2 ds3 H.
-  - right. apply prefix_nil. 
-  - destruct ds3 as [| d3 ds2'] eqn:D3.
-    + left. apply prefix_nil.
-    + simpl in H; apply prefix_head in H.
-      destruct H as [Heq Hpre]; subst.
-      apply IH in Hpre; destruct Hpre; [left | right];
-      apply prefix_add_cons; assumption.
 Qed.
 
 Lemma prefix_app : forall {X:Type} {ds1 ds2 ds0 ds3 : list X},
   prefix (ds1 ++ ds2) (ds0 ++ ds3) ->
   prefix ds1 ds0 \/ prefix ds0 ds1.
-Admitted.
-
-Lemma prefix_cons : forall {X:Type} {d : X} {ds2 ds3 : list X},
-  prefix (d :: ds2) (d :: ds3) ->
-  prefix ds2 ds3.
-Admitted.
+Proof. 
+  intros X ds1. induction ds1 as [| d1 ds1' IH]; intros ds2 ds0 ds3 H.
+  - right. apply prefix_nil.
+  - destruct ds0 as [| d0 ds0'] eqn:D0.
+    + left. apply prefix_nil.
+    + simpl in H; apply prefix_heads_and_tails in H.
+      destruct H as [Heq Hpre]; subst.
+      apply IH in Hpre; destruct Hpre; [left | right];
+      apply prefix_cons; assumption.
+Qed.
 
 Lemma prefix_append_front : forall {X:Type} {ds1 ds2 ds3 : list X},
   prefix (ds1 ++ ds2) (ds1 ++ ds3) ->
   prefix ds2 ds3.
+Proof.
 Admitted.
 
 Lemma app_eq_prefix : forall {X:Type} {ds1 ds2 ds1' ds2' : list X},
