@@ -935,12 +935,23 @@ Lemma prefix_append_front : forall {X:Type} {ds1 ds2 ds3 : list X},
   prefix (ds1 ++ ds2) (ds1 ++ ds3) ->
   prefix ds2 ds3.
 Proof.
-Admitted.
+  intros X ds1. induction ds1 as [| d1 ds1' IH]; intros ds2 ds3 H.
+  - auto.
+  - simpl in H; apply prefix_cons in H. apply IH in H. assumption.
+Qed.
 
 Lemma app_eq_prefix : forall {X:Type} {ds1 ds2 ds1' ds2' : list X},
   ds1 ++ ds2 = ds1' ++ ds2' ->
   prefix ds1 ds1' \/ prefix ds1' ds1.
-Admitted.
+Proof. 
+  intros X ds1. induction ds1 as [| h1 t1 IH]; intros ds2 ds1' ds2' H.
+  - right. apply prefix_nil.
+  - destruct ds1' as [| h1' t1'] eqn:D1'.
+    + left. apply prefix_nil.
+    + simpl in H; inversion H; subst.
+      apply IH in H2. destruct H2 as [HL | HR];
+      [left | right]; apply prefix_cons; auto.
+Qed.
 
 Ltac split4 := split; [|split; [| split] ].
 
