@@ -910,6 +910,36 @@ Lemma prefix_nil : forall {X:Type} (ds : list X),
   prefix ds [].
 Proof. intros unfold prefix. eexists. rewrite app_nil_l. reflexivity. Qed.
 
+Lemma prefix_head : forall {X :Type} (h1 h2 :X) (t1 t2: list X), 
+ prefix (h1::t1) (h2::t2) -> h1 = h2 /\ prefix t1 t2.
+Proof.
+  intros X h1 h2 t1 t2. unfold prefix. intros Hpre.
+  destruct Hpre as [zs Hpre]; simpl in Hpre.
+  inversion Hpre; subst. eauto.
+Qed.
+
+Lemma prefix_add_cons : forall {X :Type} (d :X) (ds1 ds2: list X), 
+ prefix ds1 ds2 ->
+ prefix (d::ds1) (d::ds2).
+Proof.
+  unfold prefix. intros X d ds1 ds2 H.
+  destruct H; subst.
+  eexists; simpl; eauto.
+Qed.
+  
+Lemma prefix_app_pre : forall {X:Type} {ds1 ds2 ds3 : list X},
+  prefix (ds1 ++ ds2) ds3 ->
+  prefix ds1 ds3 \/ prefix ds3 ds1.
+Proof.
+  intros X ds1. induction ds1 as [| d1 ds1' IH]; intros ds2 ds3 H.
+  - right. apply prefix_nil. 
+  - destruct ds3 as [| d3 ds2'] eqn:D3.
+    + left. apply prefix_nil.
+    + simpl in H; apply prefix_head in H.
+      destruct H as [Heq Hpre]; subst.
+      apply IH in Hpre; destruct Hpre; [left | right];
+      apply prefix_add_cons; assumption.
+Qed.
 
 Lemma prefix_app : forall {X:Type} {ds1 ds2 ds0 ds3 : list X},
   prefix (ds1 ++ ds2) (ds0 ++ ds3) ->
