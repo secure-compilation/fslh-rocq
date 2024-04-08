@@ -895,17 +895,6 @@ Lemma prefix_refl : forall {X:Type} {ds : list X},
   prefix ds ds.
 Proof. intros X ds. exists []. apply app_nil_end. Qed.
 
-Lemma prefix_transitive: forall {X:Type} {ds1 ds2 ds3 : list X},
-  prefix ds2 ds1 ->
-  prefix ds3 ds2 ->
-  prefix ds3 ds1.
-Proof.
-  unfold prefix. intros X ds1 ds2 ds3 H12 H23.
-  destruct H12 as [zs1 H12]. destruct H23 as [zs2 H23].
-  rewrite H12 in H23. rewrite <- app_assoc in H23.
-  eexists; apply H23.
-Qed.
-
 Lemma prefix_nil : forall {X:Type} (ds : list X),
   prefix ds [].
 Proof. intros unfold prefix. eexists. rewrite app_nil_l. reflexivity. Qed.
