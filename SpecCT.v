@@ -910,7 +910,7 @@ Lemma prefix_nil : forall {X:Type} (ds : list X),
   prefix ds [].
 Proof. intros unfold prefix. eexists. rewrite app_nil_l. reflexivity. Qed.
 
-Lemma prefix_head : forall {X :Type} (h1 h2 :X) (t1 t2: list X), 
+Lemma prefix_heads_and_tails : forall {X :Type} (h1 h2 :X) (t1 t2: list X), 
  prefix (h1::t1) (h2::t2) -> h1 = h2 /\ prefix t1 t2.
 Proof.
   intros X h1 h2 t1 t2. unfold prefix. intros Hpre.
@@ -918,13 +918,14 @@ Proof.
   inversion Hpre; subst. eauto.
 Qed.
 
-Lemma prefix_add_cons : forall {X :Type} (d :X) (ds1 ds2: list X), 
- prefix ds1 ds2 ->
+Lemma prefix_cons : forall {X :Type} (d :X) (ds1 ds2: list X), 
+ prefix ds1 ds2 <->
  prefix (d::ds1) (d::ds2).
 Proof.
-  unfold prefix. intros X d ds1 ds2 H.
-  destruct H; subst.
+  intros X d ds1 ds2. split; [unfold prefix| ]; intros H.
+  - destruct H; subst.
   eexists; simpl; eauto.
+  - apply prefix_heads_and_tails in H. destruct H as [_ H]. assumption.
 Qed.
   
 Lemma prefix_app_pre : forall {X:Type} {ds1 ds2 ds3 : list X},
