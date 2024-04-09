@@ -889,25 +889,39 @@ Inductive ideal_eval (P:pub_vars) :
 (** Let's now prove that the idealized semantics does enforce speculative constant-time *)
 
 Definition prefix {X:Type} (xs ys : list X) : Prop :=
-  exists zs, xs = ys ++ zs.
+  exists zs, xs ++ zs = ys.
 
 Lemma prefix_refl : forall {X:Type} {ds : list X},
   prefix ds ds.
-Proof. intros X ds. exists []. apply app_nil_end. Qed.
+Proof. intros X ds. exists []. apply app_nil_r. Qed.
 
 Lemma prefix_nil : forall {X:Type} (ds : list X),
-  prefix ds [].
-Proof. intros unfold prefix. eexists. rewrite app_nil_l. reflexivity. Qed.
+  prefix [] ds.
+Proof. intros X ds. unfold prefix. eexists. simpl. reflexivity. Qed.
 
-Lemma prefix_heads_and_tails : forall {X :Type} (h1 h2 :X) (t1 t2: list X), 
- prefix (h1::t1) (h2::t2) -> h1 = h2 /\ prefix t1 t2.
+Lemma prefix_heads_and_tails : forall {X:Type} (h1 h2 : X) (t1 t2 : list X),
+  prefix (h1::t1) (h2::t2) -> h1 = h2 /\ prefix t1 t2.
 Proof.
   intros X h1 h2 t1 t2. unfold prefix. intros Hpre.
   destruct Hpre as [zs Hpre]; simpl in Hpre.
   inversion Hpre; subst. eauto.
 Qed.
 
-Lemma prefix_cons : forall {X :Type} (d :X) (ds1 ds2: list X), 
+Lemma prefix_heads : forall {X:Type} (h1 h2 : X) (t1 t2 : list X),
+  prefix (h1::t1) (h2::t2) -> h1 = h2.
+Proof.
+  intros X h1 h2 t1 t2 H. apply prefix_heads_and_tails in H; tauto.
+Qed.
+
+Lemma prefix_or_heads : forall {X:Type} (x y : X) (xs ys : list X),
+  prefix (x :: xs) (y :: ys) \/ prefix (y :: ys) (x :: xs) ->
+  x = y.
+Proof.
+  intros X x y xs ys H.
+  destruct H as [H | H]; apply prefix_heads in H; congruence.
+Qed.
+
+Lemma prefix_cons : forall {X:Type} (d :X) (ds1 ds2: list X),
  prefix ds1 ds2 <->
  prefix (d::ds1) (d::ds2).
 Proof.
@@ -922,9 +936,9 @@ Lemma prefix_app : forall {X:Type} {ds1 ds2 ds0 ds3 : list X},
   prefix ds1 ds0 \/ prefix ds0 ds1.
 Proof. 
   intros X ds1. induction ds1 as [| d1 ds1' IH]; intros ds2 ds0 ds3 H.
-  - right. apply prefix_nil.
+  - left. apply prefix_nil.
   - destruct ds0 as [| d0 ds0'] eqn:D0.
-    + left. apply prefix_nil.
+    + right. apply prefix_nil.
     + simpl in H; apply prefix_heads_and_tails in H.
       destruct H as [Heq Hpre]; subst.
       apply IH in Hpre; destruct Hpre; [left | right];
@@ -945,9 +959,9 @@ Lemma app_eq_prefix : forall {X:Type} {ds1 ds2 ds1' ds2' : list X},
   prefix ds1 ds1' \/ prefix ds1' ds1.
 Proof. 
   intros X ds1. induction ds1 as [| h1 t1 IH]; intros ds2 ds1' ds2' H.
-  - right. apply prefix_nil.
+  - left. apply prefix_nil.
   - destruct ds1' as [| h1' t1'] eqn:D1'.
-    + left. apply prefix_nil.
+    + right. apply prefix_nil.
     + simpl in H; inversion H; subst.
       apply IH in H2. destruct H2 as [HL | HR];
       [left | right]; apply prefix_cons; auto.
@@ -1004,10 +1018,8 @@ Proof.
       firstorder; congruence.
     + apply pub_equiv_sym. eassumption.
     + eassumption.
-  - (* if contra *) unfold prefix in Hds.
-    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
-  - (* if contra *) unfold prefix in Hds.
-    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
+  - (* if contra *) apply prefix_or_heads in Hds; inversion Hds.
+  - (* if contra *) apply prefix_or_heads in Hds; inversion Hds.
   - (* if (If_F) - very similar If *)
     assert(G : P ;; PA |-ct- (if beval st be then c2 else c1)).
     { destruct (beval st be); assumption. }
@@ -1035,14 +1047,11 @@ Proof.
       * rewrite Hxy. do 2 rewrite t_update_eq.
         subst. rewrite Hy in *.
         rewrite Haeq; eauto.
-        { unfold prefix in Hds.
-          destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds;
-            inversion Hds; reflexivity. }
+        { apply prefix_or_heads in Hds. inversion Hds. reflexivity. }
         { now destruct (PA a). }
       * do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
         apply Heq. apply Hy.
-    + unfold prefix in Hds.
-      destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds; reflexivity.
+    + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
   - (* array read contra *) rewrite H in *. discriminate.
   - (* array read contra *) rewrite H in *. discriminate.
   - (* array read (ARead_Prot) *)
@@ -1063,14 +1072,11 @@ Proof.
       erewrite (noninterferent_aexp Heq); eauto. now destruct l.
     + do 2 rewrite (t_update_neq _ _ _ _ _ Hay).
       apply Haeq; assumption.
-  - (* array write contra *) unfold prefix in Hds.
-    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
-  - (* array write contra *) unfold prefix in Hds.
-    destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds.
+  - (* array write contra *) apply prefix_or_heads in Hds. inversion Hds.
+  - (* array write contra *) apply prefix_or_heads in Hds. inversion Hds.
   - (* array write (Write_U) *) split4; eauto.
     + intro contra. discriminate contra.
-    + unfold prefix in Hds.
-      destruct Hds as [ [zs Hds] | [zs Hds] ]; simpl in Hds; inversion Hds; reflexivity.
+    + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
 Qed.
 
 (* SOONER: The cases for arrays above are repetitive. Spin off some lemmas. *)
