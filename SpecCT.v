@@ -729,7 +729,7 @@ Lemma speculation_bit_monotonic : forall c s a b ds s' a' b' os,
   b' = true.
 Proof. intros c s a b ds s' a' b' os Heval Hb. induction Heval; eauto. Qed.
 
-(* HIDE: This one is weaker for big-step semantics *)
+(* HIDE: This one is weaker for big-step semantics, but it's still helpful below *)
 Lemma speculation_needs_force : forall c s a b ds s' a' b' os,
   <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
   b = false ->
@@ -738,9 +738,7 @@ Lemma speculation_needs_force : forall c s a b ds s' a' b' os,
 Proof.
   intros c s a b ds s' a' b' os Heval Hb Hb'.
   induction Heval; subst; simpl; eauto; try discriminate.
-  - apply in_or_app. destruct b'.
-    + left. apply IHHeval1; reflexivity.
-    + right. apply IHHeval2; reflexivity.
+  apply in_or_app. destruct b'; eauto.
 Qed.
 
 (* HIDE: Also this one is weaker for big-step semantics *)
@@ -775,12 +773,12 @@ Qed.
 (** We can recover sequential execution from [spec_eval] if there is no
     speculation, so all directives are [DStep] and speculation flag starts [false]. *)
 
-Definition seq_eval (c:com) (s:state) (a:astate) (b:bool)
-  (s':state) (a':astate) (b':bool) (os:obs) : Prop :=
+Definition seq_spec_eval (c:com) (s:state) (a:astate)
+    (s':state) (a':astate) (os:obs) : Prop :=
   exists ds, (forall d, In d ds -> d = DStep) /\
-    <(s, a, false, ds)> =[ c ]=> <(s', a', b', os)>.
+    <(s, a, false, ds)> =[ c ]=> <(s', a', false, os)>.
 
-(* LATER: We should be able to prove that [cteval] and [seq_eval] coincide, so
+(* LATER: We should be able to prove that [cteval] and [seq_spec_eval] coincide, so
    by [ct_well_typed_ct_secure] also directly get their Lemma 2. *)
 
 (** ** Speculative constant-time security definition *)
@@ -884,7 +882,85 @@ Inductive ideal_eval (P:pub_vars) :
   where "P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
     (ideal_eval P c st ast b ds stt astt bb os).
 
-(* SOONER: Show that on sequential executions this is equivalent to [seq_eval] (Lemma 3) *)
+(* We show that on sequential executions this is equivalent to [seq_spec_eval] *)
+
+Lemma seq_eval_ideal_eval_ind1 : forall P c s a b ds s' a' b' os,
+  (forall d : direction, In d ds -> d = DStep) ->
+  <( s, a, b, ds )> =[ c ]=> <( s', a', b', os )> ->
+  b = false ->
+  b' = false ->
+  P |- <( s, a, b, ds )> =[ c ]=> <( s', a', b', os )>.
+Proof.
+  intros P c s a b ds s' a' b' os Hds H Eb Eb'.
+  induction H; try constructor; eauto.
+  - assert(b' = false).
+    { destruct b' eqn:Eqb'; [| reflexivity].
+      apply speculation_needs_force in H; try tauto.
+      assert (contra : DForce = DStep).
+      { apply Hds. apply in_or_app. left. assumption. }
+      inversion contra. }
+    eapply Ideal_Seq.
+    * apply IHspec_eval1; eauto using in_or_app.
+    * apply IHspec_eval2; eauto using in_or_app.
+  - simpl in Hds; eauto.
+  - simpl in Hds.
+    assert (contra : DForce = DStep). { apply Hds. left. reflexivity. }
+    inversion contra.
+  - discriminate.
+Qed.
+
+Lemma speculation_needs_force_ideal : forall P c s a b ds s' a' b' os,
+  P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
+  b = false ->
+  b' = true ->
+  In DForce ds.
+Proof.
+  intros P c s a b ds s' a' b' os Heval Hb Hb'.
+  induction Heval; subst; simpl; eauto; try discriminate.
+  apply in_or_app. destruct b'; eauto.
+Qed.
+
+Lemma seq_eval_ideal_eval_ind2 : forall P c s a b ds s' a' b' os,
+  (forall d : direction, In d ds -> d = DStep) ->
+  P |- <( s, a, b, ds )> =[ c ]=> <( s', a', b', os )> ->
+  b = false ->
+  b' = false ->
+  <( s, a, b, ds )> =[ c ]=> <( s', a', b', os )>.
+Proof. (* proof really the same as gen1 *)
+  intros P c s a b ds s' a' b' os Hds H Eb Eb'.
+  induction H; try constructor; eauto.
+  - assert(b' = false).
+    { destruct b' eqn:Eqb'; [| reflexivity].
+      apply speculation_needs_force_ideal in H; try tauto.
+      assert (contra : DForce = DStep).
+      { apply Hds. apply in_or_app. left. assumption. }
+      inversion contra. }
+    eapply Spec_Seq.
+    * apply IHideal_eval1; eauto using in_or_app.
+    * apply IHideal_eval2; eauto using in_or_app.
+  - simpl in Hds; eauto.
+  - simpl in Hds.
+    assert (contra : DForce = DStep). { apply Hds. left. reflexivity. }
+    inversion contra.
+  - discriminate.
+Qed.
+
+(* HIDE: This is Lemma 3 from Spectre Declassified *)
+
+Definition seq_ideal_eval (P:pub_vars) (c:com) (s:state) (a:astate)
+    (s':state) (a':astate) (os:obs) : Prop :=
+  exists ds, (forall d, In d ds -> d = DStep) /\
+    P |- <(s, a, false, ds)> =[ c ]=> <(s', a', false, os)>.
+
+Lemma seq_spec_eval_ideal_eval : forall P c s a s' a' os,
+  seq_spec_eval c s a s' a' os <->
+  seq_ideal_eval P c s a s' a' os.
+Proof.
+  intros P c s a s' a' os. unfold seq_spec_eval, seq_ideal_eval.
+  split; intros [ds [Hds H] ]; exists ds; (split; [ apply Hds |]).
+  - apply seq_eval_ideal_eval_ind1; eauto.
+  - eapply seq_eval_ideal_eval_ind2; eauto.
+Qed.
 
 (** Let's now prove that the idealized semantics does enforce speculative constant-time *)
 
