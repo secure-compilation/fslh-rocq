@@ -1054,7 +1054,8 @@ Lemma ct_well_typed_ideal_noninterferent_general :
     P |- <(s1, a1, b, ds1)> =[ c ]=> <(s1', a1', b1', os1)> ->
     P |- <(s2, a2, b, ds2)> =[ c ]=> <(s2', a2', b2', os2)> ->
     pub_equiv P s1' s2' /\ b1' = b2' /\
-      (b1' = false -> pub_equiv PA a1' a2') /\ ds1 = ds2.
+      (b1' = false -> pub_equiv PA a1' a2') /\
+      ds1 = ds2.  (* <- interesting generalization *)
 Proof.
   intros P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds1 ds2
     Hwt Heq Haeq Hds Heval1 Heval2.
@@ -1076,7 +1077,7 @@ Proof.
       apply Heq. apply Hy.
   - (* seq *) assert (Hds1: prefix ds1 ds0 \/ prefix ds0 ds1).
     { destruct Hds as [Hds | Hds]; apply prefix_app in Hds; tauto. }
-    assert (ds1 = ds0). { eapply IHHeval1_1; eassumption. } subst. f_equal.
+    assert (ds1 = ds0). { eapply IHHeval1_1; eassumption. } subst.
     assert (Hds2: prefix ds2 ds3 \/ prefix ds3 ds2).
     { destruct Hds as [Hds | Hds]; apply prefix_append_front in Hds; tauto. }
     (* TODO: proofs above and below can be better integrated *)
@@ -1124,7 +1125,7 @@ Proof.
         subst. rewrite Hy in *.
         rewrite Haeq; eauto.
         { apply prefix_or_heads in Hds. inversion Hds. reflexivity. }
-        { now destruct (PA a). }
+        { now destruct (PA a). (* also discriminate works *) }
       * do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
         apply Heq. apply Hy.
     + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
@@ -1340,6 +1341,7 @@ Lemma spec_unused_same : forall s a b ds c s' a' b' os,
   s' "b" = s "b".
 Admitted.
 
+(* SOONER: This doesn't work for "b"! Use of this lemma below seems wrong! *)
 Lemma c_unused_sel_slh : forall x c P,
   c_unused x c ->
   c_unused x (sel_slh P c).
