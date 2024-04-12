@@ -109,8 +109,8 @@ Inductive com : Type :=
   | Skip
   | Asgn (x : string) (e : aexp)
   | Seq (c1 c2 : com)
-  | If (b : bexp) (c1 c2 : com)
-  | While (b : bexp) (c : com)
+  | If (be : bexp) (c1 c2 : com)
+  | While (be : bexp) (c : com)
   | ARead (x : string) (a : string) (i : aexp) (* <--- NEW *)
   | AWrite (a : string) (i : aexp) (e : aexp)  (* <--- NEW *).
 
@@ -707,6 +707,8 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    direction as (Spec_Aread_U, not Spec_Aread). This reduces rule overlap, makes
    the Spec_ and Ideal_ semantics more aligned, and thus makes the SLH
    translation more correct. *)
+(* SOONER: Restricting Spec_ARead to only apply for b = false seems funny in
+   retrospect. *)
 
 (* HIDE: One design decision here is to neither consume DSteps not to generate
    dummy observations for skip and (register) assignment commands. This leads to
@@ -719,6 +721,29 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    Definition 2 relies on the small-step semantics to stop at the first force
    directive. Doing that with a big-step semantics seems trickier. We could
    build a version that halts early on the first force? *)
+
+(* SOONER: Give example programs that satisfy the cryptographic constant-time
+   discipline ([ct_well_typed]), but that are insecure wrt the speculative
+   semantics above.  For instance, one can write secrets to public arrays using
+   Spec_Write_U, and one can read to public registers from secret Spec_ARead_U.
+   Could look both into simple examples exploiting the semantics, and also into
+   more realistic examples that one can also exploit in practice.
+
+   b - secret array of size n >= 1
+   a - public array of size n >= 1
+   p - public variable
+
+   Realistic example:
+   i := 0;
+   while i < n do
+     p := p + a[i];
+     i := i + 1;
+   end
+
+   Simple but not so realistic example
+   (safe+secure without speculation, but unsafe+insecure with speculation):
+   if false then p := a[n] else skip
+*)
 
 (* HIDE: Just to warm up formalized the first lemma in the Spectre Declassified
    paper: Lemma 1: structural properties of execution *)
@@ -1080,7 +1105,7 @@ Proof.
     assert (ds1 = ds0). { eapply IHHeval1_1; eassumption. } subst.
     assert (Hds2: prefix ds2 ds3 \/ prefix ds3 ds2).
     { destruct Hds as [Hds | Hds]; apply prefix_append_front in Hds; tauto. }
-    (* TODO: proofs above and below can be better integrated *)
+    (* SOONER: proofs above and below can be better integrated *)
     specialize (IHHeval1_1 H13 _ Hds1 _ _ _ Haeq _ _ Heq _ H1).
     destruct IHHeval1_1 as [ IH12eq [IH12b [IH12eqa _] ] ]. subst.
     specialize (IHHeval1_2 H14 _ Hds2 _ _ _ IH12eqa _ _ IH12eq _ H10).
@@ -1310,12 +1335,12 @@ Proof.
     eapply IHc2; try tauto; [|eassumption].
     eapply IHc1; try tauto; eassumption.
   - inversion Heval; subst; eauto.
-    { destruct (beval s b) eqn:Eqbe; inversion H10; inversion H1; subst.
+    { destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst.
       + eapply IHc1; try tauto; [|eassumption].
         simpl. rewrite Eqbe. rewrite t_update_eq. assumption.
       + eapply IHc2; try tauto; [|eassumption].
         simpl. rewrite Eqbe. rewrite t_update_eq. assumption. }
-    { destruct (beval s b) eqn:Eqbe; inversion H10; inversion H1; subst.
+    { destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst.
       + eapply IHc2; try tauto; [|eassumption].
         simpl. rewrite Eqbe. rewrite t_update_eq. reflexivity.
       + eapply IHc1; try tauto; [|eassumption].
@@ -1329,23 +1354,52 @@ Qed.
 
 (** We now prove that [sel_slh] implies the ideal semantics. *)
 
-Lemma ideal_unused_update : forall P s a b ds c s' a' b' os X,
-  c_unused "b" c ->
-  P |- <("b" !-> X; s, a, b, ds)> =[ c ]=> <("b" !-> X; s', a', b', os)> ->
-  P |- <(s, a, b, ds)> =[ c ]=> <("b" !-> s "b"; s', a', b', os)>.
-Admitted.
-
-Lemma spec_unused_same : forall s a b ds c s' a' b' os,
-  c_unused "b" c ->
-  <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
-  s' "b" = s "b".
-Admitted.
-
-(* SOONER: This doesn't work for "b"! Use of this lemma below seems wrong! *)
-Lemma c_unused_sel_slh : forall x c P,
+(* HIDE: no longer used in [sel_slh_ideal], but maybe still useful (TBD) *)
+Lemma spec_unused_same : forall P s a b ds c s' a' b' os x,
   c_unused x c ->
-  c_unused x (sel_slh P c).
+  P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
+  s' x = s x.
 Admitted.
+
+Lemma ideal_unused_update : forall P s a b ds c s' a' b' os x X,
+  c_unused x c ->
+  P |- <(x !-> X; s, a, b, ds)> =[ c ]=> <(x !-> X; s', a', b', os)> ->
+  P |- <(s, a, b, ds)> =[ c ]=> <(x !-> s x; s', a', b', os)>.
+Admitted.
+
+Lemma aeval_unused_update : forall X st e n,
+  a_unused X e ->
+  aeval (X !-> n; st) e = aeval st e.
+Admitted.
+
+Lemma beval_unused_update : forall X st be n,
+  b_unused X be ->
+  beval (X !-> n; st) be = beval st be.
+Admitted.
+
+Lemma ideal_unused_update_rev_gen : forall P s a b ds c s' a' b' os x X,
+  c_unused x c ->
+  P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
+  P |- <(x !-> X; s, a, b, ds)> =[ c ]=> <(x !-> X; s', a', b', os)>.
+Proof.
+  intros P s a b ds c s' a' b' os x X Hu H.
+  induction H; try (now (simpl in *; econstructor; eauto)).
+  - simpl in Hu. rewrite t_update_permute; [| tauto].
+    econstructor. rewrite aeval_unused_update; tauto.
+  - simpl in Hu. destruct Hu as [Hu1 Hu2].
+    apply IHideal_eval1 in Hu1. apply IHideal_eval2 in Hu2.
+    econstructor; eassumption.
+Admitted.
+
+Lemma ideal_unused_update_rev : forall P s a b ds c s' a' b' os x X,
+  c_unused x c ->
+  P |- <(s, a, b, ds)> =[ c ]=> <(x !-> s x; s', a', b', os)> ->
+  P |- <(x !-> X; s, a, b, ds)> =[ c ]=> <(x !-> X; s', a', b', os)>.
+Proof.
+  intros P s a b ds c s' a' b' os x X Hu H.
+  eapply ideal_unused_update_rev_gen in H; [| eassumption].
+  rewrite t_update_shadow in H. eassumption.
+Qed.
 
 Lemma sel_slh_ideal : forall c P s a (b:bool) ds s' a' (b':bool) os,
   c_unused "b" c ->
@@ -1359,34 +1413,32 @@ Proof.
   - rewrite t_update_same. constructor.
   - rewrite t_update_permute; [| tauto]. rewrite t_update_same.
     constructor. reflexivity.
-  - econstructor.
+  - (* seq *) econstructor.
     + apply IHc1; try tauto; eassumption.
-    + eapply IHc2 in H10; try tauto.
-      * assert(Gst : st' "b" = s "b").
-        { eapply spec_unused_same; eauto. apply c_unused_sel_slh. tauto. }
-        rewrite <- Gst. rewrite t_update_same. eassumption.
-      * eapply sel_slh_flag; eauto; tauto.
-  - destruct (beval s b) eqn:Eqbe; inversion H10; inversion H1; subst.
+    + apply ideal_unused_update_rev; try tauto.
+      eapply IHc2; try tauto.
+      apply sel_slh_flag in H1; tauto.
+  - destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst.
     + eapply IHc1 in H11; try tauto.
-      * replace (OBranch true) with (OBranch (beval s b)) by now rewrite <- Eqbe.
+      * replace (OBranch true) with (OBranch (beval s be)) by now rewrite <- Eqbe.
         simpl. eapply Ideal_If. rewrite Eqbe.
         simpl in H11. rewrite Eqbe in H11. rewrite t_update_same in H11.
         apply H11.
       * rewrite t_update_eq. simpl. rewrite Eqbe. assumption.
     + eapply IHc2 in H11; try tauto.
-      * replace (OBranch false) with (OBranch (beval s b)) by now rewrite <- Eqbe.
+      * replace (OBranch false) with (OBranch (beval s be)) by now rewrite <- Eqbe.
         simpl. eapply Ideal_If. rewrite Eqbe.
         simpl in H11. rewrite Eqbe in H11. rewrite t_update_same in H11.
         apply H11.
       * rewrite t_update_eq. simpl. rewrite Eqbe. assumption.
   - (* Ideal_If_F *)
-    destruct (beval s b) eqn:Eqbe; inversion H10; inversion H1; subst; simpl in *;
+    destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst; simpl in *;
       rewrite Eqbe in H11.
-    + replace (OBranch true) with (OBranch (beval s b)) by now rewrite <- Eqbe.
+    + replace (OBranch true) with (OBranch (beval s be)) by now rewrite <- Eqbe.
       eapply Ideal_If_F. rewrite Eqbe.
       eapply IHc2 in H11; try tauto. rewrite t_update_eq in H11.
       eapply ideal_unused_update in H11; tauto.
-    + replace (OBranch false) with (OBranch (beval s b)) by now rewrite <- Eqbe.
+    + replace (OBranch false) with (OBranch (beval s be)) by now rewrite <- Eqbe.
       eapply Ideal_If_F. rewrite Eqbe.
       eapply IHc1 in H11; try tauto. rewrite t_update_eq in H11.
       eapply ideal_unused_update in H11; tauto.
@@ -1445,16 +1497,6 @@ Qed.
 (* HIDE: The less useful for security direction of the idealized semantics being
    equivalent to [sel_slh]; easier to prove even for while (forwards compiler
    correctness). *)
-
-Lemma aeval_unused_update : forall X st e n,
-  a_unused X e ->
-  aeval (X !-> n; st) e = aeval st e.
-Admitted.
-
-Lemma beval_unused_update : forall X st be n,
-  b_unused X be ->
-  beval (X !-> n; st) be = beval st be.
-Admitted.
 
 Lemma spec_seq_assoc3 : forall st ast b ds c1 c2 c3 st' ast' b' os,
   <( st, ast, b, ds )> =[ c1; c2; c3 ]=> <( st', ast', b', os )> ->
@@ -1517,7 +1559,7 @@ Proof.
         rewrite t_update_shadow. apply IHHeval. tauto.
   - (* while (most difficult case); it works though
        - proved mispeculation subcase, and the other case should be the same
-       - TODO: clean up the proof of the mispeculation subcase before copy pasting *)
+       - SOONER: clean up the proof of the mispeculation subcase before copy pasting *)
     assert(G : b_unused "b" be /\
       (c_unused "b" c /\ b_unused "b" be /\ c_unused "b" c) /\ True) by tauto.
     specialize (IHHeval G). clear G.
