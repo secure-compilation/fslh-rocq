@@ -54,6 +54,10 @@ with bexp : Type :=
   | BNot (b : bexp)
   | BAnd (b1 b2 : bexp).
 
+Scheme aexp_bexp_ind := Induction for aexp Sort Prop
+with bexp_aexp_ind := Induction for bexp Sort Prop.
+Combined Scheme aexp_bexp_mutind from aexp_bexp_ind,bexp_aexp_ind.
+
 (** ** Typing Constant-time conditional *)
 
 (** Typing of arithmetic and boolean expressions also becomes mutually inductive. *)
@@ -375,9 +379,10 @@ with bexp_has_label (P:pub_vars) : bexp -> label -> Prop :=
 
 where "P '|-b-' b '\in' l" := (bexp_has_label P b l).
 
-Scheme aexp_bexp_ind := Induction for aexp_has_label Sort Prop
-with bexp_aexp_ind := Induction for bexp_has_label Sort Prop.
-Combined Scheme aexp_bexp_mutind from aexp_bexp_ind,bexp_aexp_ind.
+Scheme aexp_bexp_has_label_ind := Induction for aexp_has_label Sort Prop
+with bexp_aexp_has_label_ind := Induction for bexp_has_label Sort Prop.
+Combined Scheme aexp_bexp_has_label_mutind
+  from aexp_bexp_has_label_ind,bexp_aexp_has_label_ind.
 
 Theorem noninterferent_aexp_bexp : forall P s1 s2,
   pub_equiv P s1 s2 ->
@@ -386,7 +391,7 @@ Theorem noninterferent_aexp_bexp : forall P s1 s2,
   (forall b l, P |-b- b \in l ->
    l = public -> beval s1 b = beval s2 b).
 Proof.
-  intros P s1 s2 Heq. apply (aexp_bexp_mutind P);
+  intros P s1 s2 Heq. apply (aexp_bexp_has_label_mutind P);
     simpl; intros;
     (repeat match goal with
     | [Heql : join _ _ = public |- _] =>
