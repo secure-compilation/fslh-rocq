@@ -1392,15 +1392,15 @@ Proof.
   - apply H in H0. rewrite H0. reflexivity.
 Qed.
 
-Lemma aeval_unused_update : forall X st e n,
-  a_unused X e ->
-  aeval (X !-> n; st) e = aeval st e.
-Admitted.
+Lemma aeval_unused_update : forall X st ae n,
+  a_unused X ae ->
+  aeval (X !-> n; st) ae = aeval st ae.
+Proof. intros X st ae n. apply aeval_beval_unused_update. Qed.
 
 Lemma beval_unused_update : forall X st be n,
   b_unused X be ->
   beval (X !-> n; st) be = beval st be.
-Admitted.
+  Proof. intros X st be n. apply aeval_beval_unused_update. Qed.
 
 Lemma ideal_unused_update_rev_gen : forall P s a b ds c s' a' b' os x X,
   c_unused x c ->
