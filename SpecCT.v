@@ -1372,6 +1372,26 @@ Lemma ideal_unused_update : forall P s a b ds c s' a' b' os x X,
   P |- <(s, a, b, ds)> =[ c ]=> <(x !-> s x; s', a', b', os)>.
 Admitted.
 
+Lemma aeval_beval_unused_update : forall X st n, 
+  (forall ae, a_unused X ae -> 
+    aeval (X !-> n; st) ae = aeval st ae) /\
+  (forall be, b_unused X be -> 
+    beval (X !-> n; st) be = beval st be).
+Proof. 
+  intros X st n. apply aexp_bexp_mutind; intros;
+  simpl in *; try reflexivity;
+  try (
+    destruct H1 as [Hau1 Hau2]; apply H in Hau1; apply H0 in Hau2;
+    rewrite Hau1; rewrite Hau2; reflexivity
+  ).
+  (* SOONER: optimize try block so that no 'unused introduction pattern' warning occurs *)
+  - rewrite t_update_neq; eauto.
+  - destruct H2 as [Hbu Hau]. destruct Hau as [Hau1 Hau2].
+    apply H0 in Hau1; apply H1 in Hau2; apply H in Hbu.
+    rewrite Hbu; rewrite Hau1; rewrite Hau2. reflexivity.
+  - apply H in H0. rewrite H0. reflexivity.
+Qed.
+
 Lemma aeval_unused_update : forall X st e n,
   a_unused X e ->
   aeval (X !-> n; st) e = aeval st e.
