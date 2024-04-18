@@ -1525,8 +1525,8 @@ Proof.
     destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst; simpl in *;
       rewrite Eqbe in H11.
     + replace (OBranch true) with (OBranch (beval s be)) by now rewrite <- Eqbe.
-        eapply Ideal_If_F. rewrite Eqbe.
-        eapply IHc2 in H11; try tauto. rewrite t_update_eq in H11.
+      eapply Ideal_If_F. rewrite Eqbe.
+      eapply IHc2 in H11; try tauto. rewrite t_update_eq in H11.
       eapply ideal_unused_update in H11; tauto.
     + replace (OBranch false) with (OBranch (beval s be)) by now rewrite <- Eqbe.
       eapply Ideal_If_F. rewrite Eqbe.
