@@ -1402,6 +1402,19 @@ Lemma beval_unused_update : forall X st be n,
   beval (X !-> n; st) be = beval st be.
   Proof. intros X st be n. apply aeval_beval_unused_update. Qed.
 
+(* HIDE: General statement about total maps. Used to proof ideal_unused_update *)
+Lemma submaps_eq_with_update : forall {A} (tm1 tm2 :total_map A) X a,
+  (X !-> a; tm1) = (X !-> a; tm2) -> tm1 = (X !-> tm1 X; tm2).
+Proof. 
+  intros A tm1 tm2 X a H.
+  apply FunctionalExtensionality.functional_extensionality.
+  intros x; destruct (String.eqb_spec X x) as [Heq | Hneq].
+  - rewrite Heq. rewrite t_update_eq. reflexivity.
+  - rewrite t_update_neq; [| assumption].
+    apply FunctionalExtensionality.equal_f with (x:=x) in H.
+    do 2 (rewrite t_update_neq in H; [| assumption]). assumption.
+Qed.
+
 Lemma ideal_unused_update_rev_gen : forall P s a b ds c s' a' b' os x X,
   c_unused x c ->
   P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
