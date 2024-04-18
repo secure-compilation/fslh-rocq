@@ -1366,12 +1366,6 @@ Lemma spec_unused_same : forall P s a b ds c s' a' b' os x,
   s' x = s x.
 Admitted.
 
-Lemma ideal_unused_update : forall P s a b ds c s' a' b' os x X,
-  c_unused x c ->
-  P |- <(x !-> X; s, a, b, ds)> =[ c ]=> <(x !-> X; s', a', b', os)> ->
-  P |- <(s, a, b, ds)> =[ c ]=> <(x !-> s x; s', a', b', os)>.
-Admitted.
-
 Lemma aeval_beval_unused_update : forall X st n, 
   (forall ae, a_unused X ae -> 
     aeval (X !-> n; st) ae = aeval st ae) /\
@@ -1414,6 +1408,64 @@ Proof.
     apply FunctionalExtensionality.equal_f with (x:=x) in H.
     do 2 (rewrite t_update_neq in H; [| assumption]). assumption.
 Qed.
+
+Lemma ideal_unused_update : forall X c P st ast b ds st' ast' b' os n,
+  c_unused X c ->
+  P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)> ->
+  P |- <(st, ast, b, ds)> =[ c ]=> <(X !-> st X; st', ast', b', os)>.
+Proof.
+  intros X c. induction c; intros P st ast b ds st' ast' b' os n Hu Heval;
+  simpl in *; inversion Heval; subst.
+  - (* Skip *) 
+    apply submaps_eq_with_update in H. rewrite H. rewrite t_update_eq. econstructor.
+  - (* Asgn *) destruct Hu as [Hneq Hau].
+    rewrite t_update_permute in H6; [|auto].
+    apply submaps_eq_with_update in H6. rewrite t_update_neq in H6; [| assumption].
+    rewrite <- H6. econstructor. rewrite aeval_unused_update; [reflexivity | assumption].
+  - (* Seq *)
+    admit.
+  - (* IF *)  destruct Hu as [Hbu Hu]. destruct Hu as [Hc1u Hc2u].
+    rewrite beval_unused_update in H10; [| assumption]. 
+    rewrite beval_unused_update; [| assumption]. 
+    econstructor. destruct (beval st be) eqn:D.
+    + apply IHc1 in H10; assumption.
+    + apply IHc2 in H10; assumption.
+  - (* If_F *) destruct Hu as [Hbu Hu]. destruct Hu as [Hc2u Hc1u].
+    rewrite beval_unused_update in H10; [| assumption]. 
+    rewrite beval_unused_update; [| assumption]. 
+    econstructor. destruct (beval st be) eqn:D.
+    + apply IHc2 in H10; assumption.
+    + apply IHc1 in H10; assumption.
+  - (* While *)
+    admit.
+  (* HIDE: ARead cases are all proven the same way, only hypotheses names changed. *)
+  - (* ARead *) destruct Hu as [Hneq Hau].
+    rewrite t_update_permute in H7; [| auto]. apply submaps_eq_with_update in H7.
+    rewrite t_update_neq in H7; [| assumption]. rewrite <- H7.
+    rewrite aeval_unused_update; [| assumption]. rewrite aeval_unused_update in H11; [| assumption].
+    econstructor; auto.
+  - (* ARead_U *) destruct Hu as [Hneq Hau].
+    rewrite t_update_permute in H2; [| auto]. apply submaps_eq_with_update in H2.
+    rewrite t_update_neq in H2; [| assumption]. rewrite <- H2.
+    rewrite aeval_unused_update; [| assumption]. rewrite aeval_unused_update in H12; [| assumption].
+    econstructor; auto.
+  - (* ARead_Prot *) destruct Hu as [Hneq Hau].
+    rewrite t_update_permute in H2; [| auto]. apply submaps_eq_with_update in H2.
+    rewrite t_update_neq in H2; [| assumption]. rewrite <- H2.
+    rewrite aeval_unused_update; [| assumption]. rewrite aeval_unused_update in H12; [| assumption].
+    econstructor; auto.
+  (* HIDE: AWrite cases are all proven the same way. *)
+  - (* AWrite *) destruct Hu as [Hneq Hau].
+    apply submaps_eq_with_update in H2. rewrite <- H2.
+    do 2 (rewrite aeval_unused_update; [| assumption]).
+    rewrite aeval_unused_update in H12; [| assumption].
+    econstructor; auto.
+  - (* AWrite_U *) destruct Hu as [Hneq Hau].
+    apply submaps_eq_with_update in H2. rewrite <- H2.
+    do 2 (rewrite aeval_unused_update; [| assumption]).
+    rewrite aeval_unused_update in H12; [| assumption].
+    econstructor; auto.
+Admitted.
 
 Lemma ideal_unused_update_rev_gen : forall P s a b ds c s' a' b' os x X,
   c_unused x c ->
@@ -1473,8 +1525,8 @@ Proof.
     destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst; simpl in *;
       rewrite Eqbe in H11.
     + replace (OBranch true) with (OBranch (beval s be)) by now rewrite <- Eqbe.
-      eapply Ideal_If_F. rewrite Eqbe.
-      eapply IHc2 in H11; try tauto. rewrite t_update_eq in H11.
+        eapply Ideal_If_F. rewrite Eqbe.
+        eapply IHc2 in H11; try tauto. rewrite t_update_eq in H11.
       eapply ideal_unused_update in H11; tauto.
     + replace (OBranch false) with (OBranch (beval s be)) by now rewrite <- Eqbe.
       eapply Ideal_If_F. rewrite Eqbe.
