@@ -1375,15 +1375,12 @@ Proof.
   intros X st n. apply aexp_bexp_mutind; intros;
   simpl in *; try reflexivity;
   try (
-    destruct H1 as [Hau1 Hau2]; apply H in Hau1; apply H0 in Hau2;
-    rewrite Hau1; rewrite Hau2; reflexivity
+    rewrite H; [| tauto]; rewrite H0; [| tauto]; reflexivity
   ).
-  (* SOONER: optimize try block so that no 'unused introduction pattern' warning occurs *)
   - rewrite t_update_neq; eauto.
-  - destruct H2 as [Hbu Hau]. destruct Hau as [Hau1 Hau2].
-    apply H0 in Hau1; apply H1 in Hau2; apply H in Hbu.
-    rewrite Hbu; rewrite Hau1; rewrite Hau2. reflexivity.
-  - apply H in H0. rewrite H0. reflexivity.
+  - rewrite H; [| tauto]. rewrite H0; [| tauto]. rewrite H1; [| tauto].
+    reflexivity.
+  - rewrite H; auto.
 Qed.
 
 Lemma aeval_unused_update : forall X st ae n,
