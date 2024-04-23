@@ -1393,7 +1393,7 @@ Lemma beval_unused_update : forall X st be n,
   beval (X !-> n; st) be = beval st be.
   Proof. intros X st be n. apply aeval_beval_unused_update. Qed.
 
-(* HIDE: General statement about total maps. Used to proof ideal_unused_update *)
+(* HIDE: General statement about total maps. Used to proof ideal_unused_update. *)
 Lemma submaps_eq_with_update : forall {A} (tm1 tm2 :total_map A) X a,
   (X !-> a; tm1) = (X !-> a; tm2) -> tm1 = (X !-> tm1 X; tm2).
 Proof. 
@@ -1470,61 +1470,69 @@ Qed.
 
 Lemma ideal_unused_update : forall X c P st ast b ds st' ast' b' os n,
   c_unused X c ->
+  c_no_while c ->
   P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)> ->
   P |- <(st, ast, b, ds)> =[ c ]=> <(X !-> st X; st', ast', b', os)>.
 Proof.
-  intros X c. induction c; intros P st ast b ds st' ast' b' os n Hu Heval;
+  intros X c. induction c; intros P st ast b ds st' ast' b' os n Hu Hnowhile Heval;
   simpl in *; inversion Heval; subst.
   - (* Skip *) 
-    apply submaps_eq_with_update in H. rewrite H. rewrite t_update_eq. econstructor.
-  - (* Asgn *) destruct Hu as [Hneq Hau].
-    rewrite t_update_permute in H6; [|auto].
-    apply submaps_eq_with_update in H6. rewrite t_update_neq in H6; [| assumption].
-    rewrite <- H6. econstructor. rewrite aeval_unused_update; [reflexivity | assumption].
-  - (* Seq *)
-    admit.
-  - (* IF *)  destruct Hu as [Hbu Hu]. destruct Hu as [Hc1u Hc2u].
-    rewrite beval_unused_update in H10; [| assumption]. 
-    rewrite beval_unused_update; [| assumption]. 
+    apply submaps_eq_with_update in H.
+    rewrite H. rewrite t_update_eq.
+    econstructor.
+  - (* Asgn *)
+    rewrite t_update_permute in H6; [| firstorder].
+    apply submaps_eq_with_update in H6. rewrite t_update_neq in H6; [| tauto].
+    rewrite <- H6. econstructor. rewrite aeval_unused_update; tauto.
+  - (* Seq *) 
+    apply ideal_update_with_unused with (X:=X) (n:=n) in H1; try tauto.
+    rewrite t_update_shadow in H1.
+    apply IHc1 in H1; try tauto.
+    econstructor.
+    + eassumption.
+    + apply ideal_update_with_unused with (X:=X) (n:=(st X)) in H10; try tauto.
+      rewrite t_update_shadow in H10. assumption.
+  - (* If *)
+    rewrite beval_unused_update in H10; [| tauto].
+    rewrite beval_unused_update; [| tauto]. 
     econstructor. destruct (beval st be) eqn:D.
-    + apply IHc1 in H10; assumption.
-    + apply IHc2 in H10; assumption.
-  - (* If_F *) destruct Hu as [Hbu Hu]. destruct Hu as [Hc2u Hc1u].
-    rewrite beval_unused_update in H10; [| assumption]. 
-    rewrite beval_unused_update; [| assumption]. 
+    + apply IHc1 in H10; tauto.
+    + apply IHc2 in H10; tauto.
+  - (* If_F *)
+    rewrite beval_unused_update in H10; [| tauto]. 
+    rewrite beval_unused_update; [| tauto]. 
     econstructor. destruct (beval st be) eqn:D.
-    + apply IHc2 in H10; assumption.
-    + apply IHc1 in H10; assumption.
-  - (* While *)
-    admit.
+    + apply IHc2 in H10; tauto.
+    + apply IHc1 in H10; tauto.
+  - (* While *) destruct Hnowhile.
   (* HIDE: ARead cases are all proven the same way, only hypotheses names changed. *)
-  - (* ARead *) destruct Hu as [Hneq Hau].
-    rewrite t_update_permute in H7; [| auto]. apply submaps_eq_with_update in H7.
+  - (* ARead *)
+    rewrite t_update_permute in H7; try firstorder. apply submaps_eq_with_update in H7.
     rewrite t_update_neq in H7; [| assumption]. rewrite <- H7.
     rewrite aeval_unused_update; [| assumption]. rewrite aeval_unused_update in H11; [| assumption].
     econstructor; auto.
-  - (* ARead_U *) destruct Hu as [Hneq Hau].
-    rewrite t_update_permute in H2; [| auto]. apply submaps_eq_with_update in H2.
+  - (* ARead_U *)
+    rewrite t_update_permute in H2; try firstorder. apply submaps_eq_with_update in H2.
     rewrite t_update_neq in H2; [| assumption]. rewrite <- H2.
     rewrite aeval_unused_update; [| assumption]. rewrite aeval_unused_update in H12; [| assumption].
     econstructor; auto.
-  - (* ARead_Prot *) destruct Hu as [Hneq Hau].
-    rewrite t_update_permute in H2; [| auto]. apply submaps_eq_with_update in H2.
+  - (* ARead_Prot *)
+    rewrite t_update_permute in H2; try firstorder. apply submaps_eq_with_update in H2.
     rewrite t_update_neq in H2; [| assumption]. rewrite <- H2.
     rewrite aeval_unused_update; [| assumption]. rewrite aeval_unused_update in H12; [| assumption].
     econstructor; auto.
   (* HIDE: AWrite cases are all proven the same way. *)
-  - (* AWrite *) destruct Hu as [Hneq Hau].
+  - (* AWrite *)
     apply submaps_eq_with_update in H2. rewrite <- H2.
-    do 2 (rewrite aeval_unused_update; [| assumption]).
-    rewrite aeval_unused_update in H12; [| assumption].
+    do 2 (rewrite aeval_unused_update; [| tauto]).
+    rewrite aeval_unused_update in H12; [| tauto].
     econstructor; auto.
-  - (* AWrite_U *) destruct Hu as [Hneq Hau].
+  - (* AWrite_U *)
     apply submaps_eq_with_update in H2. rewrite <- H2.
-    do 2 (rewrite aeval_unused_update; [| assumption]).
-    rewrite aeval_unused_update in H12; [| assumption].
+    do 2 (rewrite aeval_unused_update; [| tauto]).
+    rewrite aeval_unused_update in H12; [| tauto].
     econstructor; auto.
-Admitted.
+Qed.
 
 Lemma ideal_unused_update_rev_gen : forall P s a b ds c s' a' b' os x X,
   c_unused x c ->
