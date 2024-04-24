@@ -1406,63 +1406,51 @@ Proof.
     do 2 (rewrite t_update_neq in H; [| assumption]). assumption.
 Qed.
 
-(* HIDE: This lemma is used to proof the Seq case of ideal_unused_update. 
-  If one can proof the While case for this lemma, the While case of ideal_unused_update 
-  can also be proven with this lemma. *)
-Lemma ideal_update_with_unused : forall X c P st ast b ds st' ast' b' os n,
+Lemma ideal_update_unused_gen : forall P st ast b ds c st' ast' b' os X n,
   c_unused X c ->
-  c_no_while c ->
   P |- <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> ->
   P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)>.
 Proof.
-  intros X c. induction c; intros P st ast b ds st' ast' b' os n Hu Hnowhile Heval;
-  simpl in *; inversion Heval; subst.
+  intros P st ast b ds c st' ast' b' os X n Hu H.
+  induction H; simpl in Hu.
   - (* Skip*) econstructor.
-  - (* Adgn *)
+  - (* Asgn *)
     rewrite t_update_permute; [| tauto].
     econstructor. rewrite aeval_unused_update; tauto.
   - (* Seq *)
     econstructor.
-    + eapply IHc1; try tauto. eapply H1.
-    + eapply IHc2; try tauto.
+    + eapply IHideal_eval1; try tauto.
+    + eapply IHideal_eval2; try tauto.
   - (* If *) 
     rewrite <- beval_unused_update with (X:=X) (n:=n); [| tauto].
     econstructor. destruct (beval st be) eqn:D.
     + rewrite beval_unused_update; [| tauto]. rewrite D.
-      apply IHc1; tauto.
+      apply IHideal_eval; tauto.
     + rewrite beval_unused_update; [| tauto]. rewrite D.
-      apply IHc2; tauto.
+      apply IHideal_eval; tauto.
   - (* If_F *)
     rewrite <- beval_unused_update with (X:=X) (n:=n); [| tauto].
     econstructor. destruct (beval st be) eqn:D.
     + rewrite beval_unused_update; [| tauto]. rewrite D.
-      apply IHc2; tauto.
+      apply IHideal_eval; tauto.
     + rewrite beval_unused_update; [| tauto]. rewrite D.
-    apply IHc1; tauto.
-  - (* While *) destruct Hnowhile.
+    apply IHideal_eval; tauto.
+  - (* While *) 
+    econstructor. eapply IHideal_eval. simpl. tauto.
   - (* ARead *)
-    rewrite <- aeval_unused_update with (X:=X) (n:=n); [|tauto]. 
-    rewrite t_update_permute; [|tauto]. econstructor.
-    + reflexivity.
-    + rewrite aeval_unused_update; tauto.
+    rewrite t_update_permute; [| tauto]. econstructor; try assumption.
+    rewrite aeval_unused_update; tauto.
   - (* ARead_U *)
-    rewrite <- aeval_unused_update with (X:=X) (n:=n); [|tauto]. 
-    rewrite t_update_permute; [|tauto]. econstructor; try assumption.
-    + reflexivity.
+    rewrite t_update_permute; [| tauto]. econstructor; try assumption.
+    rewrite aeval_unused_update; tauto.
+  - (* ARead_Prot *)  
+    rewrite t_update_permute; [| tauto]. econstructor; try assumption.
+    rewrite aeval_unused_update; tauto.
+  - (* AWrite *) 
+    econstructor; try assumption.
     + rewrite aeval_unused_update; tauto.
-  - (* ARead_Prot *)
-    rewrite <- aeval_unused_update with (X:=X) (n:=n); [|tauto]. 
-    rewrite t_update_permute; [|tauto]. econstructor; try assumption.
-    + reflexivity.
-    + rewrite aeval_unused_update; tauto.
-  - (* AWrite *)
-    rewrite <- aeval_unused_update with (X:=X) (n:=n); [|tauto]. 
-    econstructor.
-    + rewrite aeval_unused_update; tauto.
-    + reflexivity.
     + rewrite aeval_unused_update; tauto. 
-  - (* AWrite_U *) 
-    rewrite <- aeval_unused_update with (X:=X) (n:=n); [|tauto]. 
+  - (* AWrite_U *)  
     econstructor; try assumption.
     + rewrite aeval_unused_update; tauto.
     + rewrite aeval_unused_update; tauto.
