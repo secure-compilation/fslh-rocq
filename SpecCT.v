@@ -1534,19 +1534,51 @@ Proof.
     econstructor; auto.
 Qed.
 
-Lemma ideal_unused_update_rev_gen : forall P s a b ds c s' a' b' os x X,
-  c_unused x c ->
-  P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
-  P |- <(x !-> X; s, a, b, ds)> =[ c ]=> <(x !-> X; s', a', b', os)>.
+Lemma ideal_unused_update_rev_gen : forall P st ast b ds c st' ast' b' os X n,
+  c_unused X c ->
+  P |- <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> ->
+  P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)>.
 Proof.
-  intros P s a b ds c s' a' b' os x X Hu H.
-  induction H; try (now (simpl in *; econstructor; eauto)).
-  - simpl in Hu. rewrite t_update_permute; [| tauto].
+  intros P st ast b ds c st' ast' b' os X n Hu H.
+  induction H; simpl in Hu.
+  - (* Skip *) econstructor.
+  - (* Asgn *) 
+    rewrite t_update_permute; [| tauto].
     econstructor. rewrite aeval_unused_update; tauto.
-  - simpl in Hu. destruct Hu as [Hu1 Hu2].
-    apply IHideal_eval1 in Hu1. apply IHideal_eval2 in Hu2.
-    econstructor; eassumption.
-Admitted.
+  - (* Seq *)
+    econstructor. 
+    + apply IHideal_eval1; tauto.
+    + apply IHideal_eval2; tauto.
+  - (* If *) 
+    rewrite <- beval_unused_update with (X:=X) (n:=n); [| tauto].
+    econstructor.
+    rewrite beval_unused_update; [ | tauto].
+    destruct ( beval st be) eqn:D; apply IHideal_eval; tauto.
+  - (* If_F *)
+    rewrite <- beval_unused_update with (X:=X) (n:=n); [| tauto].
+    econstructor.
+    rewrite beval_unused_update; [ | tauto].
+    destruct ( beval st be) eqn:D; apply IHideal_eval; tauto.
+  - (* While *)
+    econstructor. apply IHideal_eval. simpl; tauto.
+  - (* ARead *)
+    rewrite t_update_permute; [| tauto]. econstructor; [ | assumption].
+    rewrite aeval_unused_update; tauto.
+  - (* ARead_U *)
+    rewrite t_update_permute; [| tauto]. econstructor; try assumption.
+    rewrite aeval_unused_update; tauto.
+  - (* ARead_Prot *)
+    rewrite t_update_permute; [| tauto]. econstructor; try assumption.
+    rewrite aeval_unused_update; tauto.
+  - (* AWrite *)
+    econstructor; try assumption.
+    + rewrite aeval_unused_update; tauto.
+    + rewrite aeval_unused_update; tauto.
+  - (* AWrite_U *)
+    econstructor; try assumption.
+    + rewrite aeval_unused_update; tauto.
+    + rewrite aeval_unused_update; tauto.
+Qed.
 
 Lemma ideal_unused_update_rev : forall P s a b ds c s' a' b' os x X,
   c_unused x c ->
