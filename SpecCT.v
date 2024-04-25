@@ -1295,14 +1295,14 @@ with b_unused (x:string) (b:bexp) : Prop :=
   | <{b1 && b2}>  => b_unused x b1 /\ b_unused x b2
   end.
 
-Fixpoint c_unused (x:string) (c:com) : Prop :=
+Fixpoint unused (x:string) (c:com) : Prop :=
   match c with
   | <{{skip}}> => True
   | <{{y := e}}> => y <> x /\ a_unused x e
-  | <{{c1; c2}}> => c_unused x c1 /\ c_unused x c2
+  | <{{c1; c2}}> => unused x c1 /\ unused x c2
   | <{{if be then c1 else c2 end}}> =>
-      b_unused x be /\ c_unused x c1 /\ c_unused x c2
-  | <{{while be do c end}}> => b_unused x be /\ c_unused x c
+      b_unused x be /\ unused x c1 /\ unused x c2
+  | <{{while be do c end}}> => b_unused x be /\ unused x c
   | <{{y <- a[[i]]}}> => y <> x /\ a_unused x i
   | <{{a[i] <- e}}> => a_unused x i /\ a_unused x e
   end.
@@ -1316,19 +1316,78 @@ Open Scope string_scope.
    correctness. For backwards compiler correctness with while we probably need
    to use a small-step semantics and a simulation direction flipping trick? *)
 
-Fixpoint c_no_while (c:com) : Prop :=
+Fixpoint no_while (c:com) : Prop :=
   match c with
   | <{{while _ do _ end}}> => False
   | <{{if _ then c1 else c2 end}}>
-  | <{{c1; c2}}> => c_no_while c1 /\ c_no_while c2
+  | <{{c1; c2}}> => no_while c1 /\ no_while c2
   | _ => True
   end.
 
 (** As a warm-up we prove that [sel_slh] properly updates the variable "b". *)
 
+(** We start with a failed syntactic generalization *)
+
+Lemma sel_slh_flag_gen : forall cc P s a (b:bool) ds s' a' (b':bool) os,
+  <(s, a, b, ds)> =[ cc ]=> <(s', a', b', os)> ->
+  forall sc,
+    cc = sel_slh P sc ->
+    unused "b" sc ->
+    s "b" = (if b then 1 else 0) ->
+    s' "b" = (if b' then 1 else 0).
+Proof.
+  intros cc P s a b ds s' a' b' os H. induction H; intros sc Heq Hunused Hsb. Focus 6.
+  - (* No chance to prove the following to instantiate the IH:
+       <{{ if be then c; while be do c end else skip end }}> = sel_slh P sc *)
+Abort.
+
+(** Maybe a more semantic generalization? *)
+
+Definition cequiv (c1 c2 : com) : Prop :=
+  forall s a b ds s' a' b' os,
+        (<(s, a, b, ds)> =[ c1 ]=> <(s', a', b', os)>)
+    <-> (<(s, a, b, ds)> =[ c2 ]=> <(s', a', b', os)>).
+
+Lemma cequiv_while_step : forall be c,
+  cequiv <{{if be then c; while be do c end else skip end}}>
+         <{{while be do c end}}>.
+Admitted.
+
+Lemma cequiv_trans : forall c1 c2 c3,
+  cequiv c1 c2 ->
+  cequiv c2 c3 ->
+  cequiv c1 c3.
+Admitted.
+
+Lemma cequiv_refl : forall c,
+  cequiv c c.
+Admitted.
+
+Lemma sel_slh_flag_gen : forall cc P s a (b:bool) ds s' a' (b':bool) os,
+  <(s, a, b, ds)> =[ cc ]=> <(s', a', b', os)> ->
+  forall sc,
+    cequiv cc (sel_slh P sc) ->
+    unused "b" sc ->
+    s "b" = (if b then 1 else 0) ->
+    s' "b" = (if b' then 1 else 0).
+Proof.
+  intros cc P s a b ds s' a' b' os H. induction H; intros sc Hequiv Hunused Hsb. Focus 6.
+  - eapply IHspec_eval; eauto. eapply cequiv_trans; eauto. apply cequiv_while_step.
+Admitted.
+
 Lemma sel_slh_flag : forall c P s a (b:bool) ds s' a' (b':bool) os,
-  c_unused "b" c ->
-  c_no_while c ->
+  unused "b" c ->
+  s "b" = (if b then 1 else 0) ->
+  <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
+  s' "b" = (if b' then 1 else 0).
+Proof.
+  intros c P s a b ds s' a' b' os Hunused Hsb Heval.
+  eapply sel_slh_flag_gen; eauto. apply cequiv_refl.
+Abort.
+
+Lemma sel_slh_flag : forall c P s a (b:bool) ds s' a' (b':bool) os,
+  unused "b" c ->
+  no_while c ->
   s "b" = (if b then 1 else 0) ->
   <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
   s' "b" = (if b' then 1 else 0).
@@ -1360,8 +1419,8 @@ Qed.
 (** We now prove that [sel_slh] implies the ideal semantics. *)
 
 (* HIDE: no longer used in [sel_slh_ideal], but maybe still useful (TBD) *)
-Lemma spec_unused_same : forall P s a b ds c s' a' b' os x,
-  c_unused x c ->
+Lemma speunused_same : forall P s a b ds c s' a' b' os x,
+  unused x c ->
   P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
   s' x = s x.
 Admitted.
@@ -1393,68 +1452,8 @@ Lemma beval_unused_update : forall X st be n,
   beval (X !-> n; st) be = beval st be.
   Proof. intros X st be n. apply aeval_beval_unused_update. Qed.
 
-Lemma ideal_update_unused_gen : forall P st ast b ds c st' ast' b' os X n,
-  c_unused X c ->
-  P |- <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> ->
-  P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)>.
-Proof.
-  intros P st ast b ds c st' ast' b' os X n Hu H.
-  induction H; simpl in Hu.
-  - (* Skip*) econstructor.
-  - (* Asgn *)
-    rewrite t_update_permute; [| tauto].
-    econstructor. rewrite aeval_unused_update; tauto.
-  - (* Seq *)
-    econstructor.
-    + eapply IHideal_eval1; try tauto.
-    + eapply IHideal_eval2; try tauto.
-  - (* If *) 
-    rewrite <- beval_unused_update with (X:=X) (n:=n); [| tauto].
-    econstructor. destruct (beval st be) eqn:D.
-    + rewrite beval_unused_update; [| tauto]. rewrite D.
-      apply IHideal_eval; tauto.
-    + rewrite beval_unused_update; [| tauto]. rewrite D.
-      apply IHideal_eval; tauto.
-  - (* If_F *)
-    rewrite <- beval_unused_update with (X:=X) (n:=n); [| tauto].
-    econstructor. destruct (beval st be) eqn:D.
-    + rewrite beval_unused_update; [| tauto]. rewrite D.
-      apply IHideal_eval; tauto.
-    + rewrite beval_unused_update; [| tauto]. rewrite D.
-    apply IHideal_eval; tauto.
-  - (* While *) 
-    econstructor. eapply IHideal_eval. simpl. tauto.
-  - (* ARead *)
-    rewrite t_update_permute; [| tauto]. econstructor; try assumption.
-    rewrite aeval_unused_update; tauto.
-  - (* ARead_U *)
-    rewrite t_update_permute; [| tauto]. econstructor; try assumption.
-    rewrite aeval_unused_update; tauto.
-  - (* ARead_Prot *)  
-    rewrite t_update_permute; [| tauto]. econstructor; try assumption.
-    rewrite aeval_unused_update; tauto.
-  - (* AWrite *) 
-    econstructor; try assumption.
-    + rewrite aeval_unused_update; tauto.
-    + rewrite aeval_unused_update; tauto. 
-  - (* AWrite_U *)  
-    econstructor; try assumption.
-    + rewrite aeval_unused_update; tauto.
-    + rewrite aeval_unused_update; tauto.
-Qed.
-
-Lemma ideal_unused_update : forall P st ast b ds c st' ast' b' os X n,
-  c_unused X c ->
-  P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)> ->
-  P |- <(st, ast, b, ds)> =[ c ]=> <(X !-> st X; st', ast', b', os)>.
-Proof.
-  intros P st ast b ds c st' ast' b' os X n Hu Heval. 
-  eapply ideal_update_unused_gen with (X:=X) (n:=(st X)) in Heval; [| assumption].
-  do 2 rewrite t_update_shadow in Heval. rewrite t_update_same in Heval. assumption.
-Qed.
-
 Lemma ideal_unused_update_rev_gen : forall P st ast b ds c st' ast' b' os X n,
-  c_unused X c ->
+  unused X c ->
   P |- <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> ->
   P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)>.
 Proof.
@@ -1500,7 +1499,7 @@ Proof.
 Qed.
 
 Lemma ideal_unused_update_rev : forall P s a b ds c s' a' b' os x X,
-  c_unused x c ->
+  unused x c ->
   P |- <(s, a, b, ds)> =[ c ]=> <(x !-> s x; s', a', b', os)> ->
   P |- <(x !-> X; s, a, b, ds)> =[ c ]=> <(x !-> X; s', a', b', os)>.
 Proof.
@@ -1509,9 +1508,19 @@ Proof.
   rewrite t_update_shadow in H. eassumption.
 Qed.
 
+Lemma ideal_unused_update : forall P st ast b ds c st' ast' b' os X n,
+  unused X c ->
+  P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)> ->
+  P |- <(st, ast, b, ds)> =[ c ]=> <(X !-> st X; st', ast', b', os)>.
+Proof.
+  intros P st ast b ds c st' ast' b' os X n Hu Heval. 
+  eapply ideal_unused_update_rev_gen with (X:=X) (n:=(st X)) in Heval; [| assumption].
+  do 2 rewrite t_update_shadow in Heval. rewrite t_update_same in Heval. assumption.
+Qed.
+
 Lemma sel_slh_ideal : forall c P s a (b:bool) ds s' a' (b':bool) os,
-  c_unused "b" c ->
-  c_no_while c ->
+  unused "b" c ->
+  no_while c ->
   s "b" = (if b then 1 else 0) ->
   <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
   P |- <(s, a, b, ds)> =[ c ]=> <("b" !-> s "b"; s', a', b', os)>.
@@ -1587,8 +1596,8 @@ Theorem sel_slh_spec_ct_secure :
     P ;; PA |-ct- c ->
     pub_equiv P s1 s2 ->
     pub_equiv PA a1 a2 ->
-    c_unused "b" c ->
-    c_no_while c ->
+    unused "b" c ->
+    no_while c ->
     s1 "b" = 0 ->
     s2 "b" = 0 ->
     <(s1, a1, false, ds)> =[ sel_slh P c ]=> <(s1', a1', b1', os1)> ->
@@ -1617,7 +1626,7 @@ Lemma spec_seq_assoc4 : forall st ast b ds c1 c2 c3 c4 st' ast' b' os,
 Admitted.
 
 Lemma ideal_sel_slh : forall P s a b ds c s' a' b' os,
-  c_unused "b" c ->
+  unused "b" c ->
   P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
   <("b" !-> (if b then 1 else 0); s, a, b, ds)> =[ sel_slh P c ]=>
     <("b" !-> (if b' then 1 else 0); s', a', b', os)>.
@@ -1669,7 +1678,7 @@ Proof.
        - proved mispeculation subcase, and the other case should be the same
        - SOONER: clean up the proof of the mispeculation subcase before copy pasting *)
     assert(G : b_unused "b" be /\
-      (c_unused "b" c /\ b_unused "b" be /\ c_unused "b" c) /\ True) by tauto.
+      (unused "b" c /\ b_unused "b" be /\ unused "b" c) /\ True) by tauto.
     specialize (IHHeval G). clear G.
     inversion IHHeval; clear IHHeval; subst. (* Spec_If *)
     + replace (DStep :: ds0) with ((DStep :: ds0)++[])%list by apply app_nil_r.
