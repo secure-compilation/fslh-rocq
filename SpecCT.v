@@ -1628,7 +1628,13 @@ Qed.
 Lemma spec_seq_assoc4 : forall st ast b ds c1 c2 c3 c4 st' ast' b' os,
   <( st, ast, b, ds )> =[ c1; c2; c3; c4 ]=> <( st', ast', b', os )> ->
   <( st, ast, b, ds )> =[ (c1; c2; c3); c4 ]=> <( st', ast', b', os )>.
-Admitted.
+Proof. 
+  intros st ast b ds c1 c2 c3 c4 st' ast' b' os Heval.
+  inversion Heval; subst; clear Heval. inversion H10; subst; clear H10. inversion H12; subst; clear H12.
+  do 4 rewrite app_assoc. econstructor; [| eassumption].
+  do 2 rewrite <- app_assoc. econstructor; [eassumption |].
+  econstructor; eassumption.
+Qed.
 
 Lemma ideal_sel_slh : forall P s a b ds c s' a' b' os,
   unused "b" c ->
