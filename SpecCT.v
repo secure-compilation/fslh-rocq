@@ -1419,11 +1419,22 @@ Qed.
 (** We now prove that [sel_slh] implies the ideal semantics. *)
 
 (* HIDE: no longer used in [sel_slh_ideal], but maybe still useful (TBD) *)
-Lemma speunused_same : forall P s a b ds c s' a' b' os x,
-  unused x c ->
-  P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
-  s' x = s x.
-Admitted.
+Lemma ideal_unused_same : forall P st ast b ds c st' ast' b' os X,
+  unused X c ->
+  P |- <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> ->
+  st' X = st X.
+Proof. 
+  intros P st ast b ds c st' ast' b' os X Hu Heval.
+  induction Heval; simpl in Hu; try reflexivity; try (rewrite t_update_neq; tauto).
+  - (* Seq *) rewrite IHHeval2; [| tauto]. rewrite IHHeval1; [| tauto]. reflexivity.
+  - (* If *) destruct ( beval st be)  eqn:Dbe.
+    + apply IHHeval; tauto.
+    + apply IHHeval; tauto.
+  - (* If_F *) destruct ( beval st be)  eqn:Dbe.
+    + apply IHHeval; tauto.
+    + apply IHHeval; tauto. 
+  - (* While *) apply IHHeval. simpl. tauto.
+Qed.
 
 Lemma aeval_beval_unused_update : forall X st n, 
   (forall ae, a_unused X ae -> 
