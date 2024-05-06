@@ -1348,9 +1348,8 @@ Definition cequiv (c1 c2 : com) : Prop :=
         (<(s, a, b, ds)> =[ c1 ]=> <(s', a', b', os)>)
     <-> (<(s, a, b, ds)> =[ c2 ]=> <(s', a', b', os)>).
 
-Lemma cequiv_while_step : forall be c,
-  cequiv <{{if be then c; while be do c end else skip end}}>
-         <{{while be do c end}}>.
+Lemma cequiv_refl : forall c,
+  cequiv c c.
 Admitted.
 
 Lemma cequiv_trans : forall c1 c2 c3,
@@ -1359,8 +1358,9 @@ Lemma cequiv_trans : forall c1 c2 c3,
   cequiv c1 c3.
 Admitted.
 
-Lemma cequiv_refl : forall c,
-  cequiv c c.
+Lemma cequiv_while_step : forall be c,
+  cequiv <{{if be then c; while be do c end else skip end}}>
+         <{{while be do c end}}>.
 Admitted.
 
 Lemma sel_slh_flag_gen : forall cc P s a (b:bool) ds s' a' (b':bool) os,
@@ -1371,15 +1371,19 @@ Lemma sel_slh_flag_gen : forall cc P s a (b:bool) ds s' a' (b':bool) os,
     s "b" = (if b then 1 else 0) ->
     s' "b" = (if b' then 1 else 0).
 Proof.
-  intros cc P s a b ds s' a' b' os H. induction H; intros sc Hequiv Hunused Hsb. Focus 6.
-  - eapply IHspec_eval; eauto. eapply cequiv_trans; eauto. apply cequiv_while_step.
+  intros cc P s a b ds s' a' b' os H. induction H; intros sc Hequiv Hunused Hsb. 
+  (* While case now provable *)
+  Focus 6.
+  eapply IHspec_eval; eauto. eapply cequiv_trans; eauto. apply cequiv_while_step.
+  (* But the Seq case is now problematic *)
+  Focus 3.
 Admitted.
 
-Lemma sel_slh_flag : forall c P s a (b:bool) ds s' a' (b':bool) os,
-  unused "b" c ->
-  s "b" = (if b then 1 else 0) ->
-  <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
-  s' "b" = (if b' then 1 else 0).
+Lemma sel_slh_flag : forall sc P st ast (b:bool) ds st' ast' (b':bool) os,
+  unused "b" sc ->
+  st "b" = (if b then 1 else 0) ->
+  <(st, ast, b, ds)> =[ sel_slh P sc ]=> <(st', ast', b', os)> ->
+  st' "b" = (if b' then 1 else 0).
 Proof.
   intros c P s a b ds s' a' b' os Hunused Hsb Heval.
   eapply sel_slh_flag_gen; eauto. apply cequiv_refl.
