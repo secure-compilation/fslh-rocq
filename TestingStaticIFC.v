@@ -13,8 +13,35 @@ From SECF Require Export Imp.
 From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
 
-Definition FILL_IN_HERE := <{True}>.
+From QuickChick Require Import QuickChick Tactics.
+Import QcNotation QcDefaultNotation. Open Scope qc_scope.
+Require Export ExtLib.Structures.Monads.
+Export MonadNotation. Open Scope monad_scope.
+From Coq Require Import String. Local Open Scope string.
 (* TERSE: /HIDEFROMHTML *)
+
+(* String variables not easy for testing, but anyway let's try something simple *)
+
+#[export] Instance genString : Gen string :=
+  {arbitrary := (n <- choose (0,10);; ret ("X" ++ show n)) }.
+
+#[export] Instance shrinkString : Shrink string :=
+  {shrink := (fun s => match get 2 s with
+                       | Some a => [show ((nat_of_ascii a) / 2);
+                                    show ((nat_of_ascii a) - 1)]
+                       | None => nil
+                       end) }.
+
+(* Derived generators for aexp, bexp, and com *)
+
+Derive (Show, Arbitrary) for aexp.
+Derive (Show, Arbitrary) for bexp.
+Derive (Show, Arbitrary) for com.
+
+(* For sizes larger than 1 these objects seem larger than we need *)
+Sample (arbitrarySized 1 : G bexp).
+Sample (arbitrarySized 1 : G aexp).
+Sample (arbitrarySized 1 : G com).
 
 (** * Noninterference *)
 
