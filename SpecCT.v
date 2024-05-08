@@ -1148,9 +1148,9 @@ Proof.
       firstorder; congruence.
     + apply pub_equiv_sym. eassumption.
     + eassumption.
-  - (* IF; contradiction in prefix assumption *) 
+  - (* IF; contra *) 
     apply prefix_or_heads in Hds; inversion Hds.
-  - (* IF; contradiction in prefix assumption *)
+  - (* IF; contra *)
      apply prefix_or_heads in Hds; inversion Hds.
   - (* If_F; analog to If *)
     assert(G : P ;; PA |-ct- (if beval st be then c2 else c1)).
@@ -1199,8 +1199,6 @@ Proof.
     + intro contra. discriminate contra.
     + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
 Qed.
-
-(* SOONER: The cases for arrays above are repetitive. Spin off some lemmas. *)
 
 Lemma ct_well_typed_ideal_noninterferent :
   forall P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds,
