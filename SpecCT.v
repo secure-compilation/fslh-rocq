@@ -292,25 +292,28 @@ Definition public : label := true.
 Definition secret : label := false.
 
 Definition pub_vars := total_map label.
+Definition pub_arrs := total_map label.
 
-Definition pub_equiv (P : pub_vars) {X:Type} (s1 s2 : total_map X) :=
+Definition pub_equiv (P : total_map label) {X:Type} (s1 s2 : total_map X) :=
   forall x:string, P x = true -> s1 x = s2 x.
 
-Lemma pub_equiv_refl : forall {X:Type} (P : pub_vars) (s : total_map X),
+Lemma pub_equiv_refl : forall {X:Type} (P : total_map label) (s : total_map X),
   pub_equiv P s s.
 Proof. intros X P s x Hx. reflexivity. Qed.
 
-Lemma pub_equiv_sym : forall {X:Type} (P : pub_vars) (s1 s2 : total_map X),
+Lemma pub_equiv_sym : forall {X:Type} (P : total_map label) (s1 s2 : total_map X),
   pub_equiv P s1 s2 ->
   pub_equiv P s2 s1.
 Proof. unfold pub_equiv. intros X P s1 s2 H x Px. rewrite H; auto. Qed.
 
-Lemma pub_equiv_trans : forall {X:Type} (P : pub_vars) (s1 s2 s3 : total_map X),
+Lemma pub_equiv_trans : forall {X:Type} (P : total_map label) (s1 s2 s3 : total_map X),
   pub_equiv P s1 s2 ->
   pub_equiv P s2 s3 ->
   pub_equiv P s1 s3.
-Proof. unfold pub_equiv. intros X P s1 s2 s3 H12 H23 x Px.
-       rewrite H12; try rewrite H23; auto. Qed.
+Proof.
+  unfold pub_equiv. intros X P s1 s2 s3 H12 H23 x Px.
+  rewrite H12; try rewrite H23; auto.
+Qed.
 
 Definition join (l1 l2 : label) : label := l1 && l2.
 
@@ -429,8 +432,6 @@ Proof.
 Qed.
 
 (* TERSE: /HIDEFROMHTML *)
-
-Definition pub_arrs := total_map label.
 
 (** [[[
                          ------------------                 (CT_Skip)
