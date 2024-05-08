@@ -1076,39 +1076,61 @@ Qed.
 
 Ltac split4 := split; [|split; [| split] ].
 
+Lemma pub_equiv_update_public : forall P {A:Type} (t1 t2 : total_map A) (X :string) (a1 a2 :A),
+  pub_equiv P t1 t2 ->
+  P X = public ->
+  a1 = a2 ->
+  pub_equiv P (X!-> a1; t1) (X!-> a2; t2).
+Proof.
+  intros P A t1 t2 X a1 a2 Hequiv Hpub Ha1a2 x Hx.
+  destruct (String.eqb_spec X x) as [Heq | Hneq].
+  - subst. do 2 rewrite t_update_eq. reflexivity.
+  - do 2 (rewrite t_update_neq;[| auto]). eapply Hequiv; eauto.
+Qed. 
+
+Lemma pub_equiv_update_secret : forall P {A:Type} (t1 t2 : total_map A) (X :string) (a1 a2 :A),
+  pub_equiv P t1 t2 ->
+  P X = secret ->
+  pub_equiv P (X!-> a1; t1) (X!-> a2; t2).
+Proof.
+  intros P A t1 t2 X a1 a2 Hequiv Hsec x Hx.
+  destruct (String.eqb_spec X x) as [Heq | Hneq].
+  - subst. rewrite Hsec in Hx. discriminate.
+  -  do 2 (rewrite t_update_neq;[| auto]). eapply Hequiv; eauto.
+Qed.
+
 Lemma ct_well_typed_ideal_noninterferent_general :
-  forall P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds1 ds2,
+  forall P PA c st1 st2 ast1 ast2 b st1' st2' ast1' ast2' b1' b2' os1 os2 ds1 ds2,
     P ;; PA |-ct- c ->
-    pub_equiv P s1 s2 ->
-    (b = false -> pub_equiv PA a1 a2) ->
+    pub_equiv P st1 st2 ->
+    (b = false -> pub_equiv PA ast1 ast2) ->
     (prefix ds1 ds2 \/ prefix ds2 ds1) -> (* <- interesting generalization *)
-    P |- <(s1, a1, b, ds1)> =[ c ]=> <(s1', a1', b1', os1)> ->
-    P |- <(s2, a2, b, ds2)> =[ c ]=> <(s2', a2', b2', os2)> ->
-    pub_equiv P s1' s2' /\ b1' = b2' /\
-      (b1' = false -> pub_equiv PA a1' a2') /\
+    P |- <(st1, ast1, b, ds1)> =[ c ]=> <(st1', ast1', b1', os1)> ->
+    P |- <(st2, ast2, b, ds2)> =[ c ]=> <(st2', ast2', b2', os2)> ->
+    pub_equiv P st1' st2' /\ b1' = b2' /\
+      (b1' = false -> pub_equiv PA ast1' ast2') /\
       ds1 = ds2.  (* <- interesting generalization *)
 Proof.
-  intros P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds1 ds2
+  intros P PA c st1 st2 ast1 ast2 b st1' st2' ast1' ast2' b1' b2' os1 os2 ds1 ds2
     Hwt Heq Haeq Hds Heval1 Heval2.
-  generalize dependent s2'. generalize dependent s2.
-  generalize dependent a2'. generalize dependent a2.
+  generalize dependent st2'. generalize dependent st2.
+  generalize dependent ast2'. generalize dependent ast2.
   generalize dependent os2. generalize dependent b2'.
   generalize dependent ds2.
   induction Heval1; intros ds2X Hds b2' os2' a2 Haeq a2' s2 Heq s2' Heval2;
     inversion Heval2; inversion Hwt; subst.
-  - (* skip *) auto.
-  - (* assign *) split4; auto.
-    intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
-    + rewrite Hxy. do 2 rewrite t_update_eq.
-      eapply noninterferent_aexp; eauto.
-      subst. rewrite Hy in H14.
-      unfold can_flow in H14. simpl in H14.
-      destruct l; try discriminate. auto.
-    + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
-      apply Heq. apply Hy.
-  - (* seq *) assert (Hds1: prefix ds1 ds0 \/ prefix ds0 ds1).
+  - (* Skip *) auto.
+  - (* Asgn *) split4; auto.
+    destruct (P x) eqn:EqPx.
+    + eapply pub_equiv_update_public; eauto. 
+      eapply noninterferent_aexp; eauto. 
+      destruct l; [auto | simpl in H14; discriminate].
+    + eapply pub_equiv_update_secret; eauto. 
+  - (* Seq *) 
+    assert (Hds1: prefix ds1 ds0 \/ prefix ds0 ds1).
     { destruct Hds as [Hds | Hds]; apply prefix_app in Hds; tauto. }
-    assert (ds1 = ds0). { eapply IHHeval1_1; eassumption. } subst.
+    assert (ds1 = ds0). 
+    { eapply IHHeval1_1; eassumption. } subst.
     assert (Hds2: prefix ds2 ds3 \/ prefix ds3 ds2).
     { destruct Hds as [Hds | Hds]; apply prefix_append_front in Hds; tauto. }
     (* SOONER: proofs above and below can be better integrated *)
@@ -1116,7 +1138,7 @@ Proof.
     destruct IHHeval1_1 as [ IH12eq [IH12b [IH12eqa _] ] ]. subst.
     specialize (IHHeval1_2 H14 _ Hds2 _ _ _ IH12eqa _ _ IH12eq _ H10).
     firstorder; subst; reflexivity.
-  - (* if (If) *)
+  - (* If *)
     assert(G : P ;; PA |-ct- (if beval st be then c1 else c2)).
     { destruct (beval st be); assumption. }
     assert(Gds : prefix ds ds0 \/ prefix ds0 ds).
@@ -1126,9 +1148,11 @@ Proof.
       firstorder; congruence.
     + apply pub_equiv_sym. eassumption.
     + eassumption.
-  - (* if contra *) apply prefix_or_heads in Hds; inversion Hds.
-  - (* if contra *) apply prefix_or_heads in Hds; inversion Hds.
-  - (* if (If_F) - very similar If *)
+  - (* IF; contradiction in prefix assumption *) 
+    apply prefix_or_heads in Hds; inversion Hds.
+  - (* IF; contradiction in prefix assumption *)
+     apply prefix_or_heads in Hds; inversion Hds.
+  - (* If_F; analog to If *)
     assert(G : P ;; PA |-ct- (if beval st be then c2 else c1)).
     { destruct (beval st be); assumption. }
     assert(Gds : prefix ds ds0 \/ prefix ds0 ds).
@@ -1140,49 +1164,38 @@ Proof.
       firstorder; congruence.
     + apply pub_equiv_sym. eassumption.
     + eassumption.
-  - (* while *) eapply IHHeval1; try eassumption. repeat constructor; eassumption.
-  - (* array read (ARead) *) split4; eauto.
-    intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
-    + rewrite Hxy. do 2 rewrite t_update_eq.
-      subst. rewrite Hy in *.
-      rewrite Haeq; eauto.
-      * erewrite noninterferent_aexp; eauto.
-      * now destruct (PA a).
-    + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
-      apply Heq. apply Hy.
-  - (* array read (ARead_U) *) split4; eauto.
-    + intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
-      * rewrite Hxy. do 2 rewrite t_update_eq.
-        subst. rewrite Hy in *.
-        rewrite Haeq; eauto.
-        { apply prefix_or_heads in Hds. inversion Hds. reflexivity. }
-        { now destruct (PA a). (* also discriminate works *) }
-      * do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
-        apply Heq. apply Hy.
+  - (* While *) eapply IHHeval1; try eassumption. repeat constructor; eassumption.
+  - (* ARead *) split4; eauto.
+    destruct (P x) eqn:EqPx.
+    + eapply pub_equiv_update_public; eauto.
+      eapply noninterferent_aexp in Heq; eauto. rewrite Heq.
+      unfold can_flow in H17; eapply orb_true_iff in H17.
+      destruct H17 as [Ha | Contra]; [| simpl in Contra; discriminate].
+      apply Haeq in Ha; [| reflexivity]. rewrite Ha. reflexivity.
+    + eapply pub_equiv_update_secret; eauto.
+  - (* ARead_U *) split4; eauto.
+    + destruct (P x) eqn:EqPx.
+      * discriminate H6.
+      * eapply pub_equiv_update_secret; eauto.  
     + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
-  - (* array read contra *) rewrite H in *. discriminate.
-  - (* array read contra *) rewrite H in *. discriminate.
-  - (* array read (ARead_Prot) *)
-    assert(G : DLoad a' i' = DLoad a'0 i'0).
-    { destruct Hds as [Hds | Hds]; inversion Hds; inversion H0; subst; reflexivity. }
-    inversion G; subst. split4; eauto.
-    intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
-    + rewrite Hxy. do 2 rewrite t_update_eq. reflexivity.
-    + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
-      apply Heq. apply Hy.
-  - (* array write (Write) *) split4; eauto. intro Hb2'.
-    erewrite noninterferent_aexp; eauto.
-    intros y Hy.
-    destruct (String.eqb_spec a y) as [Hay | Hay].
-    + rewrite Hay. do 2 rewrite t_update_eq.
-      subst. rewrite Hy in *.
-      rewrite Haeq; eauto.
-      erewrite (noninterferent_aexp Heq); eauto. now destruct l.
-    + do 2 rewrite (t_update_neq _ _ _ _ _ Hay).
-      apply Haeq; assumption.
-  - (* array write contra *) apply prefix_or_heads in Hds. inversion Hds.
-  - (* array write contra *) apply prefix_or_heads in Hds. inversion Hds.
-  - (* array write (Write_U) *) split4; eauto.
+  - (* ARead contra *) rewrite H in *. discriminate.
+  - (* Aread contra *) rewrite H in *. discriminate.
+  - (* ARead_Prot *) split4; eauto.
+    + destruct (P x) eqn:EqPx.
+      * eapply pub_equiv_update_public; eauto.
+      * discriminate H6.
+    + apply prefix_or_heads in Hds. inversion Hds. reflexivity. 
+  - (* Write *) split4; eauto. intro Hb2'.
+    destruct (PA a) eqn:EqPAa.
+    + eapply pub_equiv_update_public; eauto.
+      destruct l eqn:Eql.
+      * eapply noninterferent_aexp in H19, H20; eauto. rewrite H19, H20.
+        apply Haeq in Hb2'. apply Hb2' in EqPAa. rewrite EqPAa. reflexivity.
+      * simpl in H21. discriminate.  
+    + eapply pub_equiv_update_secret; eauto.
+  - (* Write contra *) apply prefix_or_heads in Hds. inversion Hds.
+  - (* Write contra *) apply prefix_or_heads in Hds. inversion Hds.
+  - (* Write_U contra *) split4; eauto.
     + intro contra. discriminate contra.
     + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
 Qed.
