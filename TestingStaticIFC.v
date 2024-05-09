@@ -20,8 +20,8 @@ Export MonadNotation. Open Scope monad_scope.
 From Coq Require Import String. (* Local Open Scope string. *)
 (* TERSE: /HIDEFROMHTML *)
 
-(* String variables not so easy for testing, but anyway let's try
-   something simple that's skewed towards low numbers *)
+(* String variables not so easy for testing as plain numbers, but
+   let's try simply "Xn" that's skewed towards low numbers n. *)
 
 #[export] Instance genId : Gen string :=
   {arbitrary := (n <- freq [(10, ret 0);
@@ -71,7 +71,7 @@ Derive (Arbitrary, Shrink) for com.
          | <{x <= y}> => "(" ++ show x ++ " <= " ++ show y ++ ")"
          | <{x > y}> => "(" ++ show x ++ " > " ++ show y ++ ")"
          | <{x = y}> => "(" ++ show x ++ " = " ++ show y ++ ")"
-         | <{x <> y}> => "(" ++ show x ++ " * " ++ show y ++ ")"
+         | <{x <> y}> => "(" ++ show x ++ " <> " ++ show y ++ ")"
          | <{~x}> => "(~ " ++ showBexpRec x ++ ")"
          | <{x && y}> => "(" ++ showBexpRec x ++ " && " ++ showBexpRec y ++ ")"
          end
@@ -127,8 +127,8 @@ Fixpoint map_dom {A} (m:Map A) : list string :=
 
 Sample (arbitrary : G (Map nat)).
 
-(* SOONER: We could define a specialized version that doesn't repeat
-   keys, but first let's make sure our maps work well even in those cases. *)
+(* We will define a specialized version that doesn't repeat keys, but
+   first let's make sure our maps work well even in those cases. *)
 
 (* As opposed to there, here trying to keep the total_map interface by
    pairing a default value with a list-based map. *)
@@ -179,6 +179,10 @@ Proof. reflexivity. Qed.
 Example update_example4 : apply examplemap' "bar" = true.
 Proof. reflexivity. Qed.
 
+(* We do our testing using the new version of state *)
+
+Definition state := total_map nat.
+
 Check t_apply_empty.
 QuickChick (forAll arbitrary (fun (x:string) =>
             forAll arbitrary (fun (v:nat) =>
@@ -187,7 +191,7 @@ QuickChick (forAll arbitrary (fun (x:string) =>
 Check t_update_eq.
 QuickChick (forAll arbitrary (fun (x:string) =>
             forAll arbitrary (fun (v:nat) =>
-            forAll arbitrary (fun (m:total_map nat) =>
+            forAll arbitrary (fun (m:state) =>
             apply (x !-> v ; m) x = v ?)))).
 
 Lemma t_update_eq : forall (A : Type) (m : total_map A) x v,
@@ -197,50 +201,72 @@ Admitted. (* it's well tested, so not a problem ;) *)
 Check t_update_neq.
 QuickChick (forAll arbitrary (fun (x1:string) =>
             forAll arbitrary (fun (x2:string) =>
-            forAll arbitrary (fun (v:nat) =>
-            forAll arbitrary (fun (m:total_map nat) =>
-            implication (x1 <> x2 ?) (apply (x1 !-> v ; m) x2 = apply m x2 ?)))))).
+            implication (x1 <> x2 ?)
+            (forAll arbitrary (fun (v:nat) =>
+             forAll arbitrary (fun (m:state) =>
+              (apply (x1 !-> v ; m) x2 = apply m x2 ?))))))).
 (* SOONER: figure out why `===>` notation doesn't work for implication *)
-(* LATER: could also easily get rid of the discards here *)
+(* LATER: could also easily get rid of the discards here; but choosing
+   this order is anyway quite fine *)
 
 Theorem t_update_neq : forall (A : Type) (m : total_map A) x1 x2 v,
   x1 <> x2 ->
   apply (x1 !-> v ; m) x2 = apply m x2.
 Admitted. 
 
-Check t_update_shadow. (* requires proper map equality *)
-(* SOONER: for now we test this pointwise, but we should fix this
-   by defining a proper (overlapping!) instance for map equality *)
+(* Extensional equality for total_map *)
+
+Definition total_map_beq (a:Type) (a_beq:a->a->bool) (m1 m2 : total_map a) :=
+  match m1, m2 with
+  | (d1,lm1), (d2,lm2) => a_beq d1 d2 &&
+      forallb (fun x => a_beq (apply m1 x) (apply m2 x))
+              (map_dom lm1 ++ map_dom lm2)
+  end.
+
+Definition state_beq := total_map_beq nat Nat.eqb.
+
+Check t_update_shadow.
 QuickChick (forAll arbitrary (fun (x:string) =>
             forAll arbitrary (fun (v1:nat) =>
             forAll arbitrary (fun (v2:nat) =>
-            forAll arbitrary (fun (m:total_map nat) =>
-            forAll arbitrary (fun (y:string) =>
-            apply (x !-> v2 ; x !-> v1 ; m) y = apply (x !-> v2 ; m) y ?)))))).
+            forAll arbitrary (fun (m:state) =>
+            state_beq (x !-> v2 ; x !-> v1 ; m)
+                      (x !-> v2 ; m)))))).
 
-Check t_update_same. (* SOONER: requires proper map equality *)
+Check t_update_same.
 QuickChick (forAll arbitrary (fun (x:string) =>
             forAll arbitrary (fun (v:nat) =>
-            forAll arbitrary (fun (m:total_map nat) =>
-            forAll arbitrary (fun (y:string) =>
-            apply (x !-> apply m x ; m) y = apply m y ?))))).
+            forAll arbitrary (fun (m:state) =>
+            state_beq (x !-> apply m x ; m) m)))).
 
-Check t_update_permute. (* SOONER: requires proper map equality *)
-
+Check t_update_permute.
 QuickChick (forAll arbitrary (fun (x1:string) =>
             forAll arbitrary (fun (x2:string) =>
-            forAll arbitrary (fun (v1:nat) =>
-            forAll arbitrary (fun (v2:nat) =>
-            forAll arbitrary (fun (m:total_map nat) =>
-            forAll arbitrary (fun (y:string) =>
             implication (x2 <> x1 ?)
-              (apply (x1 !-> v1 ; x2 !-> v2 ; m) y
-              =
-              apply (x2 !-> v2 ; x1 !-> v1 ; m) y ?)))))))).
+            (forAll arbitrary (fun (v1:nat) =>
+             forAll arbitrary (fun (v2:nat) =>
+             forAll arbitrary (fun (m:state) =>
+             (state_beq (x1 !-> v1 ; x2 !-> v2 ; m)
+                        (x2 !-> v2 ; x1 !-> v1 ; m))))))))).
 (* LATER: could also easily get rid of the discards here *)
 
+(* Here is a specialized version of `Gen (total_map a)` that doesn't
+   repeat keys, binds all vars, and that puts them in order. *)
+
+#[export] Instance genTotalMap (A:Type) `{Gen A} : Gen (total_map A) :=
+  {arbitrary := (d <- arbitrary;;
+                 v0 <- arbitrary;;
+                 v1 <- arbitrary;;
+                 v2 <- arbitrary;;
+                 v3 <- arbitrary;;
+                 v4 <- arbitrary;;
+                 v5 <- arbitrary;;
+                 ret (d,[("X0",v0); ("X1",v1); ("X2",v2);
+                         ("X3",v3); ("X4",v4); ("X5",v5)])%string)}.
+
+Sample (arbitrary : G state).
+
 (* Just duplicating so that we use the new testable maps *)
-Definition state := total_map nat.
 
 Fixpoint aeval (st : state) (a : aexp) : nat :=
   match a with
@@ -316,6 +342,8 @@ Definition secret : label := false.
 
 Definition pub_vars := total_map label.
 
+Sample (arbitrary : G pub_vars).
+
 (** TERSE: ** Publicly equivalent states *)
 
 (** A noninterference attacker can only observe the values of public
@@ -323,8 +351,42 @@ Definition pub_vars := total_map label.
     _publicly equivalent_ states that agree on the values of all
     public variables, which are thus indistinguishable to an attacker: *)
 
-Definition pub_equiv (P : pub_vars) {X:Type} (s1 s2 : total_map X) :=
+Definition pub_equiv (P : pub_vars) {X:Type} (s1 s2 : total_map X) : Prop :=
   forall x:string, apply P x = true -> apply s1 x = apply s2 x.
+
+Definition pub_equivb (P : pub_vars) (s1 s2 : state) : bool :=
+  match P, s1, s2 with
+  | (dP,mP), (d1,m1), (d2,m2) =>
+      if dP
+      then forallb (fun x => if apply P x
+                             then apply s1 x =? apply s2 x else true)
+                   (map_dom mP ++ map_dom m1 ++ map_dom m2)
+           && (d1 =? d2)
+      else forallb (fun x => if apply P x
+                             then apply s1 x =? apply s2 x else true)
+                   (map_dom mP)
+  end.
+
+(* LATER: could also define decidability type class; but it requires proving pub_equivb correct *)
+(* #[export] Instance decPubEquiv P (s1 s2 : state) : Dec (pub_equiv P s1 s2). *)
+(* Proof. dec_eq. Defined. *)
+
+QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+            forAll arbitrary (fun (s : state) =>
+            pub_equivb P s s))).
+
+QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+            forAll arbitrary (fun (s1 s2 : state) =>
+            implication (pub_equivb P s1 s2) (pub_equivb P s2 s1)))).
+(* SOONER: lots of discards;
+   already need a smart generator for public equivalent states *)
+
+QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+            forAll arbitrary (fun (s1 s2 s3: state) =>
+            implication (pub_equivb P s1 s2 && pub_equivb P s2 s3)
+                        (pub_equivb P s2 s3)))).
+(* SOONER: lots of discards;
+   already need a smart generator for public equivalent states *)
 
 (** For some total map [P] from variables to Boolean labels,
     [pub_equiv P] is an equivalence relation on states, so reflexive,
