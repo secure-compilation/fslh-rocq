@@ -49,6 +49,10 @@ Derive (Arbitrary, Shrink) for com.
    the manual ones below better match our existing Coq notations
    (still not perfect in terms of parentheses) *)
 
+(* Derive Show for aexp. *)
+(* Derive Show for bexp. *)
+(* Derive Show for com. *)
+
 #[export] Instance showAexp : Show aexp :=
   {show :=
       (let fix showAexpRec (a:aexp) : string :=
@@ -94,7 +98,9 @@ Derive (Arbitrary, Shrink) for com.
        in showComRec)%string
   }.
 
-(* For sizes larger than 1-2 these objects seem larger than what we need *)
+(* For sizes larger than 1-2 these objects seem larger than what we need.
+   SOONER: May want to reduce sizes below?
+   Or just listen to John Hughes and implement a good shrinker? *)
 Sample (arbitrarySized 2 : G aexp).
 Sample (arbitrarySized 1 : G bexp). (* TODO: these get too big *)
 Sample (arbitrarySized 1 : G com).
@@ -371,6 +377,10 @@ Definition pub_equivb (P : pub_vars) (s1 s2 : state) : bool :=
 (* #[export] Instance decPubEquiv P (s1 s2 : state) : Dec (pub_equiv P s1 s2). *)
 (* Proof. dec_eq. Defined. *)
 
+(** For some total map [P] from variables to Boolean labels,
+    [pub_equiv P] is an equivalence relation on states, so reflexive,
+    symmetric, and transitive. *)
+
 QuickChick (forAll arbitrary (fun (P : pub_vars) =>
             forAll arbitrary (fun (s : state) =>
             pub_equivb P s s))).
@@ -381,16 +391,33 @@ QuickChick (forAll arbitrary (fun (P : pub_vars) =>
 (* SOONER: lots of discards;
    already need a smart generator for public equivalent states *)
 
-QuickChick (forAll arbitrary (fun (P : pub_vars) =>
-            forAll arbitrary (fun (s1 s2 s3: state) =>
-            implication (pub_equivb P s1 s2 && pub_equivb P s2 s3)
-                        (pub_equivb P s2 s3)))).
-(* SOONER: lots of discards;
-   already need a smart generator for public equivalent states *)
+Definition gen_pub_equiv (P : pub_vars) (s:state) : G state :=
+  match s with
+  | (d,m) => v0 <- (if apply P "X0" then ret (apply s "X0") else arbitrary)%string;;
+             v1 <- (if apply P "X1" then ret (apply s "X1") else arbitrary)%string;;
+             v2 <- (if apply P "X2" then ret (apply s "X2") else arbitrary)%string;;
+             v3 <- (if apply P "X3" then ret (apply s "X3") else arbitrary)%string;;
+             v4 <- (if apply P "X4" then ret (apply s "X4") else arbitrary)%string;;
+             v5 <- (if apply P "X5" then ret (apply s "X5") else arbitrary)%string;;
+             ret (d,[("X0",v0); ("X1",v1); ("X2",v2);
+                     ("X3",v3); ("X4",v4); ("X5",v5)])%string
+  end.
 
-(** For some total map [P] from variables to Boolean labels,
-    [pub_equiv P] is an equivalence relation on states, so reflexive,
-    symmetric, and transitive. *)
+QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+            forAll arbitrary (fun (s1 : state) =>
+            forAll (gen_pub_equiv P s1) (fun (s2 : state) =>
+            pub_equivb P s1 s2)))).
+
+QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+            forAll arbitrary (fun (s1 : state) =>
+            forAll (gen_pub_equiv P s1) (fun (s2 : state) =>
+            pub_equivb P s2 s1)))).
+
+QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+            forAll arbitrary (fun (s2 : state) =>
+            forAll (gen_pub_equiv P s2) (fun (s1 : state) =>
+            forAll (gen_pub_equiv P s2) (fun (s3 : state) =>
+            pub_equivb P s2 s3))))).
 
 (* TERSE: HIDEFROMHTML *)
 Lemma pub_equiv_refl : forall {X:Type} (P : pub_vars) (s : total_map X),
@@ -421,6 +448,49 @@ Definition noninterferent P c := forall s1 s2 s1' s2',
   s1 =[ c ]=> s1' ->
   s2 =[ c ]=> s2' ->
   pub_equiv P s1' s2'.
+
+(* Trying to test this quickly, using the interpreter that skips while loops for now. *)
+
+Fixpoint ceval_fun_no_while (st : state) (c : com) : state :=
+  match c with
+    | <{ skip }> =>
+        st
+    | <{ x := a }> =>
+        (x !-> (aeval st a) ; st)
+    | <{ c1 ; c2 }> =>
+        let st' := ceval_fun_no_while st c1 in
+        ceval_fun_no_while st' c2
+    | <{ if b then c1 else c2 end}> =>
+        if (beval st b)
+          then ceval_fun_no_while st c1
+          else ceval_fun_no_while st c2
+    | <{ while b do c end }> =>
+        st  (* bogus *)
+  end.
+
+(* This should fail, since not all programs are noninterferent *)
+
+QuickChick (forAllShrink arbitrary shrink (fun (P : pub_vars) =>
+            forAllShrink arbitrary shrink (fun (c : com) =>
+            forAllShrink arbitrary shrink (fun (s1 : state) =>
+            forAllShrink (gen_pub_equiv P s1) shrink (* shrink doesn't seem safe without implication below *)
+              (fun (s2 : state) =>
+            implication
+              (pub_equivb P s1 s2)
+              (pub_equivb P (ceval_fun_no_while s1 c)
+                            (ceval_fun_no_while s2 c))))))).
+
+(* Indeed it does fail. QuickChick finds an explicit flow most of the time! *)
+
+(* SOONER: Looking above it seems that P is not shrunk, but
+           looking below, shrink seems to work fine for pub_vars?
+           Could it be that the shrinking for P should be done after
+           the shrinking for s1 and s2?
+           Maybe the 3 of them should be shrunk together? *)
+
+(* SOONER: Can we also find implicit flow, by only generating commands
+   without explicit flows?  Seems like a good idea, but I wonder how
+   that plays with shrinking. Needs to be custom as well? *)
 
 (** Intuitively, [c] is noninterferent when the value of the public
     variables in the final state can only depend on the value of
