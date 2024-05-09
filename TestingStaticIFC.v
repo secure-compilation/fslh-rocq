@@ -449,6 +449,11 @@ Definition noninterferent P c := forall s1 s2 s1' s2',
   s2 =[ c ]=> s2' ->
   pub_equiv P s1' s2'.
 
+(** Intuitively, [c] is noninterferent when the value of the public
+    variables in the final state can only depend on the value of
+    public variables in the initial state, and do not depend on the
+    initial value of secret variables. *)
+
 (* Trying to test this quickly, using the interpreter that skips while loops for now. *)
 
 Fixpoint ceval_fun_no_while (st : state) (c : com) : state :=
@@ -490,12 +495,8 @@ QuickChick (forAllShrink arbitrary shrink (fun (P : pub_vars) =>
 
 (* SOONER: Can we also find implicit flow, by only generating commands
    without explicit flows?  Seems like a good idea, but I wonder how
-   that plays with shrinking. Needs to be custom as well? *)
-
-(** Intuitively, [c] is noninterferent when the value of the public
-    variables in the final state can only depend on the value of
-    public variables in the initial state, and do not depend on the
-    initial value of secret variables. *)
+   that plays with shrinking. Needs to be custom as well?
+   - This generator will need to be quite smart, so leaving for later. *)
 
 (** TERSE: ** *)
 
@@ -652,6 +653,11 @@ Definition secure_p2 :=
 
 Definition join (l1 l2 : label) : label := l1 && l2.
 
+(* This one is too simple to test, but still here it goes: *)
+QuickCheck (forAll arbitrary (fun (l1:label) =>
+            forAll arbitrary (fun (l2:label) =>
+              join l1 l2 = join l2 l1 ?))).
+
 (* TERSE: HIDEFROMHTML *)
 Lemma join_commutative : forall {l1 l2},
   join l1 l2 = join l2 l1.
@@ -725,7 +731,75 @@ Inductive aexp_has_label (P:pub_vars) : aexp -> label -> Prop :=
 
 where "P '|-a-' a '\IN' l" := (aexp_has_label P a l).
 
+(* Derive ArbitrarySizedSuchThat for (fun a => aexp_has_label P a l). *)
+(* Derive DecOpt for (aexp_has_label P a l). *)
+(* Error: Anomaly "Uncaught exception Failure("Internal QuickChick Error : Matching result type error")." *)
+(* SOONER: Unclear if this could be made to work *)
+
+Fixpoint label_of_aexp (P:pub_vars) (a:aexp) : label :=
+  match a with
+  | ANum n => public
+  | AId X => apply P X
+  | <{ a1 + a2 }>
+  | <{ a1 - a2 }>
+  | <{ a1 * a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  end.
+
+Definition gen_pub_aexp_leaf (P : pub_vars) : G aexp :=
+  oneOf_ (liftM ANum arbitrary)
+         (cons (liftM ANum arbitrary)
+            (let pubs := filter (apply P) (map_dom (snd P)) in
+             if seq.nilp pubs then []
+             else [liftM AId (elems_ "X0"%string pubs)] ) ).
+
+(* SOONER: Somehow this doesn't work, so needed to expand oneOf notation above *)
+  (* oneOf (liftM ANum arbitrary ;; *)
+  (*        (let pubs := filter (apply P) (map_dom (snd P)) in *)
+  (*        if seq.nilp pubs then [] *)
+  (*        else [liftM AId (elems_ "X0"%string pubs)] ) ). *)
+
+Fixpoint gen_pub_aexp (sz:nat) (P:pub_vars) : G aexp :=
+  match sz with
+  | O => gen_pub_aexp_leaf P
+  | S sz' =>
+      freq [ (3, gen_pub_aexp_leaf P);
+             (sz, liftM2 APlus (gen_pub_aexp sz' P) (gen_pub_aexp sz' P));
+             (sz, liftM2 AMinus (gen_pub_aexp sz' P) (gen_pub_aexp sz' P));
+             (sz, liftM2 AMult (gen_pub_aexp sz' P) (gen_pub_aexp sz' P))]
+  end.
+
+Sample (P <- arbitrary;;
+        a <- gen_pub_aexp 2 P;;
+        ret (P, a)).
+
+QuickChick (forAll arbitrary (fun (P:pub_vars) =>
+            forAll (gen_pub_aexp 2 P) (fun (a:aexp) =>
+            label_of_aexp P a = public ?))).
+
 (** TERSE: ** Noninterference by typing for arithmetic expressions *)
+
+QuickChick (forAll arbitrary (fun (P:pub_vars) =>
+            forAll (gen_pub_aexp 2 P) (fun (a:aexp) =>
+            forAll arbitrary (fun (s1:state) =>
+            forAll (gen_pub_equiv P s1) (fun (s2:state) =>
+            aeval s1 a = aeval s2 a ?))))).
+
+(* SOONER: It would be good to also check that inserting a bug
+   somewhere is found using mutants. *)
+
+(* For now, checking that the previous two assertions don't hold for
+   arbitrary aexps. *)
+
+QuickChick (forAllShrink arbitrary shrink (fun (P:pub_vars) =>
+            forAllShrink arbitrary shrink (fun (a:aexp) =>
+            label_of_aexp P a = public ?))).
+
+QuickChick (forAllShrink arbitrary shrink (fun (P:pub_vars) =>
+            forAllShrink arbitrary shrink (fun (a:aexp) =>
+            forAllShrink arbitrary shrink (fun (s1:state) =>
+            forAllShrink (gen_pub_equiv P s1) shrink (fun (s2:state) =>
+            implication (pub_equivb P s1 s2)
+                        (aeval s1 a = aeval s2 a ?)))))).
 
 Theorem noninterferent_aexp : forall {P s1 s2 a},
   pub_equiv P s1 s2 ->
@@ -821,7 +895,63 @@ Inductive bexp_has_label (P:pub_vars) : bexp -> label -> Prop :=
 where "P '|-b-' b '\IN' l" := (bexp_has_label P b l).
 (* TERSE: /HIDEFROMHTML *)
 
+Fixpoint label_of_bexp (P:pub_vars) (a:bexp) : label :=
+  match a with
+  | <{ true }> | <{ false }> => public
+  | <{ a1 = a2 }>
+  | <{ a1 <> a2 }>
+  | <{ a1 <= a2 }>
+  | <{ a1 > a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ ~b }> => label_of_bexp P b
+  | <{ b1 && b2 }> => join (label_of_bexp P b1) (label_of_bexp P b2)
+  end.
+
+Fixpoint gen_pub_bexp (sz:nat) (P:pub_vars) : G bexp :=
+  match sz with
+  | O => elems [BTrue; BFalse]
+  | S sz' =>
+      freq [ (1, ret BTrue);
+             (1, ret BFalse);
+             (1, liftM2 BEq (gen_pub_aexp sz' P) (gen_pub_aexp sz' P));
+             (1, liftM2 BNeq (gen_pub_aexp sz' P) (gen_pub_aexp sz' P));
+             (1, liftM2 BLe (gen_pub_aexp sz' P) (gen_pub_aexp sz' P));
+             (1, liftM2 BGt (gen_pub_aexp sz' P) (gen_pub_aexp sz' P));
+             (sz, liftM BNot (gen_pub_bexp sz' P));
+             (sz, liftM2 BAnd (gen_pub_bexp sz' P) (gen_pub_bexp sz' P))]
+  end.
+
+Sample (P <- arbitrary;;
+        b <- gen_pub_bexp 2 P;;
+        ret (P, b)).
+
+QuickChick (forAll arbitrary (fun (P:pub_vars) =>
+            forAll (gen_pub_bexp 2 P) (fun (b:bexp) =>
+            label_of_bexp P b = public ?))).
+
 (** TERSE: ** Noninterference by typing for Boolean expressions *)
+
+QuickChick (forAll arbitrary (fun (P:pub_vars) =>
+            forAll (gen_pub_bexp 2 P) (fun (b:bexp) =>
+            forAll arbitrary (fun (s1:state) =>
+            forAll (gen_pub_equiv P s1) (fun (s2:state) =>
+            beval s1 b = beval s2 b ?))))).
+
+(* SOONER: It would be good to also check that inserting a bug
+   somewhere is found using mutants. *)
+
+(* For now, checking that the previous two assertions don't hold for
+   arbitrary aexps. *)
+
+QuickChick (forAllShrink arbitrary shrink (fun (P:pub_vars) =>
+            forAllShrink arbitrary shrink (fun (b:bexp) =>
+            label_of_bexp P b = public ?))).
+
+QuickChick (forAllShrink arbitrary shrink (fun (P:pub_vars) =>
+            forAllShrink arbitrary shrink (fun (b:bexp) =>
+            forAllShrink arbitrary shrink (fun (s1:state) =>
+            forAllShrink (gen_pub_equiv P s1) shrink (fun (s2:state) =>
+            implication (pub_equivb P s1 s2)
+                        (beval s1 b = beval s2 b ?)))))).
 
 Theorem noninterferent_bexp : forall {P s1 s2 b},
   pub_equiv P s1 s2 ->
@@ -850,6 +980,52 @@ Proof.
     rewrite (IHHt2 Logic.eq_refl). reflexivity.
 Qed.
 (* /FOLD *)
+
+(* For producing implicit flows as counterexamples; let's start by
+   generating assignments that are never explicit flows: *)
+
+Fixpoint gen_secure_asgn (P:pub_vars) : G com :=
+  let vars := map_dom (snd P) in
+  if seq.nilp vars then (* trivial case: all vars same default level *)
+    a <- arbitrary;;
+    ret <{ "X0" := a }>
+  else
+    x <- elems_ "X0"%string vars;;
+    (if apply P x then
+      a <- gen_pub_aexp 1 P;;
+      ret <{ x := a }>
+    else
+      a <- arbitrary;;
+      ret <{ x := a }>).
+
+QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+            forAll (gen_secure_asgn P) (fun (c : com) =>
+            forAll arbitrary (fun (s1 : state) =>
+            forAll (gen_pub_equiv P s1) (fun (s2 : state) =>
+            pub_equivb P (ceval_fun_no_while s1 c)
+                         (ceval_fun_no_while s2 c)))))).
+
+Fixpoint gen_no_explicit_flows (sz:nat) (P:pub_vars) : G com :=
+  match sz with
+  | O => oneOf [ret CSkip; gen_secure_asgn P]
+  | S sz' =>
+      freq [ (1, ret CSkip);
+             (sz, gen_secure_asgn P);
+             (sz, liftM2 CSeq (gen_no_explicit_flows sz' P) (gen_no_explicit_flows sz' P));
+             (sz, liftM3 CIf arbitrary (gen_no_explicit_flows sz' P)
+                                       (gen_no_explicit_flows sz' P));
+             (sz, liftM2 CWhile arbitrary (gen_no_explicit_flows sz' P))]
+  end.
+
+(* This produces implicit flows as counterexamples: *)
+QuickChick (forAllShrink arbitrary shrink (fun (P : pub_vars) =>
+            forAllShrink (gen_no_explicit_flows 2 P) shrink (fun (c : com) =>
+            forAllShrink arbitrary shrink (fun (s1 : state) =>
+            forAllShrink (gen_pub_equiv P s1) shrink (fun (s2 : state) =>
+            implication
+              (pub_equivb P s1 s2)
+              (pub_equivb P (ceval_fun_no_while s1 c)
+                            (ceval_fun_no_while s2 c))))))).
 
 (** * Restrictive type system prohibiting branching on secrets *)
 
