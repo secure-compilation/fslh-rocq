@@ -17,31 +17,287 @@ From QuickChick Require Import QuickChick Tactics.
 Import QcNotation QcDefaultNotation. Open Scope qc_scope.
 Require Export ExtLib.Structures.Monads.
 Export MonadNotation. Open Scope monad_scope.
-From Coq Require Import String. Local Open Scope string.
+From Coq Require Import String. (* Local Open Scope string. *)
 (* TERSE: /HIDEFROMHTML *)
 
-(* String variables not easy for testing, but anyway let's try something simple *)
+(* String variables not so easy for testing, but anyway let's try
+   something simple that's skewed towards low numbers *)
 
-#[export] Instance genString : Gen string :=
-  {arbitrary := (n <- choose (0,10);; ret ("X" ++ show n)) }.
+#[export] Instance genId : Gen string :=
+  {arbitrary := (n <- freq [(10, ret 0);
+                             (9, ret 1);
+                             (8, ret 2);
+                             (4, ret 3);
+                             (2, ret 4);
+                             (1, ret 5)];;
+                 ret ("X" ++ show n)%string) }.
 
-#[export] Instance shrinkString : Shrink string :=
+#[export] Instance shrinkId : Shrink string :=
   {shrink := (fun s => match get 2 s with
                        | Some a => [show ((nat_of_ascii a) / 2);
                                     show ((nat_of_ascii a) - 1)]
                        | None => nil
                        end) }.
 
-(* Derived generators for aexp, bexp, and com *)
+(* Deriving generators and shrinkers for aexp, bexp, and com *)
 
-Derive (Show, Arbitrary) for aexp.
-Derive (Show, Arbitrary) for bexp.
-Derive (Show, Arbitrary) for com.
+Derive (Arbitrary, Shrink) for aexp.
+Derive (Arbitrary, Shrink) for bexp.
+Derive (Arbitrary, Shrink) for com.
 
-(* For sizes larger than 1 these objects seem larger than we need *)
-Sample (arbitrarySized 1 : G bexp).
-Sample (arbitrarySized 1 : G aexp).
+(* QuickChick could also generate show instances for these, just that
+   the manual ones below better match our existing Coq notations
+   (still not perfect in terms of parentheses) *)
+
+#[export] Instance showAexp : Show aexp :=
+  {show :=
+      (let fix showAexpRec (a:aexp) : string :=
+         match a with
+         | AId i => String DoubleQuote "" ++ i ++ String DoubleQuote ""
+         | ANum n => show n
+         | <{x + y}> => "(" ++ showAexpRec x ++ " + " ++ showAexpRec y ++ ")"
+         | <{x - y}> => "(" ++ showAexpRec x ++ " - " ++ showAexpRec y ++ ")"
+         | <{x * y}> => "(" ++ showAexpRec x ++ " * " ++ showAexpRec y ++ ")"
+         end
+       in showAexpRec)%string
+   }.
+
+#[export] Instance showBexp : Show bexp :=
+  {show :=
+      (let fix showBexpRec (a:bexp) : string :=
+         match a with
+         | <{true}> => "true"%string
+         | <{false}> => "false"%string
+         | <{x <= y}> => "(" ++ show x ++ " <= " ++ show y ++ ")"
+         | <{x > y}> => "(" ++ show x ++ " > " ++ show y ++ ")"
+         | <{x = y}> => "(" ++ show x ++ " = " ++ show y ++ ")"
+         | <{x <> y}> => "(" ++ show x ++ " * " ++ show y ++ ")"
+         | <{~x}> => "(~ " ++ showBexpRec x ++ ")"
+         | <{x && y}> => "(" ++ showBexpRec x ++ " && " ++ showBexpRec y ++ ")"
+         end
+       in showBexpRec)%string
+  }.
+
+#[export] Instance showCom : Show com :=
+  {show :=
+      (let fix showComRec (a:com) : string :=
+         match a with
+         | <{skip}> => "skip"%string
+         | <{x := y}> => "(" ++ show x ++ ":= " ++ show y ++ ")"
+         | <{x ; y}> => "(" ++ showComRec x ++ " ; " ++ showComRec y ++ ")"
+         | <{if x then y else z end}> => "if " ++ show x ++
+                                        " then " ++ showComRec y ++
+                                        " else " ++ showComRec z ++ " end"
+         | <{while x do y end}> => "while " ++ show x ++ " do "
+                                            ++ showComRec y ++ " end"
+         end
+       in showComRec)%string
+  }.
+
+(* For sizes larger than 1-2 these objects seem larger than what we need *)
+Sample (arbitrarySized 2 : G aexp).
+Sample (arbitrarySized 1 : G bexp). (* TODO: these get too big *)
 Sample (arbitrarySized 1 : G com).
+
+Eval compute in shrink
+       <{while ("X1" = (((6 * (4 - 0)) + (("X4" + "X0") - (3 * (("X1" + 3) * 3)))) + "X1"))
+           do ("X0":= "X0") end}>%string.
+
+(* We can't use functional maps (like total_map) for testing, so we
+   need something more computational for states and variable
+   assignments. We use the list-based maps from TImp.v (volume 4). *)
+
+Definition Map A := list (string * A).
+
+Fixpoint map_get {A} (m : Map A) x : option A :=
+  match m with
+  | [] => None
+  | (k, v) :: m' => if x = k ? then Some v else map_get m' x
+  end.
+
+Definition map_set {A} (m:Map A) (x:string) (v:A) : Map A := (x, v) :: m.
+
+Fixpoint map_dom {A} (m:Map A) : list string :=
+  match m with
+  | [] => []
+  | (k', v) :: m' => k' :: map_dom m'
+  end.
+
+(* QuickChick already knows how to sample such maps *)
+
+Sample (arbitrary : G (Map nat)).
+
+(* SOONER: We could define a specialized version that doesn't repeat
+   keys, but first let's make sure our maps work well even in those cases. *)
+
+(* As opposed to there, here trying to keep the total_map interface by
+   pairing a default value with a list-based map. *)
+
+Definition total_map (X:Type) : Type := X * Map X.
+
+Sample (arbitrary : G (total_map nat)).
+
+Definition t_empty {A : Type} (d : A) : total_map A :=
+  (d, []).
+
+Notation "'_' '!->' v" := (t_empty v)
+  (at level 100, right associativity).
+
+Definition t_update {A : Type} (m : total_map A)
+                    (x : string) (v : A) :=
+  match m with
+  | (d, lm) => (d, map_set lm x v)
+  end.
+
+Notation "x '!->' v ';' m" := (t_update m x v)
+                              (at level 100, v at next level, right associativity).
+
+Definition examplemap' :=
+  ( "bar" !-> true;
+    "foo" !-> true;
+    _     !-> false
+  ).
+
+(* We can no longer just use function application for this *)
+Definition apply {A:Type} (m : total_map A) (x:string) : A := 
+  match m with
+  | (d, lm) => match map_get lm x with
+               | Some v => v
+               | None => d
+               end
+  end.
+
+Example update_example1 : apply examplemap' "baz" = false.
+Proof. reflexivity. Qed.
+
+Example update_example2 : apply examplemap' "foo" = true.
+Proof. reflexivity. Qed.
+
+Example update_example3 : apply examplemap' "quux" = false.
+Proof. reflexivity. Qed.
+
+Example update_example4 : apply examplemap' "bar" = true.
+Proof. reflexivity. Qed.
+
+Check t_apply_empty.
+QuickChick (forAll arbitrary (fun (x:string) =>
+            forAll arbitrary (fun (v:nat) =>
+            apply (_ !-> v) x = v ?))).
+
+Check t_update_eq.
+QuickChick (forAll arbitrary (fun (x:string) =>
+            forAll arbitrary (fun (v:nat) =>
+            forAll arbitrary (fun (m:total_map nat) =>
+            apply (x !-> v ; m) x = v ?)))).
+
+Lemma t_update_eq : forall (A : Type) (m : total_map A) x v,
+  apply (x !-> v ; m) x = v.
+Admitted. (* it's well tested, so not a problem ;) *)
+
+Check t_update_neq.
+QuickChick (forAll arbitrary (fun (x1:string) =>
+            forAll arbitrary (fun (x2:string) =>
+            forAll arbitrary (fun (v:nat) =>
+            forAll arbitrary (fun (m:total_map nat) =>
+            implication (x1 <> x2 ?) (apply (x1 !-> v ; m) x2 = apply m x2 ?)))))).
+(* SOONER: figure out why `===>` notation doesn't work for implication *)
+(* LATER: could also easily get rid of the discards here *)
+
+Theorem t_update_neq : forall (A : Type) (m : total_map A) x1 x2 v,
+  x1 <> x2 ->
+  apply (x1 !-> v ; m) x2 = apply m x2.
+Admitted. 
+
+Check t_update_shadow. (* requires proper map equality *)
+(* SOONER: for now we test this pointwise, but we should fix this
+   by defining a proper (overlapping!) instance for map equality *)
+QuickChick (forAll arbitrary (fun (x:string) =>
+            forAll arbitrary (fun (v1:nat) =>
+            forAll arbitrary (fun (v2:nat) =>
+            forAll arbitrary (fun (m:total_map nat) =>
+            forAll arbitrary (fun (y:string) =>
+            apply (x !-> v2 ; x !-> v1 ; m) y = apply (x !-> v2 ; m) y ?)))))).
+
+Check t_update_same. (* SOONER: requires proper map equality *)
+QuickChick (forAll arbitrary (fun (x:string) =>
+            forAll arbitrary (fun (v:nat) =>
+            forAll arbitrary (fun (m:total_map nat) =>
+            forAll arbitrary (fun (y:string) =>
+            apply (x !-> apply m x ; m) y = apply m y ?))))).
+
+Check t_update_permute. (* SOONER: requires proper map equality *)
+
+QuickChick (forAll arbitrary (fun (x1:string) =>
+            forAll arbitrary (fun (x2:string) =>
+            forAll arbitrary (fun (v1:nat) =>
+            forAll arbitrary (fun (v2:nat) =>
+            forAll arbitrary (fun (m:total_map nat) =>
+            forAll arbitrary (fun (y:string) =>
+            implication (x2 <> x1 ?)
+              (apply (x1 !-> v1 ; x2 !-> v2 ; m) y
+              =
+              apply (x2 !-> v2 ; x1 !-> v1 ; m) y ?)))))))).
+(* LATER: could also easily get rid of the discards here *)
+
+(* Just duplicating so that we use the new testable maps *)
+Definition state := total_map nat.
+
+Fixpoint aeval (st : state) (a : aexp) : nat :=
+  match a with
+  | ANum n => n
+  | AId x => apply st x (* <--- NEW *)
+  | <{a1 + a2}> => (aeval st a1) + (aeval st a2)
+  | <{a1 - a2}> => (aeval st a1) - (aeval st a2)
+  | <{a1 * a2}> => (aeval st a1) * (aeval st a2)
+  end.
+
+Fixpoint beval (st : state) (b : bexp) : bool :=
+  match b with
+  | <{true}>      => true
+  | <{false}>     => false
+  | <{a1 = a2}>   => (aeval st a1) =? (aeval st a2)
+  | <{a1 <> a2}>  => negb ((aeval st a1) =? (aeval st a2))
+  | <{a1 <= a2}>  => (aeval st a1) <=? (aeval st a2)
+  | <{a1 > a2}>   => negb ((aeval st a1) <=? (aeval st a2))
+  | <{~ b1}>      => negb (beval st b1)
+  | <{b1 && b2}>  => andb (beval st b1) (beval st b2)
+  end.
+
+(* HIDEFROMHTML *)
+Reserved Notation
+         "st '=[' c ']=>' st'"
+         (at level 40, c custom com at level 99,
+          st constr, st' constr at next level).
+(* /HIDEFROMHTML *)
+
+Inductive ceval : com -> state -> state -> Prop :=
+  | E_Skip : forall st,
+      st =[ skip ]=> st
+  | E_Asgn  : forall st a n x,
+      aeval st a = n ->
+      st =[ x := a ]=> (x !-> n ; st)
+  | E_Seq : forall c1 c2 st st' st'',
+      st  =[ c1 ]=> st'  ->
+      st' =[ c2 ]=> st'' ->
+      st  =[ c1 ; c2 ]=> st''
+  | E_IfTrue : forall st st' b c1 c2,
+      beval st b = true ->
+      st =[ c1 ]=> st' ->
+      st =[ if b then c1 else c2 end]=> st'
+  | E_IfFalse : forall st st' b c1 c2,
+      beval st b = false ->
+      st =[ c2 ]=> st' ->
+      st =[ if b then c1 else c2 end]=> st'
+  | E_WhileFalse : forall b st c,
+      beval st b = false ->
+      st =[ while b do c end ]=> st
+  | E_WhileTrue : forall st st' st'' b c,
+      beval st b = true ->
+      st  =[ c ]=> st' ->
+      st' =[ while b do c end ]=> st'' ->
+      st  =[ while b do c end ]=> st''
+
+  where "st =[ c ]=> st'" := (ceval c st st').
 
 (** * Noninterference *)
 
@@ -68,7 +324,7 @@ Definition pub_vars := total_map label.
     public variables, which are thus indistinguishable to an attacker: *)
 
 Definition pub_equiv (P : pub_vars) {X:Type} (s1 s2 : total_map X) :=
-  forall x:string, P x = true -> s1 x = s2 x.
+  forall x:string, apply P x = true -> apply s1 x = apply s2 x.
 
 (** For some total map [P] from variables to Boolean labels,
     [pub_equiv P] is an equivalence relation on states, so reflexive,
@@ -238,22 +494,24 @@ Definition secure_p2 :=
     implicit flows.
 
     But first, let's start with something simpler, a type system for
-    arithmetic expressions: our typing judgement [P |-a- a \in l]
+    arithmetic expressions: our typing judgement [P |-a- a \IN l]
     specifies the label [l] of an arithmetic expression [a] in terms
     of the labels of the variables read it reads.
 
-    In particular, [P |-a- a \in public] says that expression [a]
+    In particular, [P |-a- a \IN public] says that expression [a]
     only reads public variables, so it computes a public value.
-    [P |-a- a \in secret] says that expression [a] reads some secret
+    [P |-a- a \IN secret] says that expression [a] reads some secret
     variable, so it computes a value that may depend on secrets.
 
     Here are some examples:
     - For a variable [X] we just look up its label in P, so
-      [P |-a- X \in P X].
+      [P |-a- X \IN P X].
     - For a constant [n] the label is [public], so
-      [P |-a n \in public].
+      [P |-a n \IN public].
     - Given variable [X1] with label [l1] and variable [X2] with
       label [l2], what should be the label of [X1 + X2] though? *)
+
+(* LATER: Seems that \in collides to something in QC, so switched to \IN *)
 
 (** ** Combining labels *)
 
@@ -290,56 +548,56 @@ Proof. reflexivity. Qed.
 
 (** [[[
                           -------------------                  (T_Num)
-                          P |-a- n \in public
+                          P |-a- n \IN public
 
                            -----------------                    (T_Id)
-                           P |-a- X \in P X
+                           P |-a- X \IN P X
 
-                  P |-a- a1 \in l1    P |-a- a2 \in l2
+                  P |-a- a1 \IN l1    P |-a- a2 \IN l2
                   ------------------------------------        (T_Plus)
-                      P |-a- a1+a2 \in join l1 l2
+                      P |-a- a1+a2 \IN join l1 l2
 
-                  P |-a- a1 \in l1    P |-a- a2 \in l2
+                  P |-a- a1 \IN l1    P |-a- a2 \IN l2
                   ------------------------------------       (T_Minus)
-                      P |-a- a1-a2 \in join l1 l2
+                      P |-a- a1-a2 \IN join l1 l2
 
-                  P |-a- a1 \in l1    P |-a- a2 \in l2
+                  P |-a- a1 \IN l1    P |-a- a2 \IN l2
                   ------------------------------------        (T_Mult)
-                      P |-a- a1*a2 \in join l1 l2
+                      P |-a- a1*a2 \IN join l1 l2
 ]]]
 *)
 
 (** TERSE: ** *)
 
 (* TERSE: HIDEFROMHTML *)
-Reserved Notation "P '|-a-' a \in l" (at level 40).
+Reserved Notation "P '|-a-' a \IN l" (at level 40).
 (* TERSE: /HIDEFROMHTML *)
 
 Inductive aexp_has_label (P:pub_vars) : aexp -> label -> Prop :=
   | T_Num : forall n,
-       P |-a- (ANum n) \in public
+       P |-a- (ANum n) \IN public
   | T_Id : forall X,
-       P |-a- (AId X) \in (P X)
+       P |-a- (AId X) \IN (apply P X)
   | T_Plus : forall a1 l1 a2 l2,
-       P |-a- a1 \in l1 ->
-       P |-a- a2 \in l2 ->
-       P |-a- <{ a1 + a2 }> \in (join l1 l2)
+       P |-a- a1 \IN l1 ->
+       P |-a- a2 \IN l2 ->
+       P |-a- <{ a1 + a2 }> \IN (join l1 l2)
   | T_Minus : forall a1 l1 a2 l2,
-       P |-a- a1 \in l1 ->
-       P |-a- a2 \in l2 ->
-       P |-a- <{ a1 - a2 }> \in (join l1 l2)
+       P |-a- a1 \IN l1 ->
+       P |-a- a2 \IN l2 ->
+       P |-a- <{ a1 - a2 }> \IN (join l1 l2)
   | T_Mult : forall a1 l1 a2 l2,
-       P |-a- a1 \in l1 ->
-       P |-a- a2 \in l2 ->
-       P |-a- <{ a1 * a2 }> \in (join l1 l2)
+       P |-a- a1 \IN l1 ->
+       P |-a- a2 \IN l2 ->
+       P |-a- <{ a1 * a2 }> \IN (join l1 l2)
 
-where "P '|-a-' a '\in' l" := (aexp_has_label P a l).
+where "P '|-a-' a '\IN' l" := (aexp_has_label P a l).
 
 (** TERSE: ** Noninterference by typing for arithmetic expressions *)
 
 Theorem noninterferent_aexp : forall {P s1 s2 a},
   pub_equiv P s1 s2 ->
-  P |-a- a \in public ->
+  P |-a- a \IN public ->
   aeval s1 a = aeval s2 a.
 (* FOLD *)
 Proof.
@@ -360,13 +618,13 @@ Qed.
 (* CH: Because of the lack of subtyping, not every expression is
        secret (top label), which seems a bit odd. Is it a problem?
        Since if it was we could fix it by changing T_Num.
-       It's just a problem in reading the [\in secret] judgement?
+       It's just a problem in reading the [\IN secret] judgement?
        It computes a secret value? *)
 Lemma not_everything_secret :
-  ~xpub |-a- ANum 42 \in secret.
+  ~xpub |-a- ANum 42 \IN secret.
 Proof. intro Hc. inversion Hc. Qed.
 
-(* CH: Even in our simple setting we do need the [\in secret] for
+(* CH: Even in our simple setting we do need the [\IN secret] for
        assignments, so can't trivially simplify to [P |-pa- a], so a
        judgement that checks whether an expression is public?  *)
 (* /HIDE *)
@@ -375,67 +633,67 @@ Proof. intro Hc. inversion Hc. Qed.
 
 (** [[[
                          ----------------------               (T_True)
-                         P |-b- true \in public
+                         P |-b- true \IN public
 
                          -----------------------             (T_False)
-                         P |-b- false \in public
+                         P |-b- false \IN public
 
-                  P |-a- a1 \in l1    P |-a- a2 \in l2
+                  P |-a- a1 \IN l1    P |-a- a2 \IN l2
                   ------------------------------------          (T_Eq)
-                      P |-b- a1=a2 \in join l1 l2
+                      P |-b- a1=a2 \IN join l1 l2
 
 ...
 
-                             P |-b- b \in l
+                             P |-b- b \IN l
                             ---------------                    (T_Not)
-                            P |-b- ~b \in l
+                            P |-b- ~b \IN l
 
-                  P |-b- b1 \in l1    P |-b- b2 \in l2
+                  P |-b- b1 \IN l1    P |-b- b2 \IN l2
                   ------------------------------------         (T_And)
-                      P |-b- b1&&b2 \in join l1 l2
+                      P |-b- b1&&b2 \IN join l1 l2
 ]]]
 *)
 
 (* TERSE: HIDEFROMHTML *)
-Reserved Notation "P '|-b-' b \in l" (at level 40).
+Reserved Notation "P '|-b-' b \IN l" (at level 40).
 
 Inductive bexp_has_label (P:pub_vars) : bexp -> label -> Prop :=
   | T_True :
-       P |-b- <{ true }> \in public
+       P |-b- <{ true }> \IN public
   | T_False :
-       P |-b- <{ false }> \in public
+       P |-b- <{ false }> \IN public
   | T_Eq : forall a1 l1 a2 l2,
-       P |-a- a1 \in l1 ->
-       P |-a- a2 \in l2 ->
-       P |-b- <{ a1 = a2 }> \in (join l1 l2)
+       P |-a- a1 \IN l1 ->
+       P |-a- a2 \IN l2 ->
+       P |-b- <{ a1 = a2 }> \IN (join l1 l2)
   | T_Neq : forall a1 l1 a2 l2,
-       P |-a- a1 \in l1 ->
-       P |-a- a2 \in l2 ->
-       P |-b- <{ a1 <> a2 }> \in (join l1 l2)
+       P |-a- a1 \IN l1 ->
+       P |-a- a2 \IN l2 ->
+       P |-b- <{ a1 <> a2 }> \IN (join l1 l2)
   | T_Le : forall a1 l1 a2 l2,
-       P |-a- a1 \in l1 ->
-       P |-a- a2 \in l2 ->
-       P |-b- <{ a1 <= a2 }> \in (join l1 l2)
+       P |-a- a1 \IN l1 ->
+       P |-a- a2 \IN l2 ->
+       P |-b- <{ a1 <= a2 }> \IN (join l1 l2)
   | T_Gt : forall a1 l1 a2 l2,
-       P |-a- a1 \in l1 ->
-       P |-a- a2 \in l2 ->
-       P |-b- <{ a1 > a2 }> \in (join l1 l2)
+       P |-a- a1 \IN l1 ->
+       P |-a- a2 \IN l2 ->
+       P |-b- <{ a1 > a2 }> \IN (join l1 l2)
   | T_Not : forall b l,
-       P |-b- b \in l ->
-       P |-b- <{ ~b }> \in l
+       P |-b- b \IN l ->
+       P |-b- <{ ~b }> \IN l
   | T_And : forall b1 l1 b2 l2,
-       P |-b- b1 \in l1 ->
-       P |-b- b2 \in l2 ->
-       P |-b- <{ b1 && b2 }> \in (join l1 l2)
+       P |-b- b1 \IN l1 ->
+       P |-b- b2 \IN l2 ->
+       P |-b- <{ b1 && b2 }> \IN (join l1 l2)
 
-where "P '|-b-' b '\in' l" := (bexp_has_label P b l).
+where "P '|-b-' b '\IN' l" := (bexp_has_label P b l).
 (* TERSE: /HIDEFROMHTML *)
 
 (** TERSE: ** Noninterference by typing for Boolean expressions *)
 
 Theorem noninterferent_bexp : forall {P s1 s2 b},
   pub_equiv P s1 s2 ->
-  P |-b- b \in public ->
+  P |-b- b \IN public ->
   beval s1 b = beval s2 b.
 (* FOLD *)
 Proof.
@@ -502,7 +760,7 @@ Lemma can_flow_trans : forall l1 l2 l3,
   can_flow l2 l3 = true ->
   can_flow l1 l3 = true.
 Proof. intros l1 l2 l3 H12 H23.
-  destruct l1; destruct l2; simpl in *; auto. discriminate H12. Qed.
+  destruct l1; destruct l2; simpl in *; auto. Qed.
 
 Lemma can_flow_join_1 : forall l1 l2 l,
   can_flow (join l1 l2) l = true ->
@@ -523,8 +781,7 @@ Proof. intros l1 l2 l H1 H2. destruct l1; simpl in *; auto. Qed.
 Lemma can_flow_join_r1 : forall l l1 l2,
   can_flow l l1 = true ->
   can_flow l (join l1 l2) = true.
-Proof. intros l l1 l2 H. destruct l; destruct l1; simpl in *; auto.
-       discriminate H. Qed.
+Proof. intros l l1 l2 H. destruct l; destruct l1; simpl in *; auto. Qed.
 
 Lemma can_flow_join_r2 : forall l l1 l2,
   can_flow l l2 = true ->
@@ -538,7 +795,7 @@ Proof. intros l l1 l2 H. destruct l; destruct l1; simpl in *; auto. Qed.
                             ------------                    (PCWT_Skip)
                             P |-pc- skip
 
-             P |-a- a \in l    can_flow l (P X) = true
+             P |-a- a \IN l    can_flow l (P X) = true
              -----------------------------------------      (PCWT_Asgn)
                            P |-pc- X := a
 
@@ -546,11 +803,11 @@ Proof. intros l l1 l2 H. destruct l; destruct l1; simpl in *; auto. Qed.
                       ------------------------               (PCWT_Seq)
                             P |-pc- c1;c2
 
-           P |-b- b \in public    P |-pc- c1    P |-pc- c2
+           P |-b- b \IN public    P |-pc- c1    P |-pc- c2
            -----------------------------------------------    (PCWT_If)
                       P |-pc- if b then c1 else c2
 
-                  P |-b- b \in public    P |-pc- c
+                  P |-b- b \IN public    P |-pc- c
                   --------------------------------         (PCWT_While)
                     P |-pc- while b then c end
 ]]]
@@ -563,20 +820,20 @@ Inductive pc_well_typed (P:pub_vars) : com -> Prop :=
   | PCWT_Com :
       P |-pc- <{ skip }>
   | PCWT_Asgn : forall X a l,
-      P |-a- a \in l ->
-      can_flow l (P X) = true ->
+      P |-a- a \IN l ->
+      can_flow l (apply P X) = true ->
       P |-pc- <{ X := a }>
   | PCWT_Seq : forall c1 c2,
       P |-pc- c1 ->
       P |-pc- c2 ->
       P |-pc- <{ c1 ; c2 }>
   | PCWT_If : forall b c1 c2,
-      P |-b- b \in public ->
+      P |-b- b \IN public ->
       P |-pc- c1 ->
       P |-pc- c2 ->
       P |-pc- <{ if b then c1 else c2 end }>
   | PCWT_While : forall b c1,
-      P |-b- b \in public ->
+      P |-b- b \IN public ->
       P |-pc- c1 ->
       P |-pc- <{ while b do c1 end }>
 
@@ -632,7 +889,7 @@ Qed.
 (** ** Implicit flow prevented by [pc_well_typed]: *)
 
 Example not_swt_insecure_com2 :
-  ~ xpub |-pc- <{ if Y=0  (* check: P |-b- Y=0 \in public (FAILS!) *)
+  ~ xpub |-pc- <{ if Y=0  (* check: P |-b- Y=0 \IN public (FAILS!) *)
                  then Y := 42
                  else X := X+1 (* <- bad implicit flow! *)
                  end }>.
@@ -705,14 +962,14 @@ forall s1 s2 s1' s2',
     most interesting cases:
 
     - In the conditional case we have that [c] is [if b then c1 else c2],
-      [P |-pc- c1], [P |-pc- c2], and [P |-b- b \in public]. Given this
+      [P |-pc- c1], [P |-pc- c2], and [P |-b- b \IN public]. Given this
       last fact we can apply noninterference of boolean expressions to
       show that [beval st1 b = beval st2 b]. If they are both [true],
       we use the induction hypothesis for [c1], and if they are both
       false we use the induction hypothesis for [c2] to conclude.
 
     - In the assignment case we have that [c] is [X := a],
-      [P |-a- a \in l], and [can_flow l (P X) = true], which expands out
+      [P |-a- a \IN l], and [can_flow l (P X) = true], which expands out
       to [l == public \/ P X == secret].
 
       If [l == public] then by noninterference of arithmetic
@@ -733,7 +990,7 @@ forall s1 s2 s1' s2',
     because it branches on a secret: *)
 
 Example not_swt_noninterferent_com :
-  ~ xpub |-pc- <{ if Y=0 (* check: P |-b- Y=0 \in public (fails!) *)
+  ~ xpub |-pc- <{ if Y=0 (* check: P |-b- Y=0 \IN public (fails!) *)
                  then Z := 0
                  else skip
                  end }>.
@@ -802,7 +1059,7 @@ Qed.
                       ----------------                      (WT_Skip)
                       P ;; pc |-- skip
 
-       P |-a- a \in l   can_flow (join pc l) (P X) = true
+       P |-a- a \IN l   can_flow (join pc l) (P X) = true
        --------------------------------------------------   (WT_Asgn)
                      P ;; pc |-- X := a
 
@@ -810,12 +1067,12 @@ Qed.
                 --------------------------------             (WT_Seq)
                       P ;; pc |-- c1;c2
 
-           P |-b- b \in l    P ;; join pc l |-- c1
+           P |-b- b \IN l    P ;; join pc l |-- c1
                              P ;; join pc l |-- c2
            ---------------------------------------            (WT_If)
                 P ;; pc |-- if b then c1 else c2
 
-              P |-b- b \in l    P ;; join pc l |-- c
+              P |-b- b \IN l    P ;; join pc l |-- c
               --------------------------------------       (WT_While)
                 P ;; pc |-- while b then c end
 ]]]
@@ -829,20 +1086,20 @@ Inductive well_typed (P:pub_vars) : label -> com -> Prop :=
   | WT_Com : forall pc,
       P ;; pc |-- <{ skip }>
   | WT_Asgn : forall pc X a l,
-      P |-a- a \in l ->
-      can_flow (join pc l) (P X) = true ->
+      P |-a- a \IN l ->
+      can_flow (join pc l) (apply P X) = true ->
       P ;; pc |-- <{ X := a }>
   | WT_Seq : forall pc c1 c2,
       P ;; pc |-- c1 ->
       P ;; pc |-- c2 ->
       P ;; pc |-- <{ c1 ; c2 }>
   | WT_If : forall pc b l c1 c2,
-      P |-b- b \in l ->
+      P |-b- b \IN l ->
       P ;; (join pc l) |-- c1 ->
       P ;; (join pc l) |-- c2 ->
       P ;; pc |-- <{ if b then c1 else c2 end }>
   | WT_While : forall pc b l c1,
-      P |-b- b \in l ->
+      P |-b- b \IN l ->
       P ;; (join pc l) |-- c1 ->
       P ;; pc |-- <{ while b do c1 end }>
 
@@ -1040,14 +1297,14 @@ Definition tsni P c :=
 
 (** Old rule for noninterference:
 [[[
-              P |-b- b \in l    P ;; join pc l |-- c
+              P |-b- b \IN l    P ;; join pc l |-- c
               --------------------------------------       (WT_While)
                 P ;; pc |-- while b then c end
 ]]]
 
     New rule for termination-sensitive noninterference:
 [[[
-          P |-b- b \in public    P ;; public |-ts- c
+          P |-b- b \IN public    P ;; public |-ts- c
           ------------------------------------------       (TS_While)
              P ;; public |-ts- while b then c end
 ]]]
@@ -1064,20 +1321,20 @@ Inductive ts_well_typed (P:pub_vars) : label -> com -> Prop :=
   | TS_Com : forall pc,
       P;; pc |-ts- <{ skip }>
   | TS_Asgn : forall pc X a l,
-      P |-a- a \in l ->
-      can_flow (join pc l) (P X) = true ->
+      P |-a- a \IN l ->
+      can_flow (join pc l) (apply P X) = true ->
       P;; pc |-ts- <{ X := a }>
   | TS_Seq : forall pc c1 c2,
       P;; pc |-ts- c1 ->
       P;; pc |-ts- c2 ->
       P;; pc |-ts- <{ c1 ; c2 }>
   | TS_If : forall pc b l c1 c2,
-      P |-b- b \in l ->
+      P |-b- b \IN l ->
       P;; (join pc l) |-ts- c1 ->
       P;; (join pc l) |-ts- c2 ->
       P;; pc |-ts- <{ if b then c1 else c2 end }>
   | TS_While : forall b c1,
-      P |-b- b \in public -> (* <-- NEW *)
+      P |-b- b \IN public -> (* <-- NEW *)
       P;; public |-ts- c1 -> (* <-- ONLY pc=public *)
       P;; public |-ts- <{ while b do c1 end }>
 
@@ -1240,24 +1497,24 @@ Reserved Notation
           st constr, st' constr at next level).
 
 Inductive pceval : com -> state -> state -> branches -> Prop :=
-  | E_Skip : forall st,
+  | PC_Skip : forall st,
       st =[ skip ]=> st, []
-  | E_Asgn  : forall st a n x,
+  | PC_Asgn  : forall st a n x,
       aeval st a = n ->
       st =[ x := a ]=> (x !-> n ; st), []
-  | E_Seq : forall c1 c2 st st' st'' bs1 bs2,
+  | PC_Seq : forall c1 c2 st st' st'' bs1 bs2,
       st  =[ c1 ]=> st', bs1  ->
       st' =[ c2 ]=> st'', bs2 ->
       st  =[ c1 ; c2 ]=> st'', (bs1++bs2)
-  | E_IfTrue : forall st st' b c1 c2 bs1,
+  | PC_IfTrue : forall st st' b c1 c2 bs1,
       beval st b = true ->
       st =[ c1 ]=> st', bs1 ->
       st =[ if b then c1 else c2 end]=> st', (true::bs1)
-  | E_IfFalse : forall st st' b c1 c2 bs1,
+  | PC_IfFalse : forall st st' b c1 c2 bs1,
       beval st b = false ->
       st =[ c2 ]=> st', bs1 ->
       st =[ if b then c1 else c2 end]=> st', (false::bs1)
-  | E_While : forall b st os c, (* <- Nice trick; from small-step semantics *)
+  | PC_While : forall b st os c, (* <- Nice trick; from small-step semantics *)
       st =[ if b then c; while b do c end else skip end ]=> st, os ->
       st =[ while b do c end ]=> st, os
 
