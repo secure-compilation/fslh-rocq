@@ -116,6 +116,18 @@ Sample (arbitrarySized 1 : G com).
 "X0") * "X2") - (("X1" - ("X0" + ((("X2" * "X4") + 4) * 8))) * "X0")))
 *)
 
+(* SOONER: I'm generally not longer sure how sized generators
+   work. Should relearn more about them and try to prevent that we
+   have arbitrary magic numbers everywhere. *)
+
+(* SOONER: Should look more carefully at the terms we generate and
+   whether their sizes are good for testing. For instance, we may be
+   generating too large expressions, but too small commands, especially
+   in the number of assignments? Worth investigating such things. *)
+
+(* SOONER: One forcing function for this would be to start introducing
+   mutants. Should start trying that soon anyway! *)
+
 Eval compute in shrink
        <{while ("X1" = (((6 * (4 - 0)) + (("X4" + "X0") - (3 * (("X1" + 3) * 3)))) + "X1"))
            do ("X0":= "X0") end}>%string.
@@ -1035,17 +1047,25 @@ QuickChick (forAll arbitrary (fun (P : pub_vars) =>
             pub_equivb P (ceval_fun_no_while s1 c)
                          (ceval_fun_no_while s2 c)))))).
 
-Fixpoint gen_no_explicit_flows (sz:nat) (P:pub_vars) : G com :=
+(* We write our command generator more generally than what's needed
+   here, so that we can also reuse below: *)
+
+Fixpoint gen_com (gen_asgn : pub_vars -> G com)
+                 (gen_bexp : pub_vars -> G bexp)
+                 (sz:nat) (P:pub_vars) : G com :=
   match sz with
-  | O => oneOf [ret CSkip; gen_secure_asgn P]
+  | O => oneOf [ret CSkip; gen_asgn P]
   | S sz' =>
       freq [ (1, ret CSkip);
-             (sz, gen_secure_asgn P);
-             (sz, liftM2 CSeq (gen_no_explicit_flows sz' P) (gen_no_explicit_flows sz' P));
-             (sz, liftM3 CIf arbitrary (gen_no_explicit_flows sz' P)
-                                       (gen_no_explicit_flows sz' P));
-             (sz, liftM2 CWhile arbitrary (gen_no_explicit_flows sz' P))]
+             (sz, gen_asgn P);
+             (sz, liftM2 CSeq (gen_com gen_asgn gen_bexp sz' P)
+                              (gen_com gen_asgn gen_bexp sz' P));
+             (sz, liftM3 CIf (gen_bexp P) (gen_com gen_asgn gen_bexp sz' P)
+                                          (gen_com gen_asgn gen_bexp sz' P));
+             (sz, liftM2 CWhile (gen_bexp P) (gen_com gen_asgn gen_bexp sz' P))]
   end.
+
+Definition gen_no_explicit_flows := gen_com gen_secure_asgn (fun _ => arbitrary).
 
 (* This produces implicit flows as counterexamples: *)
 QuickChick (forAllShrink arbitrary shrink (fun (P : pub_vars) =>
@@ -1177,6 +1197,34 @@ Inductive pc_well_typed (P:pub_vars) : com -> Prop :=
 
 where "P '|-pc-' c" := (pc_well_typed P c).
 (* TERSE: /HIDEFROMHTML *)
+
+Fixpoint pc_typechecker (P:pub_vars) (c:com) : bool :=
+  match c with
+  | <{ skip }> => true
+  | <{ X := a }> => can_flow (label_of_aexp P a) (apply P X)
+  | <{ c1 ; c2 }> => pc_typechecker P c1 && pc_typechecker P c2
+  | <{ if b then c1 else c2 end }> =>
+      can_flow (label_of_bexp P b) public &&
+      pc_typechecker P c1 && pc_typechecker P c2
+  | <{ while b do c1 end }> =>
+      can_flow (label_of_bexp P b) public && pc_typechecker P c1
+  end.
+
+Definition gen_pc_well_typed := gen_com gen_secure_asgn (gen_pub_bexp 2).
+
+QuickChick (forAllShrink arbitrary shrink (fun (P:pub_vars) =>
+           (forAll (gen_pc_well_typed 1 P) (fun (c:com) =>
+             pc_typechecker P c)))).
+
+(* Now that we validated that our generator produces well-typed terms
+   we can use it to test that well-typed terms are indeed noninterferent: *)
+
+QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+            forAll (gen_pc_well_typed 1 P) (fun (c : com) =>
+            forAll arbitrary (fun (s1 : state) =>
+            forAll (gen_pub_equiv P s1) (fun (s2 : state) =>
+            pub_equivb P (ceval_fun_no_while s1 c)
+                         (ceval_fun_no_while s2 c)))))).
 
 (** ** Secure program that is [pc_well_typed]: *)
 
