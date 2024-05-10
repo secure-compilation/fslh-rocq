@@ -16,6 +16,7 @@ Set Default Goal Selector "!".
 From QuickChick Require Import QuickChick Tactics.
 Import QcNotation QcDefaultNotation. Open Scope qc_scope.
 Require Export ExtLib.Structures.Monads.
+Require Import ExtLib.Data.List.
 Export MonadNotation. Open Scope monad_scope.
 From Coq Require Import String. (* Local Open Scope string. *)
 (* TERSE: /HIDEFROMHTML *)
@@ -33,17 +34,25 @@ From Coq Require Import String. (* Local Open Scope string. *)
                  ret ("X" ++ show n)%string) }.
 
 #[export] Instance shrinkId : Shrink string :=
-  {shrink := (fun s => match get 2 s with
-                       | Some a => [show ((nat_of_ascii a) / 2);
-                                    show ((nat_of_ascii a) - 1)]
-                       | None => nil
-                       end) }.
+  {shrink :=
+    (fun s => match get 1 s with
+              | Some a => match (nat_of_ascii a - nat_of_ascii "0") with
+                          | S n => ["X" ++ show (S n / 2); "X" ++ show (S n - 1)]
+                          | 0 => []
+                          end
+              | None => nil
+              end)%string }.
+
+Eval compute in (shrink "X5")%string.
+Eval compute in (shrink "X0")%string.
 
 (* Deriving generators and shrinkers for aexp, bexp, and com *)
 
 Derive (Arbitrary, Shrink) for aexp.
 Derive (Arbitrary, Shrink) for bexp.
 Derive (Arbitrary, Shrink) for com.
+
+(* Print (arbitrary : G com). LATER: Why does this fail? *)
 
 (* QuickChick could also generate show instances for these, just that
    the manual ones below better match our existing Coq notations
@@ -57,7 +66,7 @@ Derive (Arbitrary, Shrink) for com.
   {show :=
       (let fix showAexpRec (a:aexp) : string :=
          match a with
-         | AId i => String DoubleQuote "" ++ i ++ String DoubleQuote ""
+         | AId i => String DoubleQuote (i ++ String DoubleQuote "")
          | ANum n => show n
          | <{x + y}> => "(" ++ showAexpRec x ++ " + " ++ showAexpRec y ++ ")"
          | <{x - y}> => "(" ++ showAexpRec x ++ " - " ++ showAexpRec y ++ ")"
@@ -89,11 +98,11 @@ Derive (Arbitrary, Shrink) for com.
          | <{skip}> => "skip"%string
          | <{x := y}> => "(" ++ show x ++ ":= " ++ show y ++ ")"
          | <{x ; y}> => "(" ++ showComRec x ++ " ; " ++ showComRec y ++ ")"
-         | <{if x then y else z end}> => "if " ++ show x ++
+         | <{if x then y else z end}> => "(if " ++ show x ++
                                         " then " ++ showComRec y ++
-                                        " else " ++ showComRec z ++ " end"
-         | <{while x do y end}> => "while " ++ show x ++ " do "
-                                            ++ showComRec y ++ " end"
+                                        " else " ++ showComRec z ++ " end)"
+         | <{while x do y end}> => "(while " ++ show x ++ " do "
+                                            ++ showComRec y ++ " end)"
          end
        in showComRec)%string
   }.
@@ -149,8 +158,20 @@ Definition map_set {A} (m:Map A) (x:string) (v:A) : Map A := (x, v) :: m.
 Fixpoint map_dom {A} (m:Map A) : list string :=
   match m with
   | [] => []
-  | (k', v) :: m' => k' :: map_dom m'
+  | (k', v) :: m' => if existsb (fun p => String.eqb k' (fst p)) m'
+                     then map_dom m'
+                     else k' :: map_dom m'
   end.
+
+Fixpoint union (dom1 dom2 : list string) : list string :=
+  match dom1 with
+  | [] => dom2
+  | x :: dom1' => if existsb (String.eqb x) dom2
+                  then union dom1' dom2
+                  else x :: (union dom1' dom2)
+  end.
+
+Eval compute in (union ["1";"2";"3"] ["2";"3";"4"])%string.
 
 (* QuickChick already knows how to sample such maps. We will define a
    specialized generator below that e.g. doesn't repeat keys, but
@@ -255,7 +276,7 @@ Definition total_map_beq (a:Type) (a_beq:a->a->bool) (m1 m2 : total_map a) :=
   match m1, m2 with
   | (d1,lm1), (d2,lm2) => a_beq d1 d2 &&
       forallb (fun x => a_beq (apply m1 x) (apply m2 x))
-              (map_dom lm1 ++ map_dom lm2)
+              (union (map_dom lm1) (map_dom lm2))
   end.
 
 Definition state_beq := total_map_beq nat Nat.eqb.
@@ -396,7 +417,7 @@ Definition pub_equivb (P : pub_vars) (s1 s2 : state) : bool :=
       if dP
       then forallb (fun x => if apply P x
                              then apply s1 x =? apply s2 x else true)
-                   (map_dom mP ++ map_dom m1 ++ map_dom m2)
+                   (union (map_dom mP) (union (map_dom m1) (map_dom m2)))
            && (d1 =? d2)
       else forallb (fun x => if apply P x
                              then apply s1 x =? apply s2 x else true)
@@ -447,7 +468,7 @@ QuickChick (forAll arbitrary (fun (P : pub_vars) =>
             forAll arbitrary (fun (s2 : state) =>
             forAll (gen_pub_equiv P s2) (fun (s1 : state) =>
             forAll (gen_pub_equiv P s2) (fun (s3 : state) =>
-            pub_equivb P s2 s3))))).
+            pub_equivb P s1 s3))))).
 
 (* TERSE: HIDEFROMHTML *)
 Lemma pub_equiv_refl : forall {X:Type} (P : pub_vars) (s : total_map X),
@@ -509,15 +530,41 @@ Fixpoint ceval_fun_no_while (st : state) (c : com) : state :=
 
 (* This should fail, since not all programs are noninterferent *)
 
+Fixpoint shrink_pub_equiv (P:pub_vars) (s:state) : list state :=
+  let '(d,m) := s in
+  (if fst P then []
+   else d' <- shrink d;; ret (d',m))
+    ++ 
+  (m' <- (let fix aux (l:Map nat) : list (Map nat) :=
+              match l with
+              | (x,v) :: l' => 
+                  (if (v =? d) || negb (apply P x) then [l'] else []) ++
+                    map (cons (x,v)) (aux l') ++
+                    if apply P x then []
+                    else map (fun v' => (x,v')::l') (shrink v)
+              | [] => []
+              end
+            in aux m);;
+     ret (d, m')).
+
+Sample (gen_pub_equiv (public, [("X0",public); ("X1",false); ("X2",false)])
+                      (70, [("X0",42); ("X1",100); ("X2",3)]) )%string.
+
+QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+            forAll arbitrary (fun (s1 : state) =>
+            forAll (elems_ s1 (shrink_pub_equiv P s1)) (fun (s2' : state) =>
+              pub_equivb P s1 s2')))).
+
+(* Eval compute in (shrink_pub_equiv *)
+(*                    (true, [("X0", false); ("X1", false); ("X2", false); ("X3", false); ("X4", true); ("X5", true)]) *)
+(*                    (0, [("X0", 0); ("X1", 0); ("X2", 0); ("X3", 0); ("X4", 0); ("X5", 0)]) *)
+(*                    (0, [("X0", 0); ("X1", 0); ("X2", 0); ("X3", 0); ("X4", 0); ("X5", 0)]))%string. *)
+
 QuickChick (forAllShrink arbitrary shrink (fun (P : pub_vars) =>
             forAllShrink arbitrary shrink (fun (c : com) =>
             forAllShrink arbitrary shrink (fun (s1 : state) =>
-            forAllShrink (gen_pub_equiv P s1)
-              shrink (* <-- this shrink doesn't seem safe without [implication] *)
-                     (* SOONER: Define a safe shrinker in the style of [gen_pub_equiv] *)
-              (fun (s2 : state) =>
-            implication
-              (pub_equivb P s1 s2)
+            forAllShrink (gen_pub_equiv P s1) (shrink_pub_equiv P)
+            (fun (s2 : state) =>
               (pub_equivb P (ceval_fun_no_while s1 c)
                             (ceval_fun_no_while s2 c))))))).
 
@@ -531,6 +578,7 @@ QuickChick (forAllShrink arbitrary shrink (fun (P : pub_vars) =>
            Could it be that the shrinking for P should be done after
            the shrinking for s1 and s2?
            Or maybe the 3 of them should be shrunk together? *)
+(* SOONER: I anyway don't understand how nested forAllShrinks work *)
 
 (** TERSE: ** *)
 
@@ -797,6 +845,9 @@ Definition gen_pub_aexp_leaf (P : pub_vars) : G aexp :=
   (*        if seq.nilp pubs then [] *)
   (*        else [liftM AId (elems_ "X0"%string pubs)] ) ). *)
 
+(* LATER: Really no way to check for list nilness in Coq standard library?
+          (above using a mathcomp function, [seq.nilp]) *)
+
 Fixpoint gen_pub_aexp (sz:nat) (P:pub_vars) : G aexp :=
   match sz with
   | O => gen_pub_aexp_leaf P
@@ -836,9 +887,8 @@ QuickChick (forAllShrink arbitrary shrink (fun (P:pub_vars) =>
 QuickChick (forAllShrink arbitrary shrink (fun (P:pub_vars) =>
             forAllShrink arbitrary shrink (fun (a:aexp) =>
             forAllShrink arbitrary shrink (fun (s1:state) =>
-            forAllShrink (gen_pub_equiv P s1) shrink (fun (s2:state) =>
-            implication (pub_equivb P s1 s2)
-                        (aeval s1 a = aeval s2 a ?)))))).
+            forAllShrink (gen_pub_equiv P s1) (shrink_pub_equiv P) (fun (s2:state) =>
+            aeval s1 a = aeval s2 a ?))))).
 
 Theorem noninterferent_aexp : forall {P s1 s2 a},
   pub_equiv P s1 s2 ->
@@ -988,9 +1038,8 @@ QuickChick (forAllShrink arbitrary shrink (fun (P:pub_vars) =>
 QuickChick (forAllShrink arbitrary shrink (fun (P:pub_vars) =>
             forAllShrink arbitrary shrink (fun (b:bexp) =>
             forAllShrink arbitrary shrink (fun (s1:state) =>
-            forAllShrink (gen_pub_equiv P s1) shrink (fun (s2:state) =>
-            implication (pub_equivb P s1 s2)
-                        (beval s1 b = beval s2 b ?)))))).
+            forAllShrink (gen_pub_equiv P s1) (shrink_pub_equiv P) (fun (s2:state) =>
+            beval s1 b = beval s2 b ?))))).
 
 Theorem noninterferent_bexp : forall {P s1 s2 b},
   pub_equiv P s1 s2 ->
@@ -1023,22 +1072,11 @@ Qed.
 (* For producing implicit flows as counterexamples; let's start by
    generating assignments that are never explicit flows: *)
 
-Fixpoint gen_secure_asgn (P:pub_vars) : G com :=
+Definition gen_secure_asgn (P:pub_vars) : G com :=
   let vars := map_dom (snd P) in
-  if seq.nilp vars then (* trivial case: all vars same default level *)
-    a <- arbitrary;;
-    ret <{ "X0" := a }>
-  else
-    x <- elems_ "X0"%string vars;;
-    (if apply P x then
-      a <- gen_pub_aexp 1 P;;
-      ret <{ x := a }>
-    else
-      a <- arbitrary;;
-      ret <{ x := a }>).
-
-(* LATER: Really no way to check for list nilness in Coq standard library?
-          (above using a mathcomp function, [seq.nilp]) *)
+  x <- elems_ "X0"%string vars;;
+  a <- (if apply P x then gen_pub_aexp 1 P else arbitrary);;
+  ret <{ x := a }>.
 
 QuickChick (forAll arbitrary (fun (P : pub_vars) =>
             forAll (gen_secure_asgn P) (fun (c : com) =>
@@ -1071,11 +1109,9 @@ Definition gen_no_explicit_flows := gen_com gen_secure_asgn (fun _ => arbitrary)
 QuickChick (forAllShrink arbitrary shrink (fun (P : pub_vars) =>
             forAllShrink (gen_no_explicit_flows 2 P) shrink (fun (c : com) =>
             forAllShrink arbitrary shrink (fun (s1 : state) =>
-            forAllShrink (gen_pub_equiv P s1) shrink (fun (s2 : state) =>
-            implication
-              (pub_equivb P s1 s2)
-              (pub_equivb P (ceval_fun_no_while s1 c)
-                            (ceval_fun_no_while s2 c))))))).
+            forAllShrink (gen_pub_equiv P s1) (shrink_pub_equiv P) (fun (s2 : state) =>
+            pub_equivb P (ceval_fun_no_while s1 c)
+                         (ceval_fun_no_while s2 c)))))).
 
 (** * Restrictive type system prohibiting branching on secrets *)
 
