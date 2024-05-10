@@ -105,13 +105,24 @@ Sample (arbitrarySized 2 : G aexp).
 Sample (arbitrarySized 1 : G bexp). (* TODO: these get too big *)
 Sample (arbitrarySized 1 : G com).
 
+(* SOONER: I sometimes have troubles with the printing just stopping;
+   not sure if it has to do with the instances below, or it's just a
+   QuickChick / Coq / Emacs / Proof General / ... bug. For instance,
+   the `G bexp` printer above printed this cropped output for me:
+[(((4 + "X2") * "X1") = (("X0" + "X2") - (6 - "X0"))); ((((9 - (("X1"
+- (2 - ("X5" - ("X2" + "X5")))) * 1)) + ((((("X5" + (7 - (("X2" * 9) -
+9))) - (((9 * (0 * 0)) - (1 + (6 + "X1"))) + ((0 - 1) + "X2"))) +
+"X2") - (2 * ("X2" * (5 + (((0 + "X2") * "X1") - 9))))) * ((("X1" -
+"X0") * "X2") - (("X1" - ("X0" + ((("X2" * "X4") + 4) * 8))) * "X0")))
+*)
+
 Eval compute in shrink
        <{while ("X1" = (((6 * (4 - 0)) + (("X4" + "X0") - (3 * (("X1" + 3) * 3)))) + "X1"))
            do ("X0":= "X0") end}>%string.
 
-(* We can't use functional maps (like total_map) for testing, so we
-   need something more computational for states and variable
-   assignments. We use the list-based maps from TImp.v (volume 4). *)
+(* For testing, we can't use functions to implement total_map, so we
+   need something more computational for states and variable assignments.
+   We build on top of the list-based maps from TImp.v (volume 4). *)
 
 Definition Map A := list (string * A).
 
@@ -129,15 +140,17 @@ Fixpoint map_dom {A} (m:Map A) : list string :=
   | (k', v) :: m' => k' :: map_dom m'
   end.
 
-(* QuickChick already knows how to sample such maps *)
+(* QuickChick already knows how to sample such maps. We will define a
+   specialized generator below that e.g. doesn't repeat keys, but
+   first let's use the automatically-derived generator for maps to
+   make sure our maps work well even in those cases. *)
 
 Sample (arbitrary : G (Map nat)).
 
-(* We will define a specialized version that doesn't repeat keys, but
-   first let's make sure our maps work well even in those cases. *)
-
-(* As opposed to there, here trying to keep the total_map interface by
-   pairing a default value with a list-based map. *)
+(* As opposed to TImp.v, here we try hard to keep the total_map
+   interface by pairing a default value with a list-based map.
+   This payed off, we could keep most of this file unchanged when
+   switching to the new representation. *)
 
 Definition total_map (X:Type) : Type := X * Map X.
 
@@ -156,7 +169,7 @@ Definition t_update {A : Type} (m : total_map A)
   end.
 
 Notation "x '!->' v ';' m" := (t_update m x v)
-                              (at level 100, v at next level, right associativity).
+  (at level 100, v at next level, right associativity).
 
 Definition examplemap' :=
   ( "bar" !-> true;
@@ -164,7 +177,8 @@ Definition examplemap' :=
     _     !-> false
   ).
 
-(* We can no longer just use function application for this *)
+(* We can no longer just use function application for map lookups,
+   instead we define a combinator for this: *)
 Definition apply {A:Type} (m : total_map A) (x:string) : A := 
   match m with
   | (d, lm) => match map_get lm x with
@@ -185,8 +199,7 @@ Proof. reflexivity. Qed.
 Example update_example4 : apply examplemap' "bar" = true.
 Proof. reflexivity. Qed.
 
-(* We do our testing using the new version of state *)
-
+(* We do our testing using the new version of state: *)
 Definition state := total_map nat.
 
 Check t_apply_empty.
@@ -202,7 +215,10 @@ QuickChick (forAll arbitrary (fun (x:string) =>
 
 Lemma t_update_eq : forall (A : Type) (m : total_map A) x v,
   apply (x !-> v ; m) x = v.
-Admitted. (* it's well tested, so not a problem ;) *)
+Admitted.
+(* LATER: This is well tested, so not a problem to admit for now ;)
+   We do this for the two total_map lemmas used in the proofs below.
+   They are not that relevant for our testing. *)
 
 Check t_update_neq.
 QuickChick (forAll arbitrary (fun (x1:string) =>
@@ -220,7 +236,8 @@ Theorem t_update_neq : forall (A : Type) (m : total_map A) x1 x2 v,
   apply (x1 !-> v ; m) x2 = apply m x2.
 Admitted. 
 
-(* Extensional equality for total_map *)
+(* Extensional equality for total_map (this differs from Coq [=] on
+   this type, since our maps don't have a canonical representation): *)
 
 Definition total_map_beq (a:Type) (a_beq:a->a->bool) (m1 m2 : total_map a) :=
   match m1, m2 with
@@ -272,12 +289,13 @@ QuickChick (forAll arbitrary (fun (x1:string) =>
 
 Sample (arbitrary : G state).
 
-(* Just duplicating so that we use the new testable maps *)
+(* Just duplicating the following definitions so that they use the
+   testable total_maps: *)
 
 Fixpoint aeval (st : state) (a : aexp) : nat :=
   match a with
   | ANum n => n
-  | AId x => apply st x (* <--- NEW *)
+  | AId x => apply st x (* <--- NEW: apply is now needed here *)
   | <{a1 + a2}> => (aeval st a1) + (aeval st a2)
   | <{a1 - a2}> => (aeval st a1) - (aeval st a2)
   | <{a1 * a2}> => (aeval st a1) * (aeval st a2)
@@ -388,8 +406,6 @@ QuickChick (forAll arbitrary (fun (P : pub_vars) =>
 QuickChick (forAll arbitrary (fun (P : pub_vars) =>
             forAll arbitrary (fun (s1 s2 : state) =>
             implication (pub_equivb P s1 s2) (pub_equivb P s2 s1)))).
-(* SOONER: lots of discards;
-   already need a smart generator for public equivalent states *)
 
 Definition gen_pub_equiv (P : pub_vars) (s:state) : G state :=
   match s with
@@ -402,6 +418,8 @@ Definition gen_pub_equiv (P : pub_vars) (s:state) : G state :=
              ret (d,[("X0",v0); ("X1",v1); ("X2",v2);
                      ("X3",v3); ("X4",v4); ("X5",v5)])%string
   end.
+
+(* With this smart generator we can test the equivalence properties much better: *)
 
 QuickChick (forAll arbitrary (fun (P : pub_vars) =>
             forAll arbitrary (fun (s1 : state) =>
@@ -454,7 +472,9 @@ Definition noninterferent P c := forall s1 s2 s1' s2',
     public variables in the initial state, and do not depend on the
     initial value of secret variables. *)
 
-(* Trying to test this quickly, using the interpreter that skips while loops for now. *)
+(* Trying to test this quickly, using the interpreter that skips while
+   loops for now. Again, we need to repeat this definition so that it
+   uses the new representation of maps (SF is not that modular): *)
 
 Fixpoint ceval_fun_no_while (st : state) (c : com) : state :=
   match c with
@@ -473,30 +493,32 @@ Fixpoint ceval_fun_no_while (st : state) (c : com) : state :=
         st  (* bogus *)
   end.
 
+(* SOONER: For while loops try out fueled interpreter too. *)
+
 (* This should fail, since not all programs are noninterferent *)
 
 QuickChick (forAllShrink arbitrary shrink (fun (P : pub_vars) =>
             forAllShrink arbitrary shrink (fun (c : com) =>
             forAllShrink arbitrary shrink (fun (s1 : state) =>
-            forAllShrink (gen_pub_equiv P s1) shrink (* shrink doesn't seem safe without implication below *)
+            forAllShrink (gen_pub_equiv P s1)
+              shrink (* <-- this shrink doesn't seem safe without [implication] *)
+                     (* SOONER: Define a safe shrinker in the style of [gen_pub_equiv] *)
               (fun (s2 : state) =>
             implication
               (pub_equivb P s1 s2)
               (pub_equivb P (ceval_fun_no_while s1 c)
                             (ceval_fun_no_while s2 c))))))).
 
-(* Indeed it does fail. QuickChick finds an explicit flow most of the time! *)
+(* Indeed it does fail. QuickChick finds an explicit flow most of the
+   time!  A bit later below we will show that with a bit more work we
+   can also find implicit flows (i.e. by only generating commands
+   without explicit flows).*)
 
-(* SOONER: Looking above it seems that P is not shrunk, but
-           looking below, shrink seems to work fine for pub_vars?
+(* SOONER: Looking at the counterexamples above it seems that P is not
+           shrunk, but in my attempts shrink seems to work fine for pub_vars?
            Could it be that the shrinking for P should be done after
            the shrinking for s1 and s2?
-           Maybe the 3 of them should be shrunk together? *)
-
-(* SOONER: Can we also find implicit flow, by only generating commands
-   without explicit flows?  Seems like a good idea, but I wonder how
-   that plays with shrinking. Needs to be custom as well?
-   - This generator will need to be quite smart, so leaving for later. *)
+           Or maybe the 3 of them should be shrunk together? *)
 
 (** TERSE: ** *)
 
@@ -560,6 +582,8 @@ Definition secure_com1' : com :=
     As usual, our type systems will only provide sound syntactic
     overapproximations of the semantic property of noninterference. *)
 
+(* LATER: Can we also find the [secure_com1'] above by testing? *)
+
 (** TERSE: ** Implicit flows *)
 
 (** Explicit flows are not the only way to leak secrets: one can also
@@ -599,6 +623,8 @@ Definition secure_p2 :=
     always assigns the value [0] to [X], so no secret is
     leaked. Still, our type systems will reject programs containing
     any explicit or implicit flows, this one included. C'est la vie! *)
+
+(* LATER: Can we also find the [secure_p2] above by testing? *)
 
 (** * Type system for noninterference of expressions *)
 
@@ -734,7 +760,7 @@ where "P '|-a-' a '\IN' l" := (aexp_has_label P a l).
 (* Derive ArbitrarySizedSuchThat for (fun a => aexp_has_label P a l). *)
 (* Derive DecOpt for (aexp_has_label P a l). *)
 (* Error: Anomaly "Uncaught exception Failure("Internal QuickChick Error : Matching result type error")." *)
-(* SOONER: Unclear if this could be made to work *)
+(* SOONER: Unclear if this could be made to work; try to figure this out. *)
 
 Fixpoint label_of_aexp (P:pub_vars) (a:aexp) : label :=
   match a with
@@ -752,7 +778,8 @@ Definition gen_pub_aexp_leaf (P : pub_vars) : G aexp :=
              if seq.nilp pubs then []
              else [liftM AId (elems_ "X0"%string pubs)] ) ).
 
-(* SOONER: Somehow this doesn't work, so needed to expand oneOf notation above *)
+(* SOONER: Somehow the equivalent version below doesn't work,
+           so needed to expand oneOf notation above *)
   (* oneOf (liftM ANum arbitrary ;; *)
   (*        (let pubs := filter (apply P) (map_dom (snd P)) in *)
   (*        if seq.nilp pubs then [] *)
@@ -784,7 +811,7 @@ QuickChick (forAll arbitrary (fun (P:pub_vars) =>
             forAll (gen_pub_equiv P s1) (fun (s2:state) =>
             aeval s1 a = aeval s2 a ?))))).
 
-(* SOONER: It would be good to also check that inserting a bug
+(* SOONER: It would be great to also check that inserting a bug
    somewhere is found using mutants. *)
 
 (* For now, checking that the previous two assertions don't hold for
@@ -936,11 +963,11 @@ QuickChick (forAll arbitrary (fun (P:pub_vars) =>
             forAll (gen_pub_equiv P s1) (fun (s2:state) =>
             beval s1 b = beval s2 b ?))))).
 
-(* SOONER: It would be good to also check that inserting a bug
+(* SOONER: It would be great to also check that inserting a bug
    somewhere is found using mutants. *)
 
 (* For now, checking that the previous two assertions don't hold for
-   arbitrary aexps. *)
+   arbitrary bexps. *)
 
 QuickChick (forAllShrink arbitrary shrink (fun (P:pub_vars) =>
             forAllShrink arbitrary shrink (fun (b:bexp) =>
@@ -997,6 +1024,9 @@ Fixpoint gen_secure_asgn (P:pub_vars) : G com :=
     else
       a <- arbitrary;;
       ret <{ x := a }>).
+
+(* LATER: Really no way to check for list nilness in Coq standard library?
+          (above using a mathcomp function, [seq.nilp]) *)
 
 QuickChick (forAll arbitrary (fun (P : pub_vars) =>
             forAll (gen_secure_asgn P) (fun (c : com) =>
