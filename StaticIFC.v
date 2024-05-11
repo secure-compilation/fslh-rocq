@@ -308,6 +308,29 @@ Inductive aexp_has_label (P:pub_vars) : aexp -> label -> Prop :=
 
 where "P '|-a-' a '\in' l" := (aexp_has_label P a l).
 
+Fixpoint label_of_aexp (P:pub_vars) (a:aexp) : label :=
+  match a with
+  | ANum n => public
+  | AId X => P X
+  | <{ a1 + a2 }>
+  | <{ a1 - a2 }>
+  | <{ a1 * a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  end.
+
+Lemma label_of_aexp_sound : forall P a,
+    P |-a- a \in label_of_aexp P a.
+Proof. intros P a. induction a; constructor; eauto. Qed.
+
+Lemma label_of_aexp_unique : forall P a l,
+  P |-a- a \in l ->
+  l = label_of_aexp P a.
+Proof.
+  intros P a l H. induction H; simpl in *;
+  (repeat match goal with
+    | [Heql : _ = _ |- _] => rewrite Heql in *
+   end); eauto.
+Qed.
+
 (** TERSE: ** Noninterference by typing for arithmetic expressions *)
 
 Theorem noninterferent_aexp : forall {P s1 s2 a},
@@ -403,6 +426,35 @@ Inductive bexp_has_label (P:pub_vars) : bexp -> label -> Prop :=
 
 where "P '|-b-' b '\in' l" := (bexp_has_label P b l).
 (* TERSE: /HIDEFROMHTML *)
+
+Fixpoint label_of_bexp (P:pub_vars) (a:bexp) : label :=
+  match a with
+  | <{ true }> | <{ false }> => public
+  | <{ a1 = a2 }>
+  | <{ a1 <> a2 }>
+  | <{ a1 <= a2 }>
+  | <{ a1 > a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ ~b }> => label_of_bexp P b
+  | <{ b1 && b2 }> => join (label_of_bexp P b1) (label_of_bexp P b2)
+  end.
+
+Lemma label_of_bexp_sound : forall P b,
+    P |-b- b \in label_of_bexp P b.
+Proof.
+  intros P b. induction b; constructor;
+    eauto using label_of_aexp_sound. Qed.
+
+Lemma label_of_bexp_unique : forall P b l,
+  P |-b- b \in l ->
+  l = label_of_bexp P b.
+Proof.
+  intros P a l H. induction H; simpl in *;
+  (repeat match goal with
+    | [H : _ |-a- _ \in _ |- _] =>
+        apply label_of_aexp_unique in H
+    | [Heql : _ = _ |- _] => rewrite Heql in *
+   end); eauto.
+Qed.
 
 (** TERSE: ** Noninterference by typing for Boolean expressions *)
 
@@ -556,30 +608,60 @@ Inductive pc_well_typed (P:pub_vars) : com -> Prop :=
 where "P '|-pc-' c" := (pc_well_typed P c).
 (* TERSE: /HIDEFROMHTML *)
 
+Fixpoint pc_typechecker (P:pub_vars) (c:com) : bool :=
+  match c with
+  | <{ skip }> => true
+  | <{ X := a }> => can_flow (label_of_aexp P a) (P X)
+  | <{ c1 ; c2 }> => pc_typechecker P c1 && pc_typechecker P c2
+  | <{ if b then c1 else c2 end }> =>
+      Bool.eqb (label_of_bexp P b) public &&
+      pc_typechecker P c1 && pc_typechecker P c2
+  | <{ while b do c1 end }> =>
+      Bool.eqb (label_of_bexp P b) public && pc_typechecker P c1
+  end.
+
+Lemma pc_typechecker_sound : forall P c,
+  pc_typechecker P c = true ->
+  P |-pc- c.
+(* FOLD *)
+Proof.
+  intros P c. induction c; simpl in *; econstructor; 
+    try rewrite andb_true_iff in *; try tauto;
+    eauto using label_of_aexp_sound, label_of_bexp_sound. 
+  - destruct H as [H1 H2]. rewrite andb_true_iff in H1; try tauto.
+    destruct H1 as [H11 H12]. apply Bool.eqb_prop in H11.
+    rewrite <- H11. apply label_of_bexp_sound.
+  - destruct H as [H1 H2]. rewrite andb_true_iff in H1; tauto.
+  - destruct H as [H1 H2]. apply Bool.eqb_prop in H1.
+    rewrite <- H1. apply label_of_bexp_sound.
+Qed.
+(* /FOLD *)
+
+Lemma pc_typechecker_complete : forall P c,
+  pc_typechecker P c = false ->
+  ~P |-pc- c.
+(* FOLD *)
+Proof.
+  intros P c H Hc. induction Hc; simpl in *;
+    try rewrite andb_false_iff in *;
+    try tauto; try congruence.
+  - apply label_of_aexp_unique in H0.
+    rewrite H0 in *. congruence.
+  - destruct H; eauto. rewrite andb_false_iff in H.
+    destruct H; eauto. rewrite eqb_false_iff in H.
+    apply label_of_bexp_unique in H0. congruence.
+  - destruct H; eauto. rewrite eqb_false_iff in H.
+    apply label_of_bexp_unique in H0. congruence.
+Qed.
+(* /FOLD *)
+
 (** ** Secure program that is [pc_well_typed]: *)
 
 Example swt_secure_com :
   xpub |-pc- <{ X := X+1;  (* check: can_flow public public (OK!)  *)
                Y := X+Y*2 (* check: can_flow secret secret (OK!)  *)
              }>.
-(* FOLD *)
-Proof.
-  Locate "|-pc-". Locate "|-a-".
-  constructor.
-  - eapply PCWT_Asgn with (join public public).
-    + eapply T_Plus.
-      * constructor.
-      * constructor.
-    + reflexivity.
-  - eapply PCWT_Asgn with (join public (join secret public)).
-    + eapply T_Plus.
-      * constructor.
-      * eapply T_Mult.
-        -- constructor.
-        -- constructor.
-    + reflexivity.
-Qed.
-(* /FOLD *)
+Proof. apply pc_typechecker_sound. reflexivity. Qed.
 
 (** ** Explicit flow prevented by [pc_well_typed]: *)
 
@@ -587,20 +669,7 @@ Example not_swt_insecure_com1 :
   ~ xpub |-pc- <{ X := Y+1;  (* check: can_flow secret public (FAILS!) *)
                  Y := X+Y*2 (* check: can_flow secret secret (OK!)  *)
                }>.
-(* FOLD *)
-Proof.
-  intros contra.
-  inversion contra; subst; clear contra.
-  (* There is an explicit flow in H1! *)
-  inversion H1; subst; clear H1.
-  (* If [l] can flow to [public], then [l = public] *)
-  destruct l; simpl in *; try discriminate.
-  (* And now [Y + 1] cannot be public, because [Y] is a secret! *)
-  inversion H3; subst; clear H3.
-  destruct l1, l2; simpl in H1; try discriminate.
-  inversion H5.
-Qed.
-(* /FOLD *)
+Proof. apply pc_typechecker_complete. reflexivity. Qed.
 
 (** ** Implicit flow prevented by [pc_well_typed]: *)
 
@@ -609,17 +678,7 @@ Example not_swt_insecure_com2 :
                  then Y := 42
                  else X := X+1 (* <- bad implicit flow! *)
                  end }>.
-(* FOLD *)
-Proof.
-  intros contra.
-  inversion contra; subst; clear contra.
-  (* There is a bad flow in H2! *)
-  inversion H2; subst; clear H2.
-  (* We proceed as in the previous example *)
-  destruct l1, l2; simpl in H1; try discriminate.
-  inversion H5.
-Qed.
-(* /FOLD *)
+Proof. apply pc_typechecker_complete. reflexivity. Qed.
 
 (** SOONER: Add an example of a non-interferent program that is rejected? *)
 
@@ -822,27 +881,57 @@ Inductive well_typed (P:pub_vars) : label -> com -> Prop :=
 where "P ';;' pc '|--' c" := (well_typed P pc c).
 (* TERSE: /HIDEFROMHTML *)
 
+Fixpoint wt_typechecker (P:pub_vars) (pc:label) (c:com) : bool :=
+  match c with
+  | <{ skip }> => true
+  | <{ X := a }> => can_flow (join pc (label_of_aexp P a)) (P X)
+  | <{ c1 ; c2 }> => wt_typechecker P pc c1 && wt_typechecker P pc c2
+  | <{ if b then c1 else c2 end }> =>
+      wt_typechecker P (join pc (label_of_bexp P b)) c1 &&
+      wt_typechecker P (join pc (label_of_bexp P b)) c2
+  | <{ while b do c1 end }> =>
+      wt_typechecker P (join pc (label_of_bexp P b)) c1
+  end.
+
+Lemma wt_typechecker_sound : forall P pc c,
+  wt_typechecker P pc c = true ->
+  P ;; pc |-- c.
+(* FOLD *)
+Proof.
+  intros P pc c. generalize dependent pc.
+  induction c; intros pc H; simpl in *; econstructor; 
+    try rewrite andb_true_iff in *;
+    try destruct H as [H1 H2]; try tauto;
+    eauto using label_of_aexp_sound, label_of_bexp_sound.
+Qed.
+(* /FOLD *)
+
+Lemma wt_typechecker_complete : forall P pc c,
+  wt_typechecker P pc c = false ->
+  ~ P ;; pc |-- c.
+(* FOLD *)
+Proof.
+  intros P pc c H Hc. induction Hc; simpl in *;
+    try rewrite andb_false_iff in *; try tauto; try congruence.
+  - apply label_of_aexp_unique in H0.
+    rewrite H0 in *. congruence.
+  - destruct H; apply label_of_bexp_unique in H0; subst; eauto.
+  - destruct H; apply label_of_bexp_unique in H0; subst; eauto.
+Qed.
+(* /FOLD *)
+
 (** TERSE: ** *)
 
 (** With this more permissive type system we can accept more
     noninterferent programs that were rejected by [pc_well_typed]. *)
 
-Definition wt_noninterferent_com :
+Example wt_noninterferent_com :
   xpub ;; public |--
     <{ if Y=0 (* raises pc label from public to secret *)
        then Z := 0 (* check: [can_flow secret secret] (OK!) *)
        else skip
        end }>.
-(* FOLD *)
-Proof.
-  apply WT_If with (join secret public).
-  - constructor; constructor.
-  - econstructor.
-    + constructor.
-    + reflexivity.
-  - constructor.
-Qed.
-(* /FOLD *)
+Proof. apply wt_typechecker_sound. reflexivity. Qed.
 
 (** And we still prevent implicit flows: *)
 
@@ -852,18 +941,7 @@ Example not_wt_insecure_com2 :
        then Y := 42
        else X := X+1 (* check: [can_flow secret public] (FAILS!)  *)
        end }>.
-(* FOLD *)
-Proof.
-  intros contra.
-  inversion contra; subst; clear contra.
-  destruct l; simpl in *.
-  - inversion H3; subst; clear H3.
-    destruct l1, l2; try discriminate.
-    inversion H2.
-  - inversion H5; subst; clear H5.
-    discriminate.
-Qed.
-(* /FOLD *)
+Proof. apply wt_typechecker_complete. reflexivity. Qed.
 
 (* TERSE: HIDEFROMHTML *)
 Lemma weaken_pc : forall {P pc1 pc2 c},
