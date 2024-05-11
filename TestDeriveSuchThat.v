@@ -201,3 +201,7 @@ where "P ',,' pc '|--' c" := (well_typed P pc c).
 Derive DecOpt for (well_typed P pc c).
 Check DecOptwell_typed :
   forall (P:pub_vars) (pc:bool) (c:com), DecOpt (P ,, pc |-- c).
+
+(* Derive ArbitrarySizedSuchThat for (fun c => P ,, pc |-- c). *)
+(* Error: Anomaly "File "plugin/depDriver.ml",
+   line 265, characters 6-11: Pattern matching failed." *)
