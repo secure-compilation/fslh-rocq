@@ -45,8 +45,8 @@ Reserved Notation "P '|-a-' a \IN l" (at level 40).
 Inductive aexp_has_label (P:pub_vars) : aexp -> bool -> Prop :=
   | T_Num : forall n,
        P |-a- (ANum n) \IN true
-  | T_Id : forall xanax,
-       P |-a- (AId xanax) \IN (apply P xanax)
+  | T_Id : forall x,
+       P |-a- (AId x) \IN (apply P x)
   | T_Plus : forall a1 l1 a2 l2,
        P |-a- a1 \IN l1 ->
        P |-a- a2 \IN l2 ->
@@ -143,10 +143,10 @@ Reserved Notation "P '|-pc-' c" (at level 40).
 Inductive pc_well_typed (P:pub_vars) : com -> Prop :=
   | PCWT_Com :
       P |-pc- <{ skip }>
-  | PCWT_Asgn : forall X a l,
+  | PCWT_Asgn : forall x a l,
       P |-a- a \IN l ->
-      can_flow l (apply P X) = true ->
-      P |-pc- <{ X := a }>
+      can_flow l (apply P x) = true ->
+      P |-pc- <{ x := a }>
   | PCWT_Seq : forall c1 c2,
       P |-pc- c1 ->
       P |-pc- c2 ->
@@ -167,21 +167,22 @@ Derive DecOpt for (pc_well_typed P c).
 Check DecOptpc_well_typed :
   forall (P:pub_vars) (c:com), DecOpt (P |-pc- c).
 
-QuickChickDebug Debug On.
-
-(* Derive ArbitrarySizedSuchThat for (fun c => P |-pc- c). *)
+Derive ArbitrarySizedSuchThat for (fun c => pc_well_typed P c).
+(* Using notation above causes: *)
 (* Error: Anomaly "File "plugin/depDriver.ml",
    line 265, characters 6-11: Pattern matching failed." *)
+Check GenSizedSuchThatpc_well_typed :
+  forall P:pub_vars, GenSizedSuchThat com (fun c => P |-pc- c).
 
 Reserved Notation "P ',,' pc '|--' c" (at level 40).
 
 Inductive well_typed (P:pub_vars) : bool -> com -> Prop :=
   | WT_Com : forall pc,
       P ,, pc |-- <{ skip }>
-  | WT_Asgn : forall pc X a l,
+  | WT_Asgn : forall pc x a l,
       P |-a- a \IN l ->
-      can_flow (join pc l) (apply P X) = true ->
-      P ,, pc |-- <{ X := a }>
+      can_flow (join pc l) (apply P x) = true ->
+      P ,, pc |-- <{ x := a }>
   | WT_Seq : forall pc c1 c2,
       P ,, pc |-- c1 ->
       P ,, pc |-- c2 ->
@@ -202,6 +203,11 @@ Derive DecOpt for (well_typed P pc c).
 Check DecOptwell_typed :
   forall (P:pub_vars) (pc:bool) (c:com), DecOpt (P ,, pc |-- c).
 
-(* Derive ArbitrarySizedSuchThat for (fun c => P ,, pc |-- c). *)
+Derive ArbitrarySizedSuchThat for (fun c => well_typed P pc c).
+(* Using notation above causes: *)
 (* Error: Anomaly "File "plugin/depDriver.ml",
    line 265, characters 6-11: Pattern matching failed." *)
+Check GenSizedSuchThatwell_typed :
+  forall (P:pub_vars) (pc:bool), GenSizedSuchThat com (fun c => P,, pc |-- c).
+
+QuickChickDebug Debug On.
