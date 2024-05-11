@@ -822,7 +822,7 @@ Inductive well_typed (P:pub_vars) : label -> com -> Prop :=
 where "P ';;' pc '|--' c" := (well_typed P pc c).
 (* TERSE: /HIDEFROMHTML *)
 
-(** ** *)
+(** TERSE: ** *)
 
 (** With this more permissive type system we can accept more
     noninterferent programs that were rejected by [pc_well_typed]. *)
@@ -989,7 +989,9 @@ Qed.
     Another key ingredient for having a simple noninterference proof
     is working with a big-step semantics. *)
 
-(* SOONER: Implement a type-checker for this type system (easy). *)
+(* SOONER: Implement a type-checker for this type system (easy).
+   This is now done in TestingStaticIFC.v so just copy that here?
+   We didn't yet prove that it's correct though. *)
 
 (** * Type system for termination-sensitive noninterference *)
 

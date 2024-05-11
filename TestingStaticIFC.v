@@ -127,12 +127,15 @@ Sample (arbitrarySized 1 : G com).
 
 (* SOONER: I'm generally not longer sure how sized generators
    work. Should relearn more about them and try to prevent that we
-   have arbitrary magic numbers everywhere. *)
+   have arbitrary magic numbers everywhere.
 
-(* SOONER: Should look more carefully at the terms we generate and
+   Now I'm even more worried with not having any numbers though, since
+   QC could generate huge expressions for instance, which is not needed.
+
+   Should gather statistics about the terms we generate and
    whether their sizes are good for testing. For instance, we may be
-   generating too large expressions, but too small commands, especially
-   in the number of assignments? Worth investigating such things. *)
+   generating too large expressions, but too small commands,
+   especially in the number of assignments? Worth investigating. *)
 
 (* SOONER: One forcing function for this would be to start introducing
    mutants. Should start trying that soon anyway! *)
@@ -526,7 +529,7 @@ Fixpoint ceval_fun_no_while (st : state) (c : com) : state :=
         st  (* bogus *)
   end.
 
-(* SOONER: For while loops try out fueled interpreter too. *)
+(* LATER: For while loops try out fueled interpreter too. Not as simple though. *)
 
 (* This should fail, since not all programs are noninterferent *)
 
@@ -578,7 +581,9 @@ QuickChick (forAllShrink arbitrary shrink (fun (P : pub_vars) =>
            Could it be that the shrinking for P should be done after
            the shrinking for s1 and s2?
            Or maybe the 3 of them should be shrunk together? *)
-(* SOONER: I anyway don't understand how nested forAllShrinks work *)
+(* SOONER: I anyway don't understand how nested forAllShrinks work.
+           Worth investigating, at least to double check that what we
+           do above for shrinking is sound without extra premises. *)
 
 (** TERSE: ** *)
 
@@ -820,7 +825,10 @@ where "P '|-a-' a '\IN' l" := (aexp_has_label P a l).
 (* Derive ArbitrarySizedSuchThat for (fun a => aexp_has_label P a l). *)
 (* Derive DecOpt for (aexp_has_label P a l). *)
 (* Error: Anomaly "Uncaught exception Failure("Internal QuickChick Error : Matching result type error")." *)
-(* SOONER: Unclear if this could be made to work; try to figure this out. *)
+(* LATER: Unclear if this could be made to work; try to figure this out eventually.
+   My initial experiments showed that the deriving mechanism is extremely flaky;
+   basically it's hugely unlikely that one would naturally satisfy all the constraints,
+   which are not documented anywhere (just terrible error messages). *)
 
 Fixpoint label_of_aexp (P:pub_vars) (a:aexp) : label :=
   match a with
@@ -831,22 +839,21 @@ Fixpoint label_of_aexp (P:pub_vars) (a:aexp) : label :=
   | <{ a1 * a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
   end.
 
+(* The ;; notation didn't work with oneOf, probably related to monadic
+   bind also using ;;. So I redefined the notation using ;;;. *)
+Notation " 'oneOf' ( x ;;; l ) " :=
+  (oneOf_ x (cons x l))  (at level 1, no associativity) : qc_scope.
+
 Definition gen_pub_aexp_leaf (P : pub_vars) : G aexp :=
-  oneOf_ (liftM ANum arbitrary)
-         (cons (liftM ANum arbitrary)
-            (let pubs := filter (apply P) (map_dom (snd P)) in
-             if seq.nilp pubs then []
-             else [liftM AId (elems_ "X0"%string pubs)] ) ).
+  oneOf (liftM ANum arbitrary ;;;
+         (let pubs := filter (apply P) (map_dom (snd P)) in
+         if seq.nilp pubs then []
+         else [liftM AId (elems_ "X0"%string pubs)] ) ).
 
-(* SOONER: Somehow the equivalent version below doesn't work,
-           so needed to expand oneOf notation above *)
-  (* oneOf (liftM ANum arbitrary ;; *)
-  (*        (let pubs := filter (apply P) (map_dom (snd P)) in *)
-  (*        if seq.nilp pubs then [] *)
-  (*        else [liftM AId (elems_ "X0"%string pubs)] ) ). *)
-
-(* LATER: Really no way to check for list nilness in Coq standard library?
-          (above using a mathcomp function, [seq.nilp]) *)
+(* LATER: Really no way to check for list nilness in Coq standard
+   library?  Searched quite a bit and it seems that no. Super strange.
+   Above using a mathcomp function, [seq.nilp]. *)
+(* Search (forall _, list _ -> bool). *)
 
 Fixpoint gen_pub_aexp (sz:nat) (P:pub_vars) : G aexp :=
   match sz with
@@ -1246,23 +1253,11 @@ Fixpoint pc_typechecker (P:pub_vars) (c:com) : bool :=
       can_flow (label_of_bexp P b) public && pc_typechecker P c1
   end.
 
-Definition gen_pc_well_typed := gen_com gen_secure_asgn (gen_pub_bexp 2).
-
-QuickChick (forAllShrink arbitrary shrink (fun (P:pub_vars) =>
-           (forAll (gen_pc_well_typed 1 P) (fun (c:com) =>
-             pc_typechecker P c)))).
-
-(* Now that we validated that our generator produces well-typed terms
-   we can use it to test that well-typed terms are indeed noninterferent: *)
-
-QuickChick (forAll arbitrary (fun (P : pub_vars) =>
-            forAll (gen_pc_well_typed 1 P) (fun (c : com) =>
-            forAll arbitrary (fun (s1 : state) =>
-            forAll (gen_pub_equiv P s1) (fun (s2 : state) =>
-            pub_equivb P (ceval_fun_no_while s1 c)
-                         (ceval_fun_no_while s2 c)))))).
-
 (** ** Secure program that is [pc_well_typed]: *)
+
+Example typechecks_secure_com :
+  pc_typechecker xpub <{ X := X+1; Y := X+Y*2}> = true.
+Proof. reflexivity. Qed.
 
 Example swt_secure_com :
   xpub |-pc- <{ X := X+1;  (* check: can_flow public public (OK!)  *)
@@ -1289,6 +1284,10 @@ Qed.
 
 (** ** Explicit flow prevented by [pc_well_typed]: *)
 
+Example not_typechecks_insecure_com1 :
+  pc_typechecker xpub <{ X := Y+1; Y := X+Y*2}> = false.
+Proof. reflexivity. Qed.
+
 Example not_swt_insecure_com1 :
   ~ xpub |-pc- <{ X := Y+1;  (* check: can_flow secret public (FAILS!) *)
                  Y := X+Y*2 (* check: can_flow secret secret (OK!)  *)
@@ -1309,6 +1308,10 @@ Qed.
 (* /FOLD *)
 
 (** ** Implicit flow prevented by [pc_well_typed]: *)
+
+Example not_typechecks_insecure_com2 :
+  pc_typechecker xpub <{ if Y=0 then Y := 42 else X := X+1 end }> = false.
+Proof. reflexivity. Qed.
 
 Example not_swt_insecure_com2 :
   ~ xpub |-pc- <{ if Y=0  (* check: P |-b- Y=0 \IN public (FAILS!) *)
@@ -1332,6 +1335,24 @@ Qed.
 (** TERSE: ** *)
 
 (** We show that [pc_well_typed] commands are [noninterferent]. *)
+
+Definition gen_pc_well_typed := gen_com gen_secure_asgn (gen_pub_bexp 2).
+
+(* We first validate that our generator produces well-typed terms *)
+
+QuickChick (forAll arbitrary (fun (P:pub_vars) =>
+           (forAll (gen_pc_well_typed 1 P) (fun (c:com) =>
+             pc_typechecker P c)))).
+
+(* Then we use this generator to test that well-typed terms are indeed
+   noninterferent: *)
+
+QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+            forAll (gen_pc_well_typed 1 P) (fun (c : com) =>
+            forAll arbitrary (fun (s1 : state) =>
+            forAll (gen_pub_equiv P s1) (fun (s2 : state) =>
+            pub_equivb P (ceval_fun_no_while s1 c)
+                         (ceval_fun_no_while s2 c)))))).
 
 Theorem pc_well_typed_noninterferent : forall P c,
   P |-pc- c ->
@@ -1411,6 +1432,10 @@ forall s1 s2 s1' s2',
     noninterferent, yet it is still rejected by the type system just
     because it branches on a secret: *)
 
+Example not_typechecks_noninterferent_com :
+  pc_typechecker xpub <{ if Y=0 then Z := 0 else skip end }> = false.
+Proof. reflexivity. Qed.
+
 Example not_swt_noninterferent_com :
   ~ xpub |-pc- <{ if Y=0 (* check: P |-b- Y=0 \IN public (fails!) *)
                  then Z := 0
@@ -1479,62 +1504,82 @@ Qed.
 
 (** [[[
                       ----------------                      (WT_Skip)
-                      P ;; pc |-- skip
+                      P ,, pc |-- skip
 
        P |-a- a \IN l   can_flow (join pc l) (P X) = true
        --------------------------------------------------   (WT_Asgn)
-                     P ;; pc |-- X := a
+                     P ,, pc |-- X := a
 
-                P ;; pc |-- c1    P ;; pc |-- c2
+                P ,, pc |-- c1    P ,, pc |-- c2
                 --------------------------------             (WT_Seq)
-                      P ;; pc |-- c1;c2
+                      P ,, pc |-- c1;c2
 
-           P |-b- b \IN l    P ;; join pc l |-- c1
-                             P ;; join pc l |-- c2
+           P |-b- b \IN l    P ,, join pc l |-- c1
+                             P ,, join pc l |-- c2
            ---------------------------------------            (WT_If)
-                P ;; pc |-- if b then c1 else c2
+                P ,, pc |-- if b then c1 else c2
 
-              P |-b- b \IN l    P ;; join pc l |-- c
+              P |-b- b \IN l    P ,, join pc l |-- c
               --------------------------------------       (WT_While)
-                P ;; pc |-- while b then c end
+                P ,, pc |-- while b then c end
 ]]]
 *)
 (* SOONER: center these *)
 
 (* TERSE: HIDEFROMHTML *)
-Reserved Notation "P ';;' pc '|--' c" (at level 40).
+Reserved Notation "P ',,' pc '|--' c" (at level 40).
 
 Inductive well_typed (P:pub_vars) : label -> com -> Prop :=
   | WT_Com : forall pc,
-      P ;; pc |-- <{ skip }>
+      P ,, pc |-- <{ skip }>
   | WT_Asgn : forall pc X a l,
       P |-a- a \IN l ->
       can_flow (join pc l) (apply P X) = true ->
-      P ;; pc |-- <{ X := a }>
+      P ,, pc |-- <{ X := a }>
   | WT_Seq : forall pc c1 c2,
-      P ;; pc |-- c1 ->
-      P ;; pc |-- c2 ->
-      P ;; pc |-- <{ c1 ; c2 }>
+      P ,, pc |-- c1 ->
+      P ,, pc |-- c2 ->
+      P ,, pc |-- <{ c1 ; c2 }>
   | WT_If : forall pc b l c1 c2,
       P |-b- b \IN l ->
-      P ;; (join pc l) |-- c1 ->
-      P ;; (join pc l) |-- c2 ->
-      P ;; pc |-- <{ if b then c1 else c2 end }>
+      P ,, (join pc l) |-- c1 ->
+      P ,, (join pc l) |-- c2 ->
+      P ,, pc |-- <{ if b then c1 else c2 end }>
   | WT_While : forall pc b l c1,
       P |-b- b \IN l ->
-      P ;; (join pc l) |-- c1 ->
-      P ;; pc |-- <{ while b do c1 end }>
+      P ,, (join pc l) |-- c1 ->
+      P ,, pc |-- <{ while b do c1 end }>
 
-where "P ';;' pc '|--' c" := (well_typed P pc c).
+where "P ',,' pc '|--' c" := (well_typed P pc c).
 (* TERSE: /HIDEFROMHTML *)
 
-(** ** *)
+(* LATER: Seems that ;; was colliding with bind notation,
+   so changed to ,, for now. *)
+
+Fixpoint wt_typechecker (P:pub_vars) (pc:label) (c:com) : bool :=
+  match c with
+  | <{ skip }> => true
+  | <{ X := a }> => can_flow (join pc (label_of_aexp P a)) (apply P X)
+  | <{ c1 ; c2 }> => wt_typechecker P pc c1 && wt_typechecker P pc c2
+  | <{ if b then c1 else c2 end }> =>
+      wt_typechecker P (join pc (label_of_bexp P b)) c1 &&
+      wt_typechecker P (join pc (label_of_bexp P b)) c2
+  | <{ while b do c1 end }> =>
+      wt_typechecker P (join pc (label_of_bexp P b)) c1
+  end.
+
+(** TERSE: ** *)
 
 (** With this more permissive type system we can accept more
     noninterferent programs that were rejected by [pc_well_typed]. *)
 
+Definition wt_typechecks_noninterferent_com :
+  wt_typechecker xpub public
+    <{ if Y=0 then Z := 0 else skip end }> = true.
+Proof. reflexivity. Qed.
+
 Definition wt_noninterferent_com :
-  xpub ;; public |--
+  xpub ,, public |--
     <{ if Y=0 (* raises pc label from public to secret *)
        then Z := 0 (* check: [can_flow secret secret] (OK!) *)
        else skip
@@ -1552,8 +1597,13 @@ Qed.
 
 (** And we still prevent implicit flows: *)
 
+Example not_wt_typechecks_insecure_com2 :
+  wt_typechecker xpub public
+    <{ if Y=0 then Y := 42 else X := X+1 end }> = false.
+Proof. reflexivity. Qed.
+
 Example not_wt_insecure_com2 :
-  ~ xpub ;; public |--
+  ~ xpub ,, public |--
     <{ if Y=0  (* raises pc label from public to secret *)
        then Y := 42
        else X := X+1 (* check: [can_flow secret public] (FAILS!)  *)
@@ -1571,11 +1621,68 @@ Proof.
 Qed.
 (* /FOLD *)
 
+Definition gen_asgn_in_ctx (gen_asgn : pub_vars -> G com)
+    (pc:label) (P:pub_vars) : G com :=
+  if pc then gen_asgn P
+  else
+    let privs := filter (fun x => negb (apply P x))
+                        (map_dom (snd P)) in
+    match privs with
+    | x0 :: _ =>
+      x <- elems_ x0 privs;;
+      a <- arbitrary;;
+      ret <{ x := a }>
+    | [] => ret <{ skip }>
+      (* generates skip if there no secure assignements possible *)
+    end.
+
+Fixpoint gen_com_rec (gen_asgn : pub_vars -> G com)
+                     (sz:nat) (P:pub_vars) : G com :=
+  match sz with
+  | O => oneOf [ret CSkip ; gen_asgn P ]
+  | S sz' =>
+      freq [ (1, ret CSkip);
+             (sz, gen_asgn P);
+             (sz, liftM2 CSeq (gen_com_rec gen_asgn sz' P)
+                              (gen_com_rec gen_asgn sz' P));
+             (sz, b <- arbitrary;;
+                  liftM3 CIf (ret b)
+                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b)) sz' P)
+                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b)) sz' P));
+             (sz, b <- arbitrary;;
+                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b)) sz' P))]
+  end.
+
+Definition gen_wt_com := gen_com_rec gen_secure_asgn.
+
+(* We first validate that our generator produces well-typed terms *)
+
+QuickChick (forAll arbitrary (fun (P:pub_vars) =>
+           (forAll (gen_wt_com 1 P) (fun (c:com) =>
+             wt_typechecker P public c)))).
+
 (* TERSE: HIDEFROMHTML *)
+
+(* For the next lemmas we also need to generate commands that are
+   well-typed with pc=secret: *)
+
+Definition gen_wt_com_pc_secret :=
+  gen_com_rec (gen_asgn_in_ctx gen_secure_asgn secret).
+
+QuickChick (forAll arbitrary (fun (P:pub_vars) =>
+           (forAll (gen_wt_com_pc_secret 1 P) (fun (c:com) =>
+             wt_typechecker P secret c)))).
+
+(* With this we can test the weaken_pc lemma below *)
+
+QuickChick (forAll arbitrary (fun (P:pub_vars) =>
+           (forAll (gen_wt_com_pc_secret 1 P) (fun (c:com) =>
+             wt_typechecker P public c)))).
+
 Lemma weaken_pc : forall {P pc1 pc2 c},
-  P;; pc1 |-- c ->
+  P,, pc1 |-- c ->
   can_flow pc2 pc1 = true->
-  P;; pc2 |-- c.
+  P,, pc2 |-- c.
 Proof.
   intros P pc1 pc2 c H. generalize dependent pc2.
   induction H; subst; intros pc2 Hcan_flow.
@@ -1599,8 +1706,13 @@ Qed.
 
 (** ** Dealing with unsynchronized executions running different code *)
 
+QuickChick (forAll arbitrary (fun (P:pub_vars) =>
+           (forAll (gen_wt_com_pc_secret 1 P) (fun (c:com) =>
+           (forAll arbitrary (fun (s:state) =>
+             pub_equivb P s (ceval_fun_no_while s c))))))).
+
 Lemma secret_run : forall {P c s s'},
-  P;; secret |-- c ->
+  P,, secret |-- c ->
   s =[ c ]=> s' ->
   pub_equiv P s s'.
 (* FOLD *)
@@ -1618,9 +1730,17 @@ Proof.
 Qed.
 (* /FOLD *)
 
+QuickChick (forAll arbitrary (fun (P:pub_vars) =>
+           (forAll (gen_wt_com_pc_secret 1 P) (fun (c1:com) =>
+           (forAll (gen_wt_com_pc_secret 1 P) (fun (c2:com) =>
+           (forAll arbitrary (fun (s1:state) =>
+           (forAll (gen_pub_equiv P s1) (fun (s2:state) =>
+             pub_equivb P (ceval_fun_no_while s1 c1)
+                          (ceval_fun_no_while s2 c2))))))))))).
+
 Corollary different_code : forall P c1 c2 s1 s2 s1' s2',
-  P;; secret |-- c1 ->
-  P;; secret |-- c2 ->
+  P,, secret |-- c1 ->
+  P,, secret |-- c2 ->
   pub_equiv P s1 s2 ->
   s1 =[ c1 ]=> s1' ->
   s2 =[ c2 ]=> s2' ->
@@ -1638,8 +1758,15 @@ Qed.
 
 (** ** We show that [well_typed] commands are [noninterferent]. *)
 
+QuickChick (forAll arbitrary (fun (P:pub_vars) =>
+           (forAll (gen_wt_com 1 P) (fun (c:com) =>
+           (forAll arbitrary (fun (s1:state) =>
+           (forAll (gen_pub_equiv P s1) (fun (s2:state) =>
+             pub_equivb P (ceval_fun_no_while s1 c)
+                          (ceval_fun_no_while s2 c))))))))).
+
 Theorem well_typed_noninterferent : forall P c,
-  P;; public |-- c ->
+  P,, public |-- c ->
   noninterferent P c.
 (* FOLD *)
 Proof.
@@ -1695,8 +1822,6 @@ Qed.
     Another key ingredient for having a simple noninterference proof
     is working with a big-step semantics. *)
 
-(* SOONER: Implement a type-checker for this type system (easy). *)
-
 (** * Type system for termination-sensitive noninterference *)
 
 (** The noninterference notion we used above was "termination
@@ -1719,16 +1844,16 @@ Definition tsni P c :=
 
 (** Old rule for noninterference:
 [[[
-              P |-b- b \IN l    P ;; join pc l |-- c
+              P |-b- b \IN l    P ,, join pc l |-- c
               --------------------------------------       (WT_While)
-                P ;; pc |-- while b then c end
+                P ,, pc |-- while b then c end
 ]]]
 
     New rule for termination-sensitive noninterference:
 [[[
-          P |-b- b \IN public    P ;; public |-ts- c
+          P |-b- b \IN public    P ,, public |-ts- c
           ------------------------------------------       (TS_While)
-             P ;; public |-ts- while b then c end
+             P ,, public |-ts- while b then c end
 ]]]
 
    Beyond requiring the label of [b] to be [public], we also require
@@ -1737,30 +1862,30 @@ Definition tsni P c :=
 *)
 
 (* TERSE: HIDEFROMHTML *)
-Reserved Notation "P ';;' pc '|-ts-' c" (at level 40).
+Reserved Notation "P ',,' pc '|-ts-' c" (at level 40).
 
 Inductive ts_well_typed (P:pub_vars) : label -> com -> Prop :=
   | TS_Com : forall pc,
-      P;; pc |-ts- <{ skip }>
+      P,, pc |-ts- <{ skip }>
   | TS_Asgn : forall pc X a l,
       P |-a- a \IN l ->
       can_flow (join pc l) (apply P X) = true ->
-      P;; pc |-ts- <{ X := a }>
+      P,, pc |-ts- <{ X := a }>
   | TS_Seq : forall pc c1 c2,
-      P;; pc |-ts- c1 ->
-      P;; pc |-ts- c2 ->
-      P;; pc |-ts- <{ c1 ; c2 }>
+      P,, pc |-ts- c1 ->
+      P,, pc |-ts- c2 ->
+      P,, pc |-ts- <{ c1 ; c2 }>
   | TS_If : forall pc b l c1 c2,
       P |-b- b \IN l ->
-      P;; (join pc l) |-ts- c1 ->
-      P;; (join pc l) |-ts- c2 ->
-      P;; pc |-ts- <{ if b then c1 else c2 end }>
+      P,, (join pc l) |-ts- c1 ->
+      P,, (join pc l) |-ts- c2 ->
+      P,, pc |-ts- <{ if b then c1 else c2 end }>
   | TS_While : forall b c1,
       P |-b- b \IN public -> (* <-- NEW *)
-      P;; public |-ts- c1 -> (* <-- ONLY pc=public *)
-      P;; public |-ts- <{ while b do c1 end }>
+      P,, public |-ts- c1 -> (* <-- ONLY pc=public *)
+      P,, public |-ts- <{ while b do c1 end }>
 
-where "P ';;' pc '|-ts-' c" := (ts_well_typed P pc c).
+where "P ',,' pc '|-ts-' c" := (ts_well_typed P pc c).
 (* TERSE: /HIDEFROMHTML *)
 
 (** ** We prove that [ts_well_typed] enforces TSNI. *)
@@ -1768,7 +1893,7 @@ where "P ';;' pc '|-ts-' c" := (ts_well_typed P pc c).
 (** For this we show that [ts_well_typed] implies [well_typed], so
     by our previous theorem also [noninterference].
 
-    Then we show that [P;; secret |-ts- c] implies termination.
+    Then we show that [P,, secret |-ts- c] implies termination.
     
     Then we show that [ts_well_typed] implies equitermination, which
     together with noninterference implies termination-sensitive noninterference.
@@ -1782,14 +1907,14 @@ where "P ';;' pc '|-ts-' c" := (ts_well_typed P pc c).
 
 (* TERSE: HIDEFROMHTML *)
 Theorem ts_well_typed_well_typed : forall P c pc,
-  P;; pc |-ts- c ->
-  P;; pc |-- c.
+  P,, pc |-ts- c ->
+  P,, pc |-- c.
 Proof.
   intros P c pc H. induction H; econstructor; eassumption.
 Qed.
 
 Theorem ts_well_typed_noninterferent : forall P c,
-  P;; public |-ts- c ->
+  P,, public |-ts- c ->
   noninterferent P c.
 Proof.
   intros P c H. apply well_typed_noninterferent.
@@ -1797,7 +1922,7 @@ Proof.
 Qed.
 
 Lemma ts_secret_run_terminating : forall {P c s},
-  P;; secret |-ts- c ->
+  P,, secret |-ts- c ->
   exists s', s =[ c ]=> s'.
 Proof.
   intros P c s Hwt. remember secret as l.
@@ -1814,7 +1939,7 @@ Proof.
 Qed.
 
 Theorem ts_well_typed_equitermination : forall {P c s1 s2 s1'},
-  P;; public |-ts- c ->
+  P,, public |-ts- c ->
   s1 =[ c ]=> s1' ->
   pub_equiv P s1 s2 ->
   exists s2', s2 =[ c ]=> s2'.
@@ -1856,7 +1981,7 @@ Qed.
 (* TERSE: /HIDEFROMHTML *)
 
 Corollary ts_well_typed_tsni : forall P c,
-  P;; public |-ts- c ->
+  P,, public |-ts- c ->
   tsni P c.
 (* FOLD *)
 Proof.
