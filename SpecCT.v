@@ -725,6 +725,16 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    directive. Doing that with a big-step semantics seems trickier. We could
    build a version that halts early on the first force? *)
 
+(** ** Speculative constant-time security definition *)
+
+Definition spec_ct_secure P PA c :=
+  forall st1 st2 ast1 ast2 st1' st2' ast1' ast2' b1' b2' os1 os2 ds,
+    pub_equiv P st1 st2 ->
+    pub_equiv PA ast1 ast2 ->
+    <(st1, ast1, false, ds)> =[ c ]=> <(st1', ast1', b1', os1)> ->
+    <(st2, ast2, false, ds)> =[ c ]=> <(st2', ast2', b2', os2)> ->
+    os1 = os2.
+
 (* SOONER: Give example programs that satisfy the cryptographic constant-time
    discipline ([ct_well_typed]), but that are insecure wrt the speculative
    semantics above.  For instance, one can write secrets to public arrays using
@@ -808,16 +818,6 @@ Definition seq_spec_eval (c:com) (s:state) (a:astate)
 
 (* LATER: We should be able to prove that [cteval] and [seq_spec_eval] coincide, so
    by [ct_well_typed_ct_secure] also directly get their Lemma 2. *)
-
-(** ** Speculative constant-time security definition *)
-
-Definition spec_ct_secure :=
-  forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
-    pub_equiv P s1 s2 ->
-    pub_equiv PA a1 a2 ->
-    <(s1, a1, false, ds)> =[ c ]=> <(s1', a1', b1', os1)> ->
-    <(s2, a2, false, ds)> =[ c ]=> <(s2', a2', b2', os2)> ->
-    os1 = os2.
 
 (** Selective SLH transformation that we will show enforces speculative
     constant-time security. *)
