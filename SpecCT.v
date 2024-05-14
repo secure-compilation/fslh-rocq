@@ -1115,18 +1115,18 @@ Proof.
       eapply noninterferent_aexp; eauto. 
       destruct l; [auto | simpl in H14; discriminate].
     + eapply pub_equiv_update_secret; eauto. 
-  - (* Seq *) 
-    assert (Hds1: prefix ds1 ds0 \/ prefix ds0 ds1).
-    { destruct Hds as [Hds | Hds]; apply prefix_app in Hds; tauto. }
-    assert (ds1 = ds0). 
-    { eapply IHHeval1_1; eassumption. } subst.
-    assert (Hds2: prefix ds2 ds3 \/ prefix ds3 ds2).
-    { destruct Hds as [Hds | Hds]; apply prefix_append_front in Hds; tauto. }
-    (* SOONER: proofs above and below can be better integrated *)
-    specialize (IHHeval1_1 H13 _ Hds1 _ _ _ Haeq _ _ Heq _ H1).
-    destruct IHHeval1_1 as [ IH12eq [IH12b [IH12eqa _] ] ]. subst.
-    specialize (IHHeval1_2 H14 _ Hds2 _ _ _ IH12eqa _ _ IH12eq _ H10).
-    firstorder; subst; reflexivity.
+  - (* Seq *)
+    destruct Hds as [Hpre | Hpre]; apply prefix_app in Hpre as Hds1.
+    + (* prefix (ds1 ++ ds2) (ds0 ++ ds3) *)
+      eapply IHHeval1_1 in Hds1; eauto.
+      destruct Hds1 as [ Hstates [Hbits [Hastates Hdirections] ] ]. subst.
+      eapply prefix_append_front in Hpre as Hds2.
+      eapply IHHeval1_2 in H14; eauto. firstorder. subst. reflexivity.
+    + (* prefix (ds0 ++ ds3) (ds1 ++ ds2) *)
+      eapply IHHeval1_1 with (ds2:=ds0) in H13; eauto; [| tauto].
+      destruct H13 as [ Hstates [Hbits [Hastates Hdirections] ] ]. subst.
+      eapply prefix_append_front in Hpre as Hds2.
+      eapply IHHeval1_2 in H14; eauto. firstorder; subst; reflexivity.
   - (* If *)
     assert(G : P ;; PA |-ct- (if beval st be then c1 else c2)).
     { destruct (beval st be); assumption. }
@@ -1167,8 +1167,8 @@ Proof.
       * discriminate H6.
       * eapply pub_equiv_update_secret; eauto.  
     + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
-  - (* ARead contra *) rewrite H in *. discriminate.
-  - (* Aread contra *) rewrite H in *. discriminate.
+  - (* ARead; contra *) rewrite H in *. discriminate.
+  - (* Aread; contra *) rewrite H in *. discriminate.
   - (* ARead_Prot *) split4; eauto.
     + destruct (P x) eqn:EqPx.
       * eapply pub_equiv_update_public; eauto.
@@ -1182,9 +1182,9 @@ Proof.
         apply Haeq in Hb2'. apply Hb2' in EqPAa. rewrite EqPAa. reflexivity.
       * simpl in H21. discriminate.  
     + eapply pub_equiv_update_secret; eauto.
-  - (* Write contra *) apply prefix_or_heads in Hds. inversion Hds.
-  - (* Write contra *) apply prefix_or_heads in Hds. inversion Hds.
-  - (* Write_U contra *) split4; eauto.
+  - (* Write; contra *) apply prefix_or_heads in Hds. inversion Hds.
+  - (* Write; contra *) apply prefix_or_heads in Hds. inversion Hds.
+  - (* Write_U; contra *) split4; eauto.
     + intro contra. discriminate contra.
     + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
 Qed.
