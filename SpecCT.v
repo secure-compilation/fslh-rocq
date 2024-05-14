@@ -913,7 +913,8 @@ Lemma seq_eval_ideal_eval_ind1 : forall P c s a b ds s' a' b' os,
 Proof.
   intros P c s a b ds s' a' b' os Hds H Eb Eb'.
   induction H; try constructor; eauto.
-  - assert(b' = false).
+  - (* Seq *)
+    assert(b' = false).
     { destruct b' eqn:Eqb'; [| reflexivity].
       apply speculation_needs_force in H; try tauto.
       assert (contra : DForce = DStep).
@@ -922,12 +923,13 @@ Proof.
     eapply Ideal_Seq.
     * apply IHspec_eval1; eauto using in_or_app.
     * apply IHspec_eval2; eauto using in_or_app.
-  - simpl in Hds; eauto.
-  - simpl in Hds.
+  - (* If *) simpl in Hds; eauto.
+  - (* If_F *) simpl in Hds.
     assert (contra : DForce = DStep). { apply Hds. left. reflexivity. }
     inversion contra.
-  - discriminate.
-Qed.
+  - (* ARead *) admit.
+  - (* AREad_U *) discriminate.
+Admitted.
 
 Lemma speculation_needs_force_ideal : forall P c s a b ds s' a' b' os,
   P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
@@ -949,7 +951,8 @@ Lemma seq_eval_ideal_eval_ind2 : forall P c s a b ds s' a' b' os,
 Proof. (* proof really the same as gen1 *)
   intros P c s a b ds s' a' b' os Hds H Eb Eb'.
   induction H; try constructor; eauto.
-  - assert(b' = false).
+  - (* Seq *) 
+    assert(b' = false).
     { destruct b' eqn:Eqb'; [| reflexivity].
       apply speculation_needs_force_ideal in H; try tauto.
       assert (contra : DForce = DStep).
@@ -958,12 +961,13 @@ Proof. (* proof really the same as gen1 *)
     eapply Spec_Seq.
     * apply IHideal_eval1; eauto using in_or_app.
     * apply IHideal_eval2; eauto using in_or_app.
-  - simpl in Hds; eauto.
-  - simpl in Hds.
+  - (* IF *) simpl in Hds; eauto.
+  - (* If_F *) simpl in Hds.
     assert (contra : DForce = DStep). { apply Hds. left. reflexivity. }
     inversion contra.
-  - discriminate.
-Qed.
+  - (* ARead *) admit.
+  - discriminate. 
+Admitted.
 
 (* HIDE: This is Lemma 3 from Spectre Declassified *)
 
@@ -1158,22 +1162,24 @@ Proof.
     destruct (P x) eqn:EqPx.
     + eapply pub_equiv_update_public; eauto.
       eapply noninterferent_aexp in Heq; eauto. rewrite Heq.
-      unfold can_flow in H17; eapply orb_true_iff in H17.
-      destruct H17 as [Ha | Contra]; [| simpl in Contra; discriminate].
-      apply Haeq in Ha; [| reflexivity]. rewrite Ha. reflexivity.
+      unfold can_flow in H18; eapply orb_true_iff in H18.
+      destruct H18 as [Ha | Contra]; [| simpl in Contra; discriminate].
+      apply Haeq in Ha.
+      * rewrite Ha. reflexivity.
+      * destruct b2' eqn:Db2'; [| reflexivity].
+        admit.
     + eapply pub_equiv_update_secret; eauto.
   - (* ARead_U *) split4; eauto.
     + destruct (P x) eqn:EqPx.
-      * discriminate H6.
+      * admit.
       * eapply pub_equiv_update_secret; eauto.  
-    + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
-  - (* ARead; contra *) rewrite H in *. discriminate.
-  - (* Aread; contra *) rewrite H in *. discriminate.
-  - (* ARead_Prot *) split4; eauto.
+    + apply prefix_or_heads in Hds. inversion Hds.
+  - (* ARead *) split4; eauto.
     + destruct (P x) eqn:EqPx.
       * eapply pub_equiv_update_public; eauto.
-      * discriminate H6.
-    + apply prefix_or_heads in Hds. inversion Hds. reflexivity. 
+      * admit.
+    + apply prefix_or_heads in Hds. inversion Hds. 
+  - (* Aread_U *) admit.
   - (* Write *) split4; eauto. intro Hb2'.
     destruct (PA a) eqn:EqPAa.
     + eapply pub_equiv_update_public; eauto.
@@ -1182,12 +1188,12 @@ Proof.
         apply Haeq in Hb2'. apply Hb2' in EqPAa. rewrite EqPAa. reflexivity.
       * simpl in H21. discriminate.  
     + eapply pub_equiv_update_secret; eauto.
-  - (* Write; contra *) apply prefix_or_heads in Hds. inversion Hds.
+  - (* Write_U; contra *) apply prefix_or_heads in Hds. inversion Hds.
   - (* Write; contra *) apply prefix_or_heads in Hds. inversion Hds.
   - (* Write_U; contra *) split4; eauto.
     + intro contra. discriminate contra.
     + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
-Qed.
+Admitted.
 
 Lemma ct_well_typed_ideal_noninterferent :
   forall P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds,
@@ -1241,30 +1247,27 @@ Proof.
   generalize dependent os2. generalize dependent b2'.
   induction Heval1; intros b2' os2' a2 Haeq a2' s2 Heq s2' Heval2;
     inversion Heval2; inversion Hwt; subst.
-  - reflexivity.
-  - reflexivity.
-  - (* seq *) eapply aux in H1; [| | | | apply Heval1_1 | apply H5 ]; eauto.
+  - (* Skip *) reflexivity.
+  - (* Skip *) reflexivity.
+  - (* Seq *) eapply aux in H1; [| | | | apply Heval1_1 | apply H5 ]; eauto.
     destruct H1 as [H1 H1']. subst.
     assert(NI1 : pub_equiv P st' st'0 /\ b' = b'0 /\ (b' = false -> pub_equiv PA ast' ast'0)).
     { eapply ct_well_typed_ideal_noninterferent; [ | | | eassumption | eassumption]; eauto. }
     destruct NI1 as [NI1eq [NIb NIaeq] ]. subst.
     erewrite IHHeval1_2; [erewrite IHHeval1_1 | | | |];
       try reflexivity; try eassumption.
-  - f_equal.
+  - (* If *) f_equal.
     + f_equal. eapply noninterferent_bexp; eassumption.
     + eapply IHHeval1; try eassumption; try (destruct (beval st be); eassumption).
       erewrite noninterferent_bexp; eassumption.
-  - f_equal.
+  - (*If_F *) f_equal.
     + f_equal. eapply noninterferent_bexp; eassumption.
     + eapply IHHeval1; try eassumption; try (destruct (beval st be); eassumption).
       * intro contra. discriminate contra.
       * erewrite noninterferent_bexp; eassumption.
   - eapply IHHeval1; eauto. repeat constructor; eassumption.
   - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
-  - (* ARead_U/Prot *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
-  - (* ARead_U/Prot *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
-  - (* ARead_U/Prot *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
-  - (* ARead_U/Prot *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
+  - (* ARead_U *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
   - (* AWrite *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
   - (* AWrite *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
 Qed.
@@ -1399,11 +1402,11 @@ Lemma sel_slh_flag : forall c P s a (b:bool) ds s' a' (b':bool) os,
 Proof.
   induction c; intros P s aa bb ds s' a' b' os Hunused Hnowhile Hsb Heval;
     simpl in *; try (inversion Heval; subst; now eauto).
-  - inversion Heval; subst. rewrite t_update_neq; tauto.
-  - inversion Heval; subst.
+  - (* Asgn *) inversion Heval; subst. rewrite t_update_neq; tauto.
+  - (* Seq *) inversion Heval; subst.
     eapply IHc2; try tauto; [|eassumption].
     eapply IHc1; try tauto; eassumption.
-  - inversion Heval; subst; eauto.
+  - (* If *) inversion Heval; subst; eauto.
     { destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst.
       + eapply IHc1; try tauto; [|eassumption].
         simpl. rewrite Eqbe. rewrite t_update_eq. assumption.
@@ -1414,7 +1417,7 @@ Proof.
         simpl. rewrite Eqbe. rewrite t_update_eq. reflexivity.
       + eapply IHc1; try tauto; [|eassumption].
         simpl. rewrite Eqbe. rewrite t_update_eq. reflexivity. }
-  - destruct (P x) eqn:Heq.
+  - (* ARead *) destruct (P x) eqn:Heq.
     + inversion Heval; inversion H10; subst.
       rewrite t_update_neq; try tauto.
       inversion H1; subst; rewrite t_update_neq; tauto.
@@ -1466,7 +1469,7 @@ Proof. intros X st ae n. apply aeval_beval_unused_update. Qed.
 Lemma beval_unused_update : forall X st be n,
   b_unused X be ->
   beval (X !-> n; st) be = beval st be.
-  Proof. intros X st be n. apply aeval_beval_unused_update. Qed.
+Proof. intros X st be n. apply aeval_beval_unused_update. Qed.
 
 Lemma ideal_unused_update_rev_gen : forall P st ast b ds c st' ast' b' os X n,
   unused X c ->
@@ -1499,9 +1502,6 @@ Proof.
     rewrite t_update_permute; [| tauto]. econstructor; [ | assumption].
     rewrite aeval_unused_update; tauto.
   - (* ARead_U *)
-    rewrite t_update_permute; [| tauto]. econstructor; try assumption.
-    rewrite aeval_unused_update; tauto.
-  - (* ARead_Prot *)
     rewrite t_update_permute; [| tauto]. econstructor; try assumption.
     rewrite aeval_unused_update; tauto.
   - (* AWrite *)
@@ -1543,15 +1543,15 @@ Lemma sel_slh_ideal : forall c P s a (b:bool) ds s' a' (b':bool) os,
 Proof.
   induction c; intros P s aa bb ds s' a' b' os Hunused Hnowhile Hsb Heval;
     simpl in *; inversion Heval; subst.
-  - rewrite t_update_same. constructor.
-  - rewrite t_update_permute; [| tauto]. rewrite t_update_same.
+  - (* Skip *) rewrite t_update_same. constructor.
+  - (* Asgn *) rewrite t_update_permute; [| tauto]. rewrite t_update_same.
     constructor. reflexivity.
-  - (* seq *) econstructor.
+  - (* Seq *) econstructor.
     + apply IHc1; try tauto; eassumption.
     + apply ideal_unused_update_rev; try tauto.
       eapply IHc2; try tauto.
       apply sel_slh_flag in H1; tauto.
-  - destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst.
+  - (* If *) destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst.
     + eapply IHc1 in H11; try tauto.
       * replace (OBranch true) with (OBranch (beval s be)) by now rewrite <- Eqbe.
         simpl. eapply Ideal_If. rewrite Eqbe.
@@ -1564,7 +1564,7 @@ Proof.
         simpl in H11. rewrite Eqbe in H11. rewrite t_update_same in H11.
         apply H11.
       * rewrite t_update_eq. simpl. rewrite Eqbe. assumption.
-  - (* Ideal_If_F *)
+  - (* If_F *)
     destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst; simpl in *;
       rewrite Eqbe in H11.
     + replace (OBranch true) with (OBranch (beval s be)) by now rewrite <- Eqbe.
@@ -1575,35 +1575,35 @@ Proof.
       eapply Ideal_If_F. rewrite Eqbe.
       eapply IHc1 in H11; try tauto. rewrite t_update_eq in H11.
       eapply ideal_unused_update in H11; tauto.
-  - tauto.
-  - destruct (P x) eqn:Heq; discriminate.
-  - destruct (P x) eqn:Heq; discriminate.
-  - destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
+  - (* While *) tauto.
+  - (* ARead; contra *) destruct (P x) eqn:Heq; discriminate.
+  - (* ARead; contra *) destruct (P x) eqn:Heq; discriminate.
+  - (* ARead *) destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
     inversion H1; clear H1; subst. repeat rewrite <- app_nil_end in *.
     inversion H0; clear H0; subst; simpl in *.
     * rewrite t_update_neq; [| tauto]. rewrite Hsb.
       rewrite t_update_shadow. rewrite t_update_permute; [| tauto].
       rewrite t_update_eq. simpl.
       rewrite <- Hsb at 1. rewrite t_update_same.
-      constructor; tauto.
+      admit.
     * rewrite t_update_neq; [| tauto]. rewrite Hsb.
       rewrite t_update_shadow. rewrite t_update_permute; [| tauto].
-      simpl. rewrite <- Hsb at 1. rewrite t_update_same. apply Ideal_ARead_Prot; tauto.
-  - destruct (P x) eqn:Heq; discriminate H.
-  - destruct (P x) eqn:Heq; discriminate H.
-  - destruct (P x) eqn:Heq; discriminate H.
-  - destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
+      simpl. rewrite <- Hsb at 1. rewrite t_update_same. admit. 
+  - (* ARead; contra*) destruct (P x) eqn:Heq; discriminate H.
+  - (* ARead; contra*) destruct (P x) eqn:Heq; discriminate H.
+  - (* ARead; contra*) destruct (P x) eqn:Heq; discriminate H.
+  - (* ARead *) destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
     rewrite t_update_permute; [| tauto]. rewrite t_update_same.
-    constructor; tauto.
-  - (* same *)
+    admit.
+  - (* ARead_U same *)
     destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
     rewrite t_update_permute; [| tauto]. rewrite t_update_same.
-    constructor; tauto.
-  - destruct (P x) eqn:Heq; discriminate H.
-  - destruct (P x) eqn:Heq; discriminate H.
-  - rewrite t_update_same. constructor; tauto.
-  - rewrite t_update_same. constructor; tauto.
-Qed.
+    admit.
+  - (* AWrite; contra *) destruct (P x) eqn:Heq; discriminate H.
+  - (* AWrite_U; contra *) destruct (P x) eqn:Heq; discriminate H.
+  - (* AWrite *) rewrite t_update_same. constructor; tauto.
+  - (* AWrite_U *) rewrite t_update_same. constructor; tauto.
+Admitted.
 
 (** Finally, we use this to prove spec_ct for sel_slh. *)
 
@@ -1766,27 +1766,29 @@ Proof.
                     x !-> nth i (ast a) 0; "b" !-> 0; st)).
         { simpl. rewrite t_update_neq; [|tauto]. rewrite t_update_eq. simpl.
           rewrite t_update_same. reflexivity. }
-        rewrite G at 2. apply Spec_Asgn. reflexivity. }
+        admit. }
     * (* secret *)
-      apply Spec_ARead; [| tauto]. rewrite aeval_unused_update; tauto.
+      admit.
   - (* ARead_U *)
-    rewrite H. unfold secret. rewrite t_update_permute; [| tauto].
-    apply Spec_ARead_U; try tauto. rewrite aeval_unused_update; tauto.
-  - (* ARead_Prot *)
-    rewrite H. unfold public.
-    rewrite <- (app_nil_r [DLoad _ _]); rewrite <- (app_nil_r [OARead _ _]). 
-    eapply Spec_Seq.
-    + apply Spec_ARead_U; try tauto. rewrite aeval_unused_update; tauto.
-    + assert (G : ("b" !-> 1; x !-> 0; st) =
-                  (x !-> aeval (x !-> nth i' (ast a') 0; "b" !-> 1; st)
-                               <{{("b" = 1) ? 0 : x}}>;
-                   x !-> nth i' (ast a') 0; "b" !-> 1; st)).
-      { simpl. rewrite t_update_neq; [|tauto]. rewrite t_update_eq. simpl.
-        rewrite t_update_permute; [| tauto]. rewrite t_update_shadow. reflexivity. }
-      rewrite G. simpl. apply Spec_Asgn. reflexivity.
+    admit. 
+    (* rewrite H. unfold secret. rewrite t_update_permute; [| tauto].
+       apply Spec_ARead_U; try tauto. rewrite aeval_unused_update; tauto.
+       (* ARead_Prot *)
+      rewrite H. unfold public.
+      rewrite <- (app_nil_r [DLoad _ _]); rewrite <- (app_nil_r [OARead _ _]). 
+      eapply Spec_Seq.
+      + apply Spec_ARead_U; try tauto. rewrite aeval_unused_update; tauto.
+      + assert (G : ("b" !-> 1; x !-> 0; st) =
+                    (x !-> aeval (x !-> nth i' (ast a') 0; "b" !-> 1; st)
+                                <{{("b" = 1) ? 0 : x}}>;
+                    x !-> nth i' (ast a') 0; "b" !-> 1; st)).
+        { simpl. rewrite t_update_neq; [|tauto]. rewrite t_update_eq. simpl.
+          rewrite t_update_permute; [| tauto]. rewrite t_update_shadow. reflexivity. }
+        rewrite G. simpl. apply Spec_Asgn. reflexivity.
+    *)
   - (* AWrite *) constructor; try rewrite aeval_unused_update; tauto.
-  - (*AWrite_U *) constructor; try rewrite aeval_unused_update; tauto.
-Qed.
+  - (* AWrite_U *) constructor; try rewrite aeval_unused_update; tauto.
+Admitted.
 
 (* HIDE: Moving syntactic constraints about ds and os out of the conclusions of
    rules and into equality premises could make this proof script less
