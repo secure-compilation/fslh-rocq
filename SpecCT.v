@@ -654,11 +654,11 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
       <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
       <(st, ast, b, ds)> =[ while be do c end ]=> <(st', ast', b', os)>
-  | Spec_ARead : forall st ast x a ie i,
+  | Spec_ARead : forall st ast b x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
-      <(st, ast, false, [DStep])> =[ x <- a[[ie]] ]=>
-        <(x !-> nth i (ast a) 0; st, ast, false, [OARead a i])>
+      <(st, ast, b, [DStep])> =[ x <- a[[ie]] ]=>
+        <(x !-> nth i (ast a) 0; st, ast, b, [OARead a i])>
   | Spec_ARead_U : forall st ast x a ie i a' i',
       aeval st ie = i ->
       i >= length (ast a) ->
@@ -708,13 +708,10 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    need to be fixed to include stuck fences deep inside or to bubble up stuck
    fences to the top (error monad, see prev point). *)
 
-(* HIDE: Another fix I did to their semantics is in the (Spec_ARead) rule, which
-   here requires no speculation, and in (Ideal_ARead_Prot) which takes the same
-   direction as (Spec_Aread_U, not Spec_Aread). This reduces rule overlap, makes
-   the Spec_ and Ideal_ semantics more aligned, and thus makes the SLH
-   translation more correct. *)
-(* SOONER: Restricting Spec_ARead to only apply for b = false seems funny in
-   retrospect. *)
+(* HIDE: Other fixes we did are to their ideal semantics where in (Ideal_ARead)
+   we are allowing mis-speculated in-bound reads and where we removed
+   (Ideal_ARead_Prot), by merging it with the other two rules and producing the
+   correct direction and removed harmful preconditions in both cases. *)
 
 (* HIDE: One design decision here is to neither consume DSteps not to generate
    dummy observations for skip and (register) assignment commands. This leads to
@@ -877,25 +874,17 @@ Inductive ideal_eval (P:pub_vars) :
       P |- <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
       P |- <(st, ast, b, ds)> =[ while be do c end ]=> <(st', ast', b', os)>
-  | Ideal_ARead : forall st ast x a ie i,
+  | Ideal_ARead : forall st ast b x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
-      P |- <(st, ast, false, [DStep])> =[ x <- a[[ie]] ]=>
-        <(x !-> nth i (ast a) 0; st, ast, false, [OARead a i])>
+      P |- <(st, ast, b, [DStep])> =[ x <- a[[ie]] ]=>
+        <(x !-> if b && P x then 0 else nth i (ast a) 0; st, ast, b, [OARead a i])>
   | Ideal_ARead_U : forall st ast x a ie i a' i',
-      P x = secret -> (* <-- NEW: this rule applies now only for loads into secret variables *)
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
       P |- <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
-        <(x !-> nth i' (ast a') 0; st, ast, true, [OARead a i])>
-  | Ideal_ARead_Prot : forall st ast x a ie i a' i',
-      P x = public ->  (* <-- NEW: new rule for loads into public variables *)
-      aeval st ie = i ->
-      i >= length (ast a) ->
-      i' < length (ast a') ->
-      P |- <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
-        <(x !-> 0; st, ast, true, [OARead a i])>
+        <(x !-> if P x then 0 else nth i' (ast a') 0; st, ast, true, [OARead a i])>
   | Ideal_Write : forall st ast b a ie i e n,
       aeval st e = n ->
       aeval st ie = i ->
