@@ -1166,27 +1166,30 @@ Proof.
     + eassumption.
   - (* While *) eapply IHHeval1; try eassumption. repeat constructor; eassumption.
   - (* ARead *) split4; eauto.
-    destruct (P x) eqn:EqPx.
+    destruct (P x) eqn:EqPx; simpl.
     + eapply pub_equiv_update_public; eauto.
+      destruct b2' eqn:Eqb2'; simpl; [reflexivity |].
+      unfold can_flow in H18. eapply orb_true_iff in H18.
+      destruct H18 as [Hapub | Contra]; [| simpl in Contra; discriminate].
+      eapply Haeq in Hapub; [| reflexivity]. rewrite Hapub. 
       eapply noninterferent_aexp in Heq; eauto. rewrite Heq.
-      unfold can_flow in H18; eapply orb_true_iff in H18.
-      destruct H18 as [Ha | Contra]; [| simpl in Contra; discriminate].
-      apply Haeq in Ha.
-      * rewrite Ha. reflexivity.
-      * destruct b2' eqn:Db2'; [| reflexivity].
-        admit.
+      reflexivity.
     + eapply pub_equiv_update_secret; eauto.
   - (* ARead_U *) split4; eauto.
     + destruct (P x) eqn:EqPx.
-      * admit.
+      * simpl. eapply pub_equiv_update_public; eauto.
       * eapply pub_equiv_update_secret; eauto.  
     + apply prefix_or_heads in Hds. inversion Hds.
   - (* ARead *) split4; eauto.
     + destruct (P x) eqn:EqPx.
       * eapply pub_equiv_update_public; eauto.
-      * admit.
+      * eapply pub_equiv_update_secret; eauto.
     + apply prefix_or_heads in Hds. inversion Hds. 
-  - (* Aread_U *) admit.
+  - (* Aread_U *) split4; eauto.
+    + destruct (P x) eqn:EqPx.
+      * eapply pub_equiv_update_public; eauto.
+      * eapply pub_equiv_update_secret; eauto.
+    + apply prefix_or_heads in Hds. inversion Hds. reflexivity. 
   - (* Write *) split4; eauto. intro Hb2'.
     destruct (PA a) eqn:EqPAa.
     + eapply pub_equiv_update_public; eauto.
@@ -1200,7 +1203,7 @@ Proof.
   - (* Write_U; contra *) split4; eauto.
     + intro contra. discriminate contra.
     + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
-Admitted.
+Qed.
 
 Lemma ct_well_typed_ideal_noninterferent :
   forall P PA c s1 s2 a1 a2 b s1' s2' a1' a2' b1' b2' os1 os2 ds,
