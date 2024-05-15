@@ -82,6 +82,10 @@ Definition X : string := "X".
 Definition Y : string := "Y".
 Definition Z : string := "Z".
 
+Definition A : string := "A".
+Definition B : string := "B".
+Definition C : string := "C".
+
 Coercion AId : string >-> aexp.
 Coercion ANum : nat >-> aexp.
 
@@ -1258,11 +1262,11 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
       <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
       <(st, ast, b, ds)> =[ while be do c end ]=> <(st', ast', b', os)>
-  | Spec_ARead : forall st ast x a ie i,
+  | Spec_ARead : forall st ast b x a ie i,
       aeval st ie = i ->
       i < List.length (apply ast a) ->
-      <(st, ast, false, [DStep])> =[ x <- a[[ie]] ]=>
-        <(x !-> nth i (apply ast a) 0; st, ast, false, [OARead a i])>
+      <(st, ast, b, [DStep])> =[ x <- a[[ie]] ]=>
+        <(x !-> nth i (apply ast a) 0; st, ast, b, [OARead a i])>
   | Spec_ARead_U : forall st ast x a ie i a' i',
       aeval st ie = i ->
       i >= List.length (apply ast a) ->
@@ -1288,25 +1292,32 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
 
 (* We're forced to change `spec_eval` quite a bit, because for the sequence,
    we cannot simply guess the two `ds`. Instead, return the elements of `ds` we didn't consume. *)
-(* TODO: think about a version with loops *)
 Inductive eval_return_type : Type :=
   | RBlewUp : eval_return_type (* the execution blew up (by itself, without speculation) *)
   | RInvalidDirection : eval_return_type (* the directions provided did not make sense *)
   | ROk : state -> astate -> bool -> obs -> dirs -> eval_return_type.
-Definition ok_and (ret : eval_return_type) {A : Type} (f : state -> astate -> bool -> obs -> dirs -> eval_return_type) : eval_return_type :=
+Definition ok_and (ret : eval_return_type) (f : state -> astate -> bool -> obs -> dirs -> eval_return_type) : eval_return_type :=
   match ret with
-  | RInvalidDirection => RInvalidDirection
   | ROk st ast b os ds => f st ast b os ds
+  | _ => ret
   end.
 
-Fixpoint spec_eval_no_while (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : eval_return_type :=
+(* Now with supports for loops. However, the length of ds and/or the size of the program will be strictly decreasing:
+   no need for fuel. *)
+Fixpoint program_size (c : com) : nat := match c with
+  | <{ c1 ; c2 }> => S ((program_size c1) + (program_size c2))
+  | <{ if be then ct else cf end }> => S ((program_size ct) + (program_size cf))
+  | <{ while be do c end }> => S (program_size c)
+  | _ => 1
+  end.
+Program Fixpoint spec_eval_engine_aux (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) {measure ((Datatypes.length ds) + (program_size c))}: eval_return_type :=
   match c with
   | <{ skip }> => ROk st ast b [] ds
   | <{ x := e }> => let n := aeval st e in
       ROk (x !-> n; st) ast b [] ds
   | <{ c1 ; c2 }> =>
-      ok_and (spec_eval_no_while c1 st ast b ds) (fun st' ast' b' os1 ds' =>
-      ok_and (spec_eval_no_while c2 st' ast' b' ds') (fun st'' ast'' b'' os2 ds'' =>
+      ok_and (spec_eval_engine_aux c1 st ast b ds) (fun st' ast' b' os1 ds' =>
+      ok_and (spec_eval_engine_aux c2 st' ast' b' ds') (fun st'' ast'' b'' os2 ds'' =>
         ROk st'' ast'' b'' (os1 ++ os2) ds''
       ))
   | <{ if be then ct else cf end }> =>
@@ -1317,7 +1328,7 @@ Fixpoint spec_eval_no_while (c : com) (st : state) (ast : astate) (b : bool) (ds
             (* normal execution... *)
             if condition then ct else cf in
 
-          ok_and (spec_eval_no_while next_c st ast b ds') (fun st' ast' b' os' ds'' =>
+          ok_and (spec_eval_engine_aux next_c st ast b ds') (fun st' ast' b' os' ds'' =>
             ROk st' ast' b' ((OBranch condition) :: os') ds''
           )
       | DForce::ds' =>
@@ -1326,14 +1337,35 @@ Fixpoint spec_eval_no_while (c : com) (st : state) (ast : astate) (b : bool) (ds
             (* branches swapped! *)
             if condition then cf else ct in
 
-          ok_and (spec_eval_no_while next_c st ast true ds') (fun st' ast' b' os' ds'' =>
+          ok_and (spec_eval_engine_aux next_c st ast true ds') (fun st' ast' b' os' ds'' =>
             ROk st' ast' b' ((OBranch condition) :: os') ds''
           )
       | _ => RInvalidDirection
       end
   | <{ while be do c end }> =>
-      (* skip while loop *)
-      ROk st ast b [] ds
+      match ds with
+      | DStep::ds' =>
+          let condition := beval st be in
+
+          if condition then
+            ok_and (spec_eval_engine_aux c st ast b ds') (fun st' ast' b' os1 ds' =>
+            ok_and (spec_eval_engine_aux <{ while be do c end }> st' ast' b' ds') (fun st' ast' b' os2 ds' =>
+              ROk st' ast' b' (os1 ++ os2) ds'
+            ))
+          else
+            ROk st ast b [OBranch condition] ds'
+      | DForce::ds' =>
+          let condition := beval st be in
+
+          if negb condition then
+            ok_and (spec_eval_engine_aux c st ast true ds') (fun st' ast' b' os1 ds' =>
+            ok_and (spec_eval_engine_aux <{ while be do c end }> st' ast' b' ds') (fun st' ast' b' os2 ds' =>
+              ROk st' ast' b' (os1 ++ os2) ds'
+            ))
+          else
+            ROk st ast b [OBranch condition] ds'
+      | _ => RInvalidDirection
+      end
   | <{ x <- a[[ie]] }> =>
       (* if i < List.length (apply ast a), we MUST DStep and not be speculating *)
       (* otherwise, we MUST DLoad *)
@@ -1365,39 +1397,164 @@ Fixpoint spec_eval_no_while (c : com) (st : state) (ast : astate) (b : bool) (ds
       | _ => RInvalidDirection
       end
   | <{ a[ie] <- e }> =>
-    match ds with
-    | DStep::ds'' =>
-        let n := aeval st a in
-        let i := aeval st ie in
+      match ds with
+      | DStep::ds' =>
+          let n := aeval st e in
+          let i := aeval st ie in
 
-        if (i <? List.length (apply ast a)) then
-          ROk st (a !-> upd i (apply ast a) n; ast) b [OAWrite a i] ds'
-        else if b then
-          (* If we're speculating, then DStep is an invalid direction *)
-          RInvalidDirection
-        else
-          (* If we're not speculating, then it's just a program error *)
-          RBlewUp
+          if (i <? List.length (apply ast a)) then
+            ROk st (a !-> upd i (apply ast a) n; ast) b [OAWrite a i] ds'
+          else if b then
+            (* If we're speculating, then DStep is an invalid direction *)
+            RInvalidDirection
+          else
+            (* If we're not speculating, then it's just a program error *)
+            RBlewUp
+      | (DStore a' i')::ds' =>
+          let n := aeval st e in
+          let i := aeval st ie in
+
+          (* The normal read must be out of bounds *)
+          if negb (i <? List.length (apply ast a)) &&
+               (* The index the attacker provides must be in bound *)
+               (i' <? List.length (apply ast a')) &&
+               (* Only allowed when speculating *)
+               b then
+            ROk st (a' !-> upd i' (apply ast a') n; ast) b [OAWrite a i] ds'
+          else
+            RInvalidDirection
+    | _ => RInvalidDirection
     end
-  end
-.
+  end.
+(* We must prove that the measure given is indeed strictly decreasing
+   TODO: this is hard because the use of ok_and makes Coq forget about relations between variables *)
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Next Obligation.
+  Admitted.
+Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
+  match spec_eval_engine_aux c st ast b ds with
+  | ROk st' ast' b' os' [] =>
+      Some (st', ast', b', os')
+  | _ => None
+  end.
 
-  | Spec_Write : forall st ast b a ie i e n,
-      aeval st e = n ->
-      aeval st ie = i ->
-      i < List.length (apply ast a) ->
-      <(st, ast, b, [DStep])> =[ a[ie] <- e ]=>
-        <(st, a !-> upd i (apply ast a) n; ast, b, [OAWrite a i])>
-  | Spec_Write_U : forall st ast a ie i e n a' i',
-      aeval st e = n ->
-      aeval st ie = i ->
-      i >= List.length (apply ast a) ->
-      i' < List.length (apply ast a') ->
-      <(st, ast, true, [DStore a' i'])> =[ a[ie] <- e ]=>
-        <(st, a' !-> upd i' (apply ast a') n; ast, true, [OAWrite a i])>
-
-com -> state -> astate -> bool -> dirs ->
-                                   state -> astate -> bool -> obs
+(* Simple tests *)
+Eval compute in
+  (spec_eval_engine <{
+      skip
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (_ !-> []) false []).
+Eval compute in
+  (spec_eval_engine <{
+      X := 10
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (_ !-> []) false []).
+Eval compute in
+  (spec_eval_engine <{
+      X := 10;
+      Y := 3
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (_ !-> []) false []).
+Eval compute in
+  (spec_eval_engine <{
+      if true then skip
+      else skip
+      end
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (_ !-> []) false [DStep]).
+Eval compute in
+  (spec_eval_engine <{
+      if true then skip
+      else skip
+      end
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (_ !-> []) false [DForce]).
+Eval compute in
+  (spec_eval_engine <{
+      while false do X := X + 1 end
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (_ !-> []) false [DForce; DStep]).
+Eval compute in
+  (spec_eval_engine <{
+      while Y > 0 do
+        X := X + 1;
+        Y := Y - 1
+      end
+    }> (X !-> 0 ; Y !-> 2; _ !-> 0) (_ !-> []) false [DStep; DStep; DStep]).
+Eval compute in
+  (spec_eval_engine <{
+      while Y > 0 do
+        X := X + 1;
+        Y := Y - 1
+      end
+    }> (X !-> 0 ; Y !-> 2; _ !-> 0) (_ !-> []) true [DStep; DForce]).
+Eval compute in
+  (spec_eval_engine <{
+      X <- A [[1]]
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (A !-> [8;7;9] ; _ !-> []) false [DStep]).
+Eval compute in
+  (spec_eval_engine <{
+      X <- A [[1]]
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (A !-> [8;7;9] ; _ !-> []) true [DStep]).
+Eval compute in
+  (spec_eval_engine <{
+      X <- A [[1]]
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (A !-> [8;7;9] ; _ !-> []) true [DLoad A 0]).
+Eval compute in
+  (spec_eval_engine <{
+      X <- A [[5]]
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (A !-> [8;7;9] ; _ !-> []) true [DLoad A 0]).
+Eval compute in
+  (spec_eval_engine <{
+      A [0] <- 10
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (A !-> [8;7;9] ; _ !-> []) false [DStep]).
+Eval compute in
+  (spec_eval_engine <{
+      A [5] <- 100
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (A !-> [8;7;9] ; _ !-> []) false [DStep]).
+Eval compute in
+  (spec_eval_engine <{
+      A [5] <- 100
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (A !-> [8;7;9] ; B !-> [1] ; _ !-> []) false [DStore B 0]).
+Eval compute in
+  (spec_eval_engine <{
+      A [5] <- 100
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (A !-> [8;7;9] ; B !-> [] ; _ !-> []) true [DStore B 0]).
+Eval compute in
+  (spec_eval_engine <{
+      A [5] <- 100
+    }> (X !-> 0 ; Y !-> 1; _ !-> 0) (A !-> [8;7;9] ; B !-> [1] ; _ !-> []) true [DStore B 0]).
 
 (* HIDE: This semantics already lost one property of Imp, which is only
    nonterminating executions don't produce a final state. Now if the input
@@ -1594,25 +1751,17 @@ Inductive ideal_eval (P:pub_vars) :
       P |- <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
       P |- <(st, ast, b, ds)> =[ while be do c end ]=> <(st', ast', b', os)>
-  | Ideal_ARead : forall st ast x a ie i,
+  | Ideal_ARead : forall st ast b x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
-      P |- <(st, ast, false, [DStep])> =[ x <- a[[ie]] ]=>
-        <(x !-> nth i (ast a) 0; st, ast, false, [OARead a i])>
+      P |- <(st, ast, b, [DStep])> =[ x <- a[[ie]] ]=>
+        <(x !-> if b && P x then 0 else nth i (ast a) 0; st, ast, b, [OARead a i])>
   | Ideal_ARead_U : forall st ast x a ie i a' i',
-      P x = secret -> (* <-- NEW: this rule applies now only for loads into secret variables *)
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
       P |- <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
-        <(x !-> nth i' (ast a') 0; st, ast, true, [OARead a i])>
-  | Ideal_ARead_Prot : forall st ast x a ie i a' i',
-      P x = public ->  (* <-- NEW: new rule for loads into public variables *)
-      aeval st ie = i ->
-      i >= length (ast a) ->
-      i' < length (ast a') ->
-      P |- <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
-        <(x !-> 0; st, ast, true, [OARead a i])>
+        <(x !-> if P x then 0 else nth i' (ast a') 0; st, ast, true, [OARead a i])>
   | Ideal_Write : forall st ast b a ie i e n,
       aeval st e = n ->
       aeval st ie = i ->
