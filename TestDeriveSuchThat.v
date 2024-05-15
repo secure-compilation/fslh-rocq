@@ -24,6 +24,8 @@ Fixpoint map_get {A} (m : Map A) x : option A :=
   | (k, v) :: m' => if x = k ? then Some v else map_get m' x
   end.
 
+Definition map_set {A} (m:Map A) (x:string) (v:A) : Map A := (x, v) :: m.
+
 Definition total_map (X:Type) : Type := X * Map X.
 
 Definition apply {A:Type} (m : total_map A) (x:string) : A := 
@@ -33,6 +35,15 @@ Definition apply {A:Type} (m : total_map A) (x:string) : A :=
                | None => d
                end
   end.
+
+Definition t_update {A : Type} (m : total_map A)
+                    (x : string) (v : A) :=
+  match m with
+  | (d, lm) => (d, map_set lm x v)
+  end.
+
+Notation "x '!->' v ';' m" := (t_update m x v)
+  (at level 100, v at next level, right associativity).
 
 Definition pub_vars := total_map bool.
 
@@ -211,3 +222,66 @@ Check GenSizedSuchThatwell_typed :
   forall (P:pub_vars) (pc:bool), GenSizedSuchThat com (fun c => P,, pc |-- c).
 
 QuickChickDebug Debug On.
+
+Definition state := total_map nat.
+
+Reserved Notation
+         "st '=[' c ']=>' st'"
+         (at level 40, c custom com at level 99,
+          st constr, st' constr at next level).
+
+Fixpoint aeval (st : state) (a : aexp) : nat :=
+  match a with
+  | ANum n => n
+  | AId x => apply st x (* <--- NEW: apply is now needed here *)
+  | <{a1 + a2}> => (aeval st a1) + (aeval st a2)
+  | <{a1 - a2}> => (aeval st a1) - (aeval st a2)
+  | <{a1 * a2}> => (aeval st a1) * (aeval st a2)
+  end.
+
+Fixpoint beval (st : state) (b : bexp) : bool :=
+  match b with
+  | <{true}>      => true
+  | <{false}>     => false
+  | <{a1 = a2}>   => (aeval st a1) =? (aeval st a2)
+  | <{a1 <> a2}>  => negb ((aeval st a1) =? (aeval st a2))
+  | <{a1 <= a2}>  => (aeval st a1) <=? (aeval st a2)
+  | <{a1 > a2}>   => negb ((aeval st a1) <=? (aeval st a2))
+  | <{~ b1}>      => negb (beval st b1)
+  | <{b1 && b2}>  => andb (beval st b1) (beval st b2)
+  end.
+
+Inductive ceval : com -> state -> state -> Prop :=
+  | E_Skip : forall st,
+      st =[ skip ]=> st
+  | E_Asgn  : forall st a n x,
+      aeval st a = n ->
+      st =[ x := a ]=> (x !-> n ; st)
+  | E_Seq : forall c1 c2 st st' st'',
+      st  =[ c1 ]=> st'  ->
+      st' =[ c2 ]=> st'' ->
+      st  =[ c1 ; c2 ]=> st''
+  | E_IfTrue : forall st st' b c1 c2,
+      beval st b = true ->
+      st =[ c1 ]=> st' ->
+      st =[ if b then c1 else c2 end]=> st'
+  | E_IfFalse : forall st st' b c1 c2,
+      beval st b = false ->
+      st =[ c2 ]=> st' ->
+      st =[ if b then c1 else c2 end]=> st'
+  | E_WhileFalse : forall b st c,
+      beval st b = false ->
+      st =[ while b do c end ]=> st
+  | E_WhileTrue : forall st st' st'' b c,
+      beval st b = true ->
+      st  =[ c ]=> st' ->
+      st' =[ while b do c end ]=> st'' ->
+      st  =[ while b do c end ]=> st''
+
+  where "st =[ c ]=> st'" := (ceval c st st').
+
+Derive ArbitrarySizedSuchThat for (fun s2 => ceval c s1 s2).
+Check GenSizedSuchThatceval :
+  forall c s1, GenSizedSuchThat state (fun s2 => ceval c s1 s2).
+
+Sample ((GenSizedSuchThatceval <{skip}> (0, [])).(arbitrarySizeST) 2).
