@@ -970,9 +970,11 @@ Proof. (* proof really the same as gen1 *)
   - (* If_F *) simpl in Hds.
     assert (contra : DForce = DStep). { apply Hds. left. reflexivity. }
     inversion contra.
-  - (* ARead *) admit.
+  - (* ARead *)
+    destruct b eqn:Eqb; [discriminate |]; simpl.
+    eapply Spec_ARead; eauto. 
   - discriminate. 
-Admitted.
+Qed.
 
 (* HIDE: This is Lemma 3 from Spectre Declassified *)
 
