@@ -927,9 +927,14 @@ Proof.
   - (* If_F *) simpl in Hds.
     assert (contra : DForce = DStep). { apply Hds. left. reflexivity. }
     inversion contra.
-  - (* ARead *) admit.
+  - (* ARead *)
+    destruct b eqn:Eqb; [discriminate |].  
+    replace (x !-> nth i (ast a) 0; st)
+      with (x !-> if b && P x then 0 else nth i (ast a) 0; st)
+        by (rewrite Eqb; simpl; reflexivity).
+    rewrite <- Eqb. eapply Ideal_ARead; eauto. 
   - (* AREad_U *) discriminate.
-Admitted.
+Qed.
 
 Lemma speculation_needs_force_ideal : forall P c s a b ds s' a' b' os,
   P |- <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
