@@ -1293,33 +1293,35 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
 (* We're forced to change `spec_eval` quite a bit, because for the sequence,
    we cannot simply guess the two `ds`. Instead, return the elements of `ds` we didn't consume. *)
 Inductive eval_return_type : Type :=
-  | RBlewUp : eval_return_type (* the execution blew up (by itself, without speculation) *)
-  | RInvalidDirection : eval_return_type (* the directions provided did not make sense *)
+  (* ran out of fuel *)
+  | ROutOfFuel : eval_return_type
+  (* the execution blew up (by itself, without speculation) *)
+  | RBlewUp : eval_return_type
+  (* the directions provided did not make sense *)
+  | RInvalidDirection : eval_return_type
   | ROk : state -> astate -> bool -> obs -> dirs -> eval_return_type.
-Definition ok_and (ret : eval_return_type) (f : state -> astate -> bool -> obs -> dirs -> eval_return_type) : eval_return_type :=
-  match ret with
-  | ROk st ast b os ds => f st ast b os ds
-  | _ => ret
-  end.
 
 (* Now with supports for loops. However, the length of ds and/or the size of the program will be strictly decreasing:
    no need for fuel. *)
-Fixpoint program_size (c : com) : nat := match c with
-  | <{ c1 ; c2 }> => S ((program_size c1) + (program_size c2))
-  | <{ if be then ct else cf end }> => S ((program_size ct) + (program_size cf))
-  | <{ while be do c end }> => S (program_size c)
-  | _ => 1
-  end.
-Program Fixpoint spec_eval_engine_aux (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) {measure ((Datatypes.length ds) + (program_size c))}: eval_return_type :=
+Fixpoint spec_eval_engine_aux (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) (f : nat): eval_return_type :=
+  match f with
+  | 0 => ROutOfFuel
+  | S f' =>
+
   match c with
   | <{ skip }> => ROk st ast b [] ds
   | <{ x := e }> => let n := aeval st e in
       ROk (x !-> n; st) ast b [] ds
   | <{ c1 ; c2 }> =>
-      ok_and (spec_eval_engine_aux c1 st ast b ds) (fun st' ast' b' os1 ds' =>
-      ok_and (spec_eval_engine_aux c2 st' ast' b' ds') (fun st'' ast'' b'' os2 ds'' =>
-        ROk st'' ast'' b'' (os1 ++ os2) ds''
-      ))
+      match spec_eval_engine_aux c1 st ast b ds f' with
+      | ROk st' ast' b' os1 ds' =>
+          match spec_eval_engine_aux c2 st' ast' b' ds' f' with
+          | ROk st'' ast'' b'' os2 ds'' =>
+              ROk st'' ast'' b'' (os1 ++ os2) ds''
+          | ret => ret
+          end
+      | ret => ret
+      end
   | <{ if be then ct else cf end }> =>
       match ds with
       | DStep::ds' =>
@@ -1328,18 +1330,22 @@ Program Fixpoint spec_eval_engine_aux (c : com) (st : state) (ast : astate) (b :
             (* normal execution... *)
             if condition then ct else cf in
 
-          ok_and (spec_eval_engine_aux next_c st ast b ds') (fun st' ast' b' os' ds'' =>
-            ROk st' ast' b' ((OBranch condition) :: os') ds''
-          )
+          match spec_eval_engine_aux next_c st ast b ds' f' with
+          | ROk st' ast' b' os' ds'' =>
+              ROk st' ast' b' ((OBranch condition) :: os') ds''
+          | ret => ret
+          end
       | DForce::ds' =>
           let condition := beval st be in
           let next_c :=
             (* branches swapped! *)
             if condition then cf else ct in
 
-          ok_and (spec_eval_engine_aux next_c st ast true ds') (fun st' ast' b' os' ds'' =>
-            ROk st' ast' b' ((OBranch condition) :: os') ds''
-          )
+          match spec_eval_engine_aux next_c st ast true ds' f' with
+          | ROk st' ast' b' os' ds'' =>
+              ROk st' ast' b' ((OBranch condition) :: os') ds''
+          | ret => ret
+          end
       | _ => RInvalidDirection
       end
   | <{ while be do c end }> =>
@@ -1348,20 +1354,30 @@ Program Fixpoint spec_eval_engine_aux (c : com) (st : state) (ast : astate) (b :
           let condition := beval st be in
 
           if condition then
-            ok_and (spec_eval_engine_aux c st ast b ds') (fun st' ast' b' os1 ds' =>
-            ok_and (spec_eval_engine_aux <{ while be do c end }> st' ast' b' ds') (fun st' ast' b' os2 ds' =>
-              ROk st' ast' b' (os1 ++ os2) ds'
-            ))
+            match spec_eval_engine_aux c st ast b ds' f' with
+            | ROk st' ast' b' os1 ds' =>
+                match spec_eval_engine_aux <{ while be do c end }> st' ast' b' ds' f' with
+                | ROk st' ast' b' os2 ds' => 
+                    ROk st' ast' b' (os1 ++ os2) ds'
+                | ret => ret
+                end
+            | ret => ret
+            end
           else
             ROk st ast b [OBranch condition] ds'
       | DForce::ds' =>
           let condition := beval st be in
 
           if negb condition then
-            ok_and (spec_eval_engine_aux c st ast true ds') (fun st' ast' b' os1 ds' =>
-            ok_and (spec_eval_engine_aux <{ while be do c end }> st' ast' b' ds') (fun st' ast' b' os2 ds' =>
-              ROk st' ast' b' (os1 ++ os2) ds'
-            ))
+            match spec_eval_engine_aux c st ast true ds' f' with
+            | ROk st' ast' b' os1 ds' =>
+                match spec_eval_engine_aux <{ while be do c end }> st' ast' b' ds' f' with
+                | ROk st' ast' b' os2 ds' =>
+                    ROk st' ast' b' (os1 ++ os2) ds'
+                | ret => ret
+                end
+            | ret => ret
+            end
           else
             ROk st ast b [OBranch condition] ds'
       | _ => RInvalidDirection
@@ -1425,55 +1441,34 @@ Program Fixpoint spec_eval_engine_aux (c : com) (st : state) (ast : astate) (b :
             RInvalidDirection
     | _ => RInvalidDirection
     end
+  end
   end.
-(* We must prove that the measure given is indeed strictly decreasing
-   TODO: this is hard because the use of ok_and makes Coq forget about relations between variables *)
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Next Obligation.
-  Admitted.
-Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
-  match spec_eval_engine_aux c st ast b ds with
-  | ROk st' ast' b' os' [] =>
-      Some (st', ast', b', os')
-  | _ => None
+Fixpoint program_size (c : com) : nat :=
+  match c with
+  | <{ if be then c1 else c2 end }> => S ((program_size c1) + (program_size c2))
+  | <{ c1 ; c2 }> => S ((program_size c1) + (program_size c2))
+  | <{ while be do c end }> => S (program_size c)
+  | _ => 1
   end.
+Definition compute_gas (c : com) (ds : dirs) : nat :=
+  (S (Datatypes.length ds)) * (program_size c).
+Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : eval_return_type :=
+  spec_eval_engine_aux c st ast b ds (S (compute_gas c ds)).
+
+Theorem more_gas :
+  forall c st ast b ds f,
+    f > (compute_gas c ds) -> spec_eval_engine_aux c st ast b ds f <> ROutOfFuel.
+Proof.
+Admitted.
+
+Theorem enough_gas :
+  forall c st ast b ds, spec_eval_engine c st ast b ds <> ROutOfFuel.
+Proof.
+  intros c st ast b ds.
+  unfold spec_eval_engine.
+  apply more_gas.
+  apply Nat.lt_succ_diag_r.
+Qed.
 
 (* Simple tests *)
 Eval compute in
