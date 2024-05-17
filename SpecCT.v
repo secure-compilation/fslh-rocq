@@ -1786,39 +1786,60 @@ Proof.
   - (* ARead *)
     rewrite t_update_permute; [| tauto].
     destruct (P x) eqn:EqPx.
-    * (* public *)
+    + (* public *)
       rewrite <- (app_nil_r [DStep]); rewrite <- (app_nil_r [OARead _ _]).
       eapply Spec_Seq.
-      { apply Spec_ARead; [| tauto]. rewrite aeval_unused_update; tauto. }
-      { assert (G : (x !-> nth i (ast a) 0; "b" !-> 0; st) =
-                    (x !-> aeval (x !-> nth i (ast a) 0; "b" !-> 0; st)
-                                 <{{("b" = 1) ? 0 : x}}>;
-                    x !-> nth i (ast a) 0; "b" !-> 0; st)).
-        { simpl. rewrite t_update_neq; [|tauto]. rewrite t_update_eq. simpl.
-          rewrite t_update_same. reflexivity. }
-        admit. }
-    * (* secret *)
-      admit.
+      * apply Spec_ARead; [| tauto]. rewrite aeval_unused_update; tauto.
+      * destruct b eqn:Eqb; simpl.
+        { (* speculating *)
+          replace (x !-> 0; "b" !-> 1; st)
+            with (x !-> aeval 
+                          (x !-> nth i (ast a) 0; "b" !-> 1; st)
+                          <{{("b" = 1) ? 0 : x }}> ;
+                  x !-> nth i (ast a) 0; "b" !-> 1; st).
+          + eapply Spec_Asgn. reflexivity.
+          + simpl. rewrite t_update_neq; [| tauto].
+            rewrite t_update_eq; simpl.
+            rewrite t_update_shadow.
+            reflexivity. }
+        { (* non speculating *)
+          replace (x !-> nth i (ast a) 0; "b" !-> 0; st)
+            with (x !-> aeval 
+                      (x !-> nth i (ast a) 0; "b" !-> 0; st)
+                      <{{("b" = 1) ? 0 : x }}> ;
+                  x !-> nth i (ast a) 0; "b" !-> 0; st)
+              at 2.
+            + eapply Spec_Asgn. reflexivity.
+            + simpl. rewrite t_update_neq; [| tauto].
+              do 2 rewrite t_update_eq; simpl.
+              rewrite t_update_shadow.
+              reflexivity. }
+    + (* secret *)
+      rewrite andb_false_r.
+      eapply Spec_ARead; eauto. 
+      rewrite aeval_unused_update; tauto.
   - (* ARead_U *)
-    admit. 
-    (* rewrite H. unfold secret. rewrite t_update_permute; [| tauto].
-       apply Spec_ARead_U; try tauto. rewrite aeval_unused_update; tauto.
-       (* ARead_Prot *)
-      rewrite H. unfold public.
-      rewrite <- (app_nil_r [DLoad _ _]); rewrite <- (app_nil_r [OARead _ _]). 
+    rewrite t_update_permute; [| tauto].
+    destruct (P x) eqn:EqPx.
+    + (* public *)
+      rewrite <- (app_nil_r [DLoad _ _]); rewrite <- (app_nil_r [OARead _ _]).
       eapply Spec_Seq.
-      + apply Spec_ARead_U; try tauto. rewrite aeval_unused_update; tauto.
-      + assert (G : ("b" !-> 1; x !-> 0; st) =
-                    (x !-> aeval (x !-> nth i' (ast a') 0; "b" !-> 1; st)
-                                <{{("b" = 1) ? 0 : x}}>;
-                    x !-> nth i' (ast a') 0; "b" !-> 1; st)).
-        { simpl. rewrite t_update_neq; [|tauto]. rewrite t_update_eq. simpl.
-          rewrite t_update_permute; [| tauto]. rewrite t_update_shadow. reflexivity. }
-        rewrite G. simpl. apply Spec_Asgn. reflexivity.
-    *)
+      * apply Spec_ARead_U;  try tauto. rewrite aeval_unused_update; tauto.
+      * replace (x !-> 0; "b" !-> 1; st)
+          with (x !-> aeval 
+                        (x !-> nth i' (ast a') 0; "b" !-> 1; st)
+                        <{{("b" = 1) ? 0 : x }}> ;
+                x!-> nth i' (ast a') 0; "b" !-> 1; st).
+        { eapply Spec_Asgn. reflexivity. }
+        { simpl. rewrite t_update_neq; [| tauto].
+          rewrite t_update_eq; simpl.
+          rewrite t_update_shadow.
+          reflexivity. }
+    + (* secret *)
+      eapply Spec_ARead_U; try tauto. rewrite aeval_unused_update; tauto.
   - (* AWrite *) constructor; try rewrite aeval_unused_update; tauto.
   - (* AWrite_U *) constructor; try rewrite aeval_unused_update; tauto.
-Admitted.
+Qed.
 
 (* HIDE: Moving syntactic constraints about ds and os out of the conclusions of
    rules and into equality premises could make this proof script less
