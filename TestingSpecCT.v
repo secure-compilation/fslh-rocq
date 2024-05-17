@@ -1582,13 +1582,10 @@ Eval compute in
    need to be fixed to include stuck fences deep inside or to bubble up stuck
    fences to the top (error monad, see prev point). *)
 
-(* HIDE: Another fix I did to their semantics is in the (Spec_ARead) rule, which
-   here requires no speculation, and in (Ideal_ARead_Prot) which takes the same
-   direction as (Spec_Aread_U, not Spec_Aread). This reduces rule overlap, makes
-   the Spec_ and Ideal_ semantics more aligned, and thus makes the SLH
-   translation more correct. *)
-(* SOONER: Restricting Spec_ARead to only apply for b = false seems funny in
-   retrospect. *)
+(* HIDE: Other fixes we did are to their ideal semantics where in (Ideal_ARead)
+   we are allowing mis-speculated in-bound reads and where we removed
+   (Ideal_ARead_Prot), by merging it with the other two rules and producing the
+   correct direction and removed harmful preconditions in both cases. *)
 
 (* HIDE: One design decision here is to neither consume DSteps not to generate
    dummy observations for skip and (register) assignment commands. This leads to
