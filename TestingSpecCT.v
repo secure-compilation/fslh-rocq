@@ -1896,6 +1896,14 @@ Lemma speculation_bit_monotonic : forall c s a b ds s' a' b' os,
   b' = true.
 Proof. intros c s a b ds s' a' b' os Heval Hb. induction Heval; eauto. Qed.
 
+(* 200 tests, ~60 discards, ~50 seconds*)
+QuickChick (forAll arbitrary (fun c =>
+    forAll arbitrary (fun st =>
+    forAll arbitrary (fun ast =>
+    forAllMaybe (gen_spec_eval_sized 3 c st ast true) (fun '(ds, st', ast', b', os) =>
+      b'
+  ))))).
+
 (* HIDE: This one is weaker for big-step semantics, but it's still helpful below *)
 Lemma speculation_needs_force : forall c s a b ds s' a' b' os,
   <(s, a, b, ds)> =[ c ]=> <(s', a', b', os)> ->
@@ -1907,6 +1915,25 @@ Proof.
   induction Heval; subst; simpl; eauto; try discriminate.
   apply in_or_app. destruct b'; eauto.
 Qed.
+
+Definition direction_eqb (d1 : direction) (d2 : direction) : bool :=
+  match d1, d2 with
+  | DStep, DStep => true
+  | DForce, DForce => true
+  | DLoad a i, DLoad a' i' => (String.eqb a a') && (i =? i')
+  | DStore a i, DStore a' i' => (String.eqb a a') && (i =? i')
+  | _, _ => false
+  end.
+
+(* Way to many discards... *)
+QuickChick (forAll arbitrary (fun c =>
+    forAll arbitrary (fun st =>
+    forAll arbitrary (fun ast =>
+    forAllMaybe (gen_spec_eval_sized 3 c st ast false) (fun '(ds, st', ast', b', os) =>
+      implication b' (
+        existsb (fun dir => direction_eqb dir DForce) ds
+      )
+  ))))).
 
 (* HIDE: Also this one is weaker for big-step semantics *)
 Lemma unsafe_access_needs_speculation : forall c s a b ds s' a' b' os ax i,
@@ -1936,6 +1963,18 @@ Proof.
           apply in_or_app. tauto. }
         { right. apply in_or_app. tauto. }
 Qed.
+
+(* Way to many discards... *)
+QuickChick (forAll arbitrary (fun c =>
+    forAll arbitrary (fun st =>
+    forAll arbitrary (fun ast =>
+    forAll arbitrary (fun b =>
+    forAllMaybe (gen_spec_eval_sized 3 c st ast b) (fun '(ds, st', ast', b', os) =>
+      implication
+        ((existsb (fun dir => match dir with DLoad _ _ => true | _ => false end) ds) ||
+         (existsb (fun dir => match dir with DStore _ _ => true | _ => false end) ds))
+        ((existsb (fun dir => direction_eqb dir DForce) ds) || b)
+  )))))).
 
 (** We can recover sequential execution from [spec_eval] if there is no
     speculation, so all directives are [DStep] and speculation flag starts [false]. *)
