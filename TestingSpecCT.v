@@ -1630,7 +1630,7 @@ Definition gen_nat_lt (m : nat) : G (option nat) :=
       returnGen (Some n)
   end.
 (* Returns (ds, st', ast', b', os) such that <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> *)
-Fixpoint gen_spec_eval_sized (size : nat) (c : com) (st : state) (ast : astate) (b : bool) : G (option (dirs * state * astate * bool * obs)) :=
+Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (size : nat): G (option (dirs * state * astate * bool * obs)) :=
   let base_branches := [
     (* Spec_Skip *) (1, match c with
         | <{ skip }> =>
@@ -1732,8 +1732,8 @@ Fixpoint gen_spec_eval_sized (size : nat) (c : com) (st : state) (ast : astate) 
       let recursive_branches := [
         (* Spec_Seq *) (1, match c with
           | <{ c1 ; c2 }> =>
-              bindOpt (gen_spec_eval_sized size c1 st ast b) (fun '(ds1, st', ast', b', os1) =>
-              bindOpt (gen_spec_eval_sized size c2 st' ast' b') (fun '(ds2, st'', ast'', b'', os2) =>
+              bindOpt (gen_spec_eval_sized c1 st ast b size) (fun '(ds1, st', ast', b', os1) =>
+              bindOpt (gen_spec_eval_sized c2 st' ast' b' size) (fun '(ds2, st'', ast'', b'', os2) =>
               returnGen (Some (ds1 ++ ds2, st'', ast'', b'', os1 ++ os2))
               )
               )
@@ -1744,7 +1744,7 @@ Fixpoint gen_spec_eval_sized (size : nat) (c : com) (st : state) (ast : astate) 
           | <{ if be then c1 else c2 end }> =>
               let condition := beval st be in
               let next_c := if condition then c1 else c2 in
-              bindOpt (gen_spec_eval_sized size next_c st ast b) (fun '(ds, st', ast', b', os) =>
+              bindOpt (gen_spec_eval_sized next_c st ast b size) (fun '(ds, st', ast', b', os) =>
               returnGen (Some (DStep::ds, st', ast', b', (OBranch condition)::os))
               )
           | _ => returnGen None
@@ -1754,7 +1754,7 @@ Fixpoint gen_spec_eval_sized (size : nat) (c : com) (st : state) (ast : astate) 
           | <{ if be then c1 else c2 end }> =>
               let condition := beval st be in
               let next_c := if condition then c2 else c1 in
-              bindOpt (gen_spec_eval_sized size next_c st ast true) (fun '(ds, st', ast', b', os) =>
+              bindOpt (gen_spec_eval_sized next_c st ast true size) (fun '(ds, st', ast', b', os) =>
               returnGen (Some (DForce::ds, st', ast', b', (OBranch condition)::os))
               )
           | _ => returnGen None
@@ -1764,6 +1764,8 @@ Fixpoint gen_spec_eval_sized (size : nat) (c : com) (st : state) (ast : astate) 
 
       backtrack (base_branches ++ recursive_branches)
   end.
+Definition gen_spec_eval (c : com) (st : state) (ast : astate) (b : bool) : G (option (dirs * state * astate * bool * obs)) :=
+  sized (gen_spec_eval_sized c st ast b).
 
 Definition observation_eqb (os1 : observation) (os2 : observation) : bool :=
   match os1, os2 with
@@ -1803,13 +1805,13 @@ Definition astate_eqb := total_map_beq (list nat) (fun l1 l2 =>
       end % string)
    }.
 
-(* 200 tests takes 90s! *)
-Extract Constant defNumTests    => "200".
+(* 500 tests takes 120s! *)
+Extract Constant defNumTests    => "500".
 QuickChick (forAll arbitrary (fun c =>
     forAll arbitrary (fun st =>
     forAll arbitrary (fun ast =>
     forAll arbitrary (fun b =>
-    forAllMaybe (gen_spec_eval_sized 3 c st ast b) (fun '(ds, st', ast', b', os) =>
+    forAllMaybe (gen_spec_eval c st ast b) (fun '(ds, st', ast', b', os) =>
       printTestCase ((show ds) ++ nl) (
       match spec_eval_engine c st ast b ds with
       | Some (st_, ast_, b_, os_) =>
