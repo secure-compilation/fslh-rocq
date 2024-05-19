@@ -1619,6 +1619,208 @@ Eval compute in
       A [5] <- 100
     }> (X !-> 0 ; Y !-> 1; _ !-> 0) (A !-> [8;7;9] ; B !-> [1] ; _ !-> []) true [DStore B 0]).
 
+(** Testing that the interpreter is correct *)
+(* n < m. Reimplementing it since 'lt n m' is actually 'le (S n) m',
+   and poor QuickChick can't deal with 'S n'. *)
+Definition gen_nat_lt (m : nat) : G (option nat) :=
+  match m with
+  | 0 => returnGen None
+  | S m =>
+      n <- choose (0, m);;
+      returnGen (Some n)
+  end.
+(* Returns (ds, st', ast', b', os) such that <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> *)
+Fixpoint gen_spec_eval_sized (size : nat) (c : com) (st : state) (ast : astate) (b : bool) : G (option (dirs * state * astate * bool * obs)) :=
+  let base_branches := [
+    (* Spec_Skip *) (1, match c with
+        | <{ skip }> =>
+            let ds := [] in
+            let st' := st in
+            let ast' := ast in
+            let b' := b in
+            let os := [] in
+            returnGen (Some (ds, st', ast', b', os))
+        | _ => returnGen None
+        end);
+    (* Spec_Asgn *) (1, match c with
+        | <{ x := e }> =>
+            let n := aeval st e in
+
+            let ds := [] in
+            let st' := (x !-> n; st) in
+            let ast' := ast in
+            let b' := b in
+            let os := [] in
+            returnGen (Some (ds, st', ast', b', os))
+        | _ => returnGen None
+        end);
+    (* Spec_ARead *) (1, match c with
+        | <{ x <- a[[ie]] }> =>
+            let i := aeval st ie in
+
+            if i <? List.length (apply ast a)
+            then
+              let ds := [DStep] in
+              let st' := (x !-> nth i (apply ast a) 0; st) in
+              let ast' := ast in
+              let b' := b in
+              let os := [OARead a i] in
+              returnGen (Some (ds, st', ast', b', os))
+            else returnGen None
+        | _ => returnGen None
+        end);
+    (* Spec_ARead_U *) (1, match c with
+        | <{ x <- a[[ie]] }> =>
+            let i := aeval st ie in
+
+            if negb (i <? List.length (apply ast a)) && b
+            then
+              a' <- gen_array;;
+              bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
+
+              let ds := [DLoad a' i'] in
+              let st' := (x !-> nth i' (apply ast a') 0; st) in
+              let ast' := ast in
+              let b' := true in
+              let os := [OARead a i] in
+              returnGen (Some (ds, st', ast', b', os))
+              )
+            else returnGen None
+        | _ => returnGen None
+        end);
+    (* Spec_Write *) (1, match c with
+        | <{ a[ie] <- e }> =>
+            let i := aeval st ie in
+            let n := aeval st e in
+
+            if i <? List.length (apply ast a)
+            then
+              let ds := [DStep] in
+              let st' := st in
+              let ast' := (a !-> upd i (apply ast a) n; ast) in
+              let b' := b in
+              let os := [OAWrite a i] in
+              returnGen (Some (ds, st', ast', b', os))
+            else returnGen None
+        | _ => returnGen None
+        end);
+    (* Spec_Write_U *) (1, match c with
+        | <{ a[ie] <- e }> =>
+            let i := aeval st ie in
+            let n := aeval st e in
+
+            if negb (i <? List.length (apply ast a)) && b
+            then
+              a' <- gen_array;;
+              bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
+
+              let ds := [DStore a' i'] in
+              let st' := st in
+              let ast' := (a' !-> upd i' (apply ast a') n; ast) in
+              let b' := true in
+              let os := [OAWrite a i] in
+              returnGen (Some (ds, st', ast', b', os))
+              )
+            else returnGen None
+        | _ => returnGen None
+        end)
+  ] in
+
+  match size with
+  | O => backtrack base_branches
+  | S size =>
+      let recursive_branches := [
+        (* Spec_Seq *) (1, match c with
+          | <{ c1 ; c2 }> =>
+              bindOpt (gen_spec_eval_sized size c1 st ast b) (fun '(ds1, st', ast', b', os1) =>
+              bindOpt (gen_spec_eval_sized size c2 st' ast' b') (fun '(ds2, st'', ast'', b'', os2) =>
+              returnGen (Some (ds1 ++ ds2, st'', ast'', b'', os1 ++ os2))
+              )
+              )
+          | _ => returnGen None
+          end
+        );
+        (* Spec_If *) (1, match c with
+          | <{ if be then c1 else c2 end }> =>
+              let condition := beval st be in
+              let next_c := if condition then c1 else c2 in
+              bindOpt (gen_spec_eval_sized size next_c st ast b) (fun '(ds, st', ast', b', os) =>
+              returnGen (Some (DStep::ds, st', ast', b', (OBranch condition)::os))
+              )
+          | _ => returnGen None
+          end
+        );
+        (* Spec_If_F *) (1, match c with
+          | <{ if be then c1 else c2 end }> =>
+              let condition := beval st be in
+              let next_c := if condition then c2 else c1 in
+              bindOpt (gen_spec_eval_sized size next_c st ast true) (fun '(ds, st', ast', b', os) =>
+              returnGen (Some (DForce::ds, st', ast', b', (OBranch condition)::os))
+              )
+          | _ => returnGen None
+          end
+        )
+      ] in
+
+      backtrack (base_branches ++ recursive_branches)
+  end.
+
+Definition observation_eqb (os1 : observation) (os2 : observation) : bool :=
+  match os1, os2 with
+  | OBranch b, OBranch b' => Bool.eqb b b'
+  | OARead a i, OARead a' i' => (String.eqb a a') && (i =? i')
+  | OAWrite a i, OAWrite a' i' => (String.eqb a a') && (i =? i')
+  | _, _ => false
+  end.
+
+Definition total_map_beq (a:Type) (a_beq:a->a->bool) (m1 m2 : total_map a) :=
+  match m1, m2 with
+  | (d1,lm1), (d2,lm2) => a_beq d1 d2 &&
+      forallb (fun x => a_beq (apply m1 x) (apply m2 x))
+              (union (map_dom lm1) (map_dom lm2))
+  end.
+
+Definition state_eqb := total_map_beq nat Nat.eqb.
+Definition astate_eqb := total_map_beq (list nat) (fun l1 l2 =>
+    forallb (fun '(i1, i2) => Nat.eqb i1 i2) (List.combine l1 l2)
+  ).
+
+#[export] Instance showdirection : Show direction :=
+  {show := (fun dir =>
+      match dir with
+      | DStep => "step"
+      | DForce => "force"
+      | DLoad a i => "load " ++ a ++ " " ++ (show i)
+      | DStore a i => "store " ++ a ++ " " ++ (show i)
+      end % string)
+   }.
+#[export] Instance showobservation : Show observation :=
+  {show := (fun o =>
+      match o with
+      | OBranch b => "branch " ++ (show b)
+      | OARead a i => "aread " ++ a ++ " " ++ (show i)
+      | OAWrite a i => "awrite " ++ a ++ " " ++ (show i)
+      end % string)
+   }.
+
+(* 200 tests takes 90s! *)
+Extract Constant defNumTests    => "200".
+QuickChick (forAll arbitrary (fun c =>
+    forAll arbitrary (fun st =>
+    forAll arbitrary (fun ast =>
+    forAll arbitrary (fun b =>
+    forAllMaybe (gen_spec_eval_sized 3 c st ast b) (fun '(ds, st', ast', b', os) =>
+      printTestCase ((show ds) ++ nl) (
+      match spec_eval_engine c st ast b ds with
+      | Some (st_, ast_, b_, os_) =>
+          (state_eqb st' st_) &&
+          (astate_eqb ast' ast_) &&
+          (Bool.eqb b_ b') &&
+          (forallb (fun '(o1, o2) => observation_eqb o1 o2) (List.combine os os_))
+      | None => false
+      end)
+  )))))).
+
 (* HIDE: This semantics already lost one property of Imp, which is only
    nonterminating executions don't produce a final state. Now if the input
    directions don't match what the program expects we also get stuck, which for
