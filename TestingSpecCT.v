@@ -1866,7 +1866,7 @@ QuickChick (forAll arbitrary (fun c =>
    directive. Doing that with a big-step semantics seems trickier. We could
    build a version that halts early on the first force? *)
 
-(* SOONER: Give example programs that satisfy the cryptographic constant-time
+(* Let's find example programs that satisfy the cryptographic constant-time
    discipline ([ct_well_typed]), but that are insecure wrt the speculative
    semantics above.  For instance, one can write secrets to public arrays using
    Spec_Write_U, and one can read to public registers from secret Spec_ARead_U.
@@ -1888,6 +1888,228 @@ QuickChick (forAll arbitrary (fun c =>
    (safe+secure without speculation, but unsafe+insecure with speculation):
    if false then p := a[n] else skip
 *)
+
+QuickChick (forAllShrink arbitrary shrink (fun P =>
+    forAllShrink arbitrary shrink (fun PA =>
+    forAllShrink (gen_ct_well_typed P PA) shrink (fun c =>
+
+    forAll arbitrary (fun b =>
+
+    forAllShrink genState shrink (fun s1 =>
+    forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
+    forAllShrink genAState shrink (fun a1 =>
+    forAllShrink (gen_pub_equiv PA a1) shrink (fun a2 =>
+
+    forAllMaybe (gen_spec_eval c s1 a1 b) (fun '(ds, s1', a1', b1', os1) =>
+      match spec_eval_engine c s2 a2 b ds with
+      | Some (s2', a2', b2', os2') =>
+          (pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
+      | _ => false
+      end
+  )))))))))).
+
+(* Typical example found:
+     c = A0[X0] <- 4
+     non-speculative execution.
+     st1 = ( "X0" !-> 1 ; _ !-> 0) ; ast1 = ( _ !-> [0; 0])
+     st2 = ( "X0" !-> 1 ; _ !-> 0) ; ast2 = ( _ !-> [])
+     ds = [DStep]
+
+  The second execution crashed since A0[X0] is out of bounds. It's not very interesting as
+  seeing this is the result of adding finite-length arrays to the model, not speculative execution.
+
+  To fix this, we'll enforce that both execution successfuly terminate.
+   *)
+QuickChick (forAllShrink arbitrary shrink (fun P =>
+    forAllShrink arbitrary shrink (fun PA =>
+    forAllShrink (gen_ct_well_typed P PA) shrink (fun c =>
+
+    forAll arbitrary (fun b =>
+
+    forAllShrink genState shrink (fun s1 =>
+    forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
+    forAllShrink genAState shrink (fun a1 =>
+    forAllShrink (gen_pub_equiv PA a1) shrink (fun a2 =>
+
+    forAllMaybe (gen_spec_eval c s1 a1 b) (fun '(ds, s1', a1', b1', os1) =>
+      match spec_eval_engine c s2 a2 b ds with
+      | Some (s2', a2', b2', os2') =>
+          (pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
+      | _ => true (* <---- changed! *)
+      end
+  )))))))))).
+
+(* Second type of counterexamples found:
+      c = A2[2] <- X1
+    st1 = (X1 !-> 0) ; ast1 (A0 !-> [0])
+    st2 = (X1 !-> 3) ; ast2 (A0 !-> [0])
+    speculative execution. A2 secret ; X1 secret ; A0 public
+    ds = [DStore A0 0]
+
+    -> in the output of the first execution,  A0 = [0]
+       in the output of the second execution, A0 = [3]
+    That's a real example, cool !
+  *)
+
+Extract Constant defNumTests    => "10000".
+QuickChick (forAllShrink arbitrary shrink (fun P =>
+    forAllShrink arbitrary shrink (fun PA =>
+    forAllShrink (gen_ct_well_typed P PA) shrink (fun c =>
+
+    forAllShrink genState shrink (fun s1 =>
+    forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
+    forAllShrink genAState shrink (fun a1 =>
+    forAllShrink (gen_pub_equiv PA a1) shrink (fun a2 =>
+
+    forAllMaybe (gen_spec_eval c s1 a1 true) (fun '(ds, s1', a1', b1', os1) =>
+      match spec_eval_engine c s2 a2 true ds with
+      | Some (s2', a2', b2', os2') =>
+          (pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
+      | _ => true (* <---- changed! *)
+      end
+  ))))))))).
+
+(* Hmmm, it seems to struggle to find anything else.
+   Trying another strategy, where the array read/write operations are less likely. *)
+(* TODO: doesn't work.
+
+(* TODO: consider backporting this nicer syntax to gen_sized_ct_well_typed *)
+Fixpoint gen_sized_ct_well_typed_balanced (P : pub_vars) (PA : pub_arrs) (size : nat): G (option com) :=
+  match size with
+  | 0 =>
+      backtrack [
+        (* Assignements where the value is secret *)
+        (1, a <- gen_aexp_with_label P secret;;
+         X <- gen_can_flow P secret;;
+         match X with
+         | Some X => returnGen (Some <{ X := a }>)
+         | None => returnGen None
+         end);
+        (* Array reads where the source is public *)
+        (1, i <- gen_aexp_with_label P public;;
+         a <- gen_array_with_label PA public;;
+         x <- arbitrary;;
+         match (a, i) with
+         | (Some a, i) => returnGen (Some <{ x <- a[[i]] }>)
+         | _ => returnGen None
+         end);
+        (* Array reads where the source is secret *)
+        (1, i <- gen_aexp_with_label P public;;
+         a <- gen_array_with_label PA secret;;
+         x <- gen_var_with_label P secret;;
+         match (a, i, x) with
+         | (Some a, i, Some x) => returnGen (Some <{ x <- a[[i]] }>)
+         | _ => returnGen None
+         end);
+        (* Array writes where the source is secret *)
+        (1, e <- gen_aexp_with_label P secret;;
+         i <- gen_aexp_with_label P public;;
+         a <- gen_array_with_label PA secret;;
+         match (a, i, e) with
+         | (Some a, i, x) => returnGen (Some <{ a[i] <- e }>)
+         | _ => returnGen None
+         end);
+        (* Array writes where the source is public *)
+        (1, e <- gen_aexp_with_label P public;;
+         i <- gen_aexp_with_label P public;;
+         a <- gen_array;;
+         returnGen (Some <{ a[i] <- e }>));
+        (1, a <- gen_aexp_with_label P public;;
+         X <- arbitrary;;
+         returnGen (Some <{ X := a }>))
+      ]
+  | S size' =>
+      backtrack [
+        (5, bindOpt (gen_sized_ct_well_typed_balanced P PA size') (fun c1 =>
+          bindOpt (gen_sized_ct_well_typed_balanced P PA size') (fun c2 =>
+          returnGen (Some <{ c1 ; c2 }>)
+          ))
+        );
+        (5, b <- gen_bexp_with_label P public;;
+          bindOpt (gen_sized_ct_well_typed_balanced P PA size') (fun c1 =>
+          bindOpt (gen_sized_ct_well_typed_balanced P PA size') (fun c2 =>
+          returnGen (Some <{ if b then c1 else c1 end }>)
+          ))
+        );
+        (5, b <- gen_bexp_with_label P public;;
+          bindOpt (gen_sized_ct_well_typed_balanced P PA size') (fun c =>
+          returnGen (Some <{ while b do c end }>)
+          )
+        );
+        (* Assignements where the value is secret *)
+        (1, a <- gen_aexp_with_label P secret;;
+         X <- gen_can_flow P secret;;
+         match X with
+         | Some X => returnGen (Some <{ X := a }>)
+         | None => returnGen None
+         end);
+        (* Array reads where the source is public *)
+        (0, i <- gen_aexp_with_label P public;;
+         a <- gen_array_with_label PA public;;
+         x <- arbitrary;;
+         match (a, i) with
+         | (Some a, i) => returnGen (Some <{ x <- a[[i]] }>)
+         | _ => returnGen None
+         end);
+        (* Array reads where the source is secret *)
+        (0, i <- gen_aexp_with_label P public;;
+         a <- gen_array_with_label PA secret;;
+         x <- gen_var_with_label P secret;;
+         match (a, i, x) with
+         | (Some a, i, Some x) => returnGen (Some <{ x <- a[[i]] }>)
+         | _ => returnGen None
+         end);
+        (* Array writes where the source is secret *)
+        (0, e <- gen_aexp_with_label P secret;;
+         i <- gen_aexp_with_label P public;;
+         a <- gen_array_with_label PA secret;;
+         match (a, i, e) with
+         | (Some a, i, x) => returnGen (Some <{ a[i] <- e }>)
+         | _ => returnGen None
+         end);
+        (* Array writes where the source is public *)
+        (0, e <- gen_aexp_with_label P public;;
+         i <- gen_aexp_with_label P public;;
+         a <- gen_array;;
+         returnGen (Some <{ a[i] <- e }>));
+        (1, a <- gen_aexp_with_label P public;;
+         X <- arbitrary;;
+         returnGen (Some <{ X := a }>))
+      ]
+  end.
+Definition gen_ct_well_typed_balanced (P : pub_vars) (PA : pub_arrs) : G (option com) :=
+  sized (gen_sized_ct_well_typed_balanced P PA).
+
+(* QuickChick doesn't have the combination of forAllMaybe and forAllShrink *)
+Definition forAllShrinkMaybe {A prop : Type} {_ : Checkable prop} `{Show A}
+           (gen : G (option A)) (shrinker : A -> list A) (pf : A -> prop) : Checker :=
+  bindGen gen (fun mx =>
+                 match mx with
+                 | Some x => shrinking shrinker x (fun x' =>
+                     printTestCase (show x' ++ newline) (pf x')
+                   )
+                 | None => checker tt
+                 end
+              ).
+
+Extract Constant defNumTests    => "1000".
+QuickChick (forAllShrink arbitrary shrink (fun P =>
+    forAllShrink arbitrary shrink (fun PA =>
+    forAllShrinkMaybe (gen_ct_well_typed_balanced P PA) shrink (fun c =>
+
+    forAllShrink genState shrink (fun s1 =>
+    forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
+    forAllShrink genAState shrink (fun a1 =>
+    forAllShrink (gen_pub_equiv PA a1) shrink (fun a2 =>
+
+    forAllMaybe (gen_spec_eval c s1 a1 true) (fun '(ds, s1', a1', b1', os1) =>
+      match spec_eval_engine c s2 a2 true ds with
+      | Some (s2', a2', b2', os2') =>
+          (pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
+      | _ => true (* <---- changed! *)
+      end
+  ))))))))).
+ *)
 
 (* HIDE: Just to warm up formalized the first lemma in the Spectre Declassified
    paper: Lemma 1: structural properties of execution *)
