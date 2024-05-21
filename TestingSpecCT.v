@@ -44,9 +44,26 @@ From Coq Require Import String.
     constant-time conditional move instruction). This constant-time conditional
     makes arithmetic and boolean expressions mutually inductive. *)
 
+Inductive var_id : Type := Var (name : string) : var_id.
+Inductive arr_id : Type := Arr (name : string) : arr_id.
+
+Coercion Var : string >-> var_id.
+Coercion Arr : string >-> arr_id.
+Definition var_id_to_string (v : var_id) : string :=
+  let '(Var name) := v in name.
+Definition arr_id_to_string (v : arr_id) : string :=
+  let '(Arr name) := v in name.
+Coercion var_id_to_string : var_id >-> string.
+Coercion arr_id_to_string : arr_id >-> string.
+
+#[export] Instance showVarId : Show var_id :=
+  {show := fun '(Var name) => name}.
+#[export] Instance showArrId : Show arr_id :=
+  {show := fun '(Arr name) => name}.
+
 Inductive aexp : Type :=
   | ANum (n : nat)
-  | AId (x : string)
+  | AId (x : var_id)
   | APlus (a1 a2 : aexp)
   | AMinus (a1 a2 : aexp)
   | AMult (a1 a2 : aexp)
@@ -77,16 +94,20 @@ Combined Scheme aexp_bexp_mutind from aexp_bexp_ind,bexp_aexp_ind.
 *)
 
 (* TERSE: HIDEFROMHTML *)
-Definition W : string := "W".
-Definition X : string := "X".
-Definition Y : string := "Y".
-Definition Z : string := "Z".
+Open Scope string_scope.
+(* Variable names *)
+Definition W : var_id := "W".
+Definition X : var_id := "X".
+Definition Y : var_id := "Y".
+Definition Z : var_id := "Z".
 
-Definition A : string := "A".
-Definition B : string := "B".
-Definition C : string := "C".
+(* Array names *)
+Definition A : arr_id := "A".
+Definition B : arr_id := "B".
+Definition C : arr_id := "C".
+Close Scope string_scope.
 
-Coercion AId : string >-> aexp.
+Coercion AId : var_id >-> aexp.
 Coercion ANum : nat >-> aexp.
 
 Declare Custom Entry com.
@@ -121,7 +142,7 @@ Open Scope com_scope.
 (* Deriving Show for both aexp and bexp. *)
 Fixpoint show_aexp (a:aexp) : string :=
   let fix show_aexp (a : aexp) := match a with
-  | AId i => String DoubleQuote (i ++ String DoubleQuote "")
+  | AId i => show i
   | ANum n => show n
   | <{x + y}> => "(" ++ show_aexp x ++ " + " ++ show_aexp y ++ ")"
   | <{x - y}> => "(" ++ show_aexp x ++ " - " ++ show_aexp y ++ ")"
@@ -147,23 +168,40 @@ with show_bexp (a:bexp) : string :=
 #[export] Instance showBexp : Show bexp :=
   {show := show_bexp }.
 
-#[export] Instance genId : Gen string :=
-  {arbitrary := (n <- freq [(10, ret 0);
-                             (9, ret 1);
-                             (8, ret 2);
-                             (4, ret 3);
-                             (2, ret 4);
-                             (1, ret 5)];;
-                 ret ("X" ++ show n)%string) }.
-#[export] Instance shrinkId : Shrink string :=
-  {shrink :=
-    (fun s => match get 1 s with
-              | Some a => match (nat_of_ascii a - nat_of_ascii "0") with
-                          | S n => ["X" ++ show (S n / 2); "X" ++ show (S n - 1)]
-                          | 0 => []
-                          end
-              | None => nil
-              end)%string }.
+#[export] Instance genVarId : Gen var_id :=
+  {arbitrary := (
+    n <- freq [(10, ret 0);
+               (9, ret 1);
+               (8, ret 2);
+               (4, ret 3);
+               (2, ret 4);
+               (1, ret 5)];;
+    ret (Var ("X" ++ show n)) % string
+  )}.
+#[export] Instance genArrId : Gen arr_id :=
+  {arbitrary := (
+    n <- freq [(5, ret 0);
+             (3, ret 1);
+             (1, ret 2)];;
+    ret (Arr ("A" ++ show n)) % string
+  )}.
+
+Definition shrink_name (name : string) : list string :=
+  let prefix := substring 0 1 name in
+  match get 1 name with
+  | Some a =>
+      let as_nat := nat_of_ascii a - nat_of_ascii "0" in
+      match as_nat with
+      | S n => [prefix ++ show (S n / 2); prefix ++ show (S n - 1)]
+      | 0 => []
+      end
+  | None => []
+  end % string.
+
+#[export] Instance shrinkVarId : Shrink var_id :=
+  {shrink := fun '(Var name) => List.map (fun name => Var name) (shrink_name name)}.
+#[export] Instance shrinkArrId : Shrink arr_id :=
+  {shrink := fun '(Arr name) => List.map (fun name => Arr name) (shrink_name name)}.
 
 (* QuickChick does not support mutual inductive types. *)
 (* Derive Arbitrary for aexp and bexp. *)
@@ -192,9 +230,9 @@ Fixpoint arbitrarySized_impl_bexp (size : nat) : G bexp :=
   end
 with arbitrarySized_impl_aexp (size : nat) : G aexp :=
   match size with
-  | 0 => oneOf [bindGen arbitrary (fun p0 : nat => returnGen (ANum p0)); bindGen arbitrary (fun p0 : string => returnGen (AId p0))]
+  | 0 => oneOf [bindGen arbitrary (fun p0 : nat => returnGen (ANum p0)); bindGen arbitrary (fun p0 : var_id => returnGen (AId p0))]
   | S size' =>
-      freq [ (1, bindGen arbitrary (fun p0 : nat => returnGen (ANum p0))); (1, bindGen arbitrary (fun p0 : string => returnGen (AId p0)));
+      freq [ (1, bindGen arbitrary (fun p0 : nat => returnGen (ANum p0))); (1, bindGen arbitrary (fun p0 : var_id => returnGen (AId p0)));
       (1,
        bindGen (arbitrarySized_impl_aexp size')
          (fun p0 : aexp => bindGen (arbitrarySized_impl_aexp size') (fun p1 : aexp => returnGen <{ p0 + p1 }>)));
@@ -241,7 +279,7 @@ Fixpoint shrink_impl_bexp (x : bexp) : list bexp :=
 with shrink_impl_aexp (x : aexp) : list aexp :=
   match x with
   | ANum p0 => map (fun n => ANum n) (map (fun shrunk : nat => shrunk) (shrink p0))
-  | AId p0 => map (fun n => AId n) (map (fun shrunk : string => shrunk) (shrink p0))
+  | AId p0 => map (fun n => AId n) (map (fun shrunk : var_id => shrunk) (shrink p0))
   | <{ p0 + p1 }> =>
       ([p0] ++ map (fun shrunk : aexp => <{ shrunk + p1 }>) (shrink_impl_aexp p0) ++ []) ++
       ([p1] ++ map (fun shrunk : aexp => <{ p0 + shrunk }>) (shrink_impl_aexp p1) ++ []) ++ []
@@ -266,12 +304,12 @@ with shrink_impl_aexp (x : aexp) : list aexp :=
 
 Inductive com : Type :=
   | Skip
-  | Asgn (x : string) (e : aexp)
+  | Asgn (x : var_id) (e : aexp)
   | Seq (c1 c2 : com)
   | If (be : bexp) (c1 c2 : com)
   | While (be : bexp) (c : com)
-  | ARead (x : string) (a : string) (i : aexp) (* <--- NEW *)
-  | AWrite (a : string) (i : aexp) (e : aexp)  (* <--- NEW *).
+  | ARead (x : var_id) (a : arr_id) (i : aexp) (* <--- NEW *)
+  | AWrite (a : arr_id) (i : aexp) (e : aexp)  (* <--- NEW *).
 
 (* HIDE: CH: Wanted to take a:aexp and compute the accessed array, but
    our maps only have string keys, so had to settle with a:string for
@@ -356,7 +394,7 @@ Notation "a '[' i ']'  '<-' e"  :=
   {show :=
       (let fix showComRec (a:com) : string :=
          match a with
-         | <{skip}> => "skip"%string
+         | <{skip}> => "skip"
          | <{x := y}> => "(" ++ show x ++ ":= " ++ show y ++ ")"
          | <{x ; y}> => "(" ++ showComRec x ++ " ; " ++ showComRec y ++ ")"
          | <{if x then y else z end}> => "(if " ++ show x ++
@@ -425,6 +463,46 @@ Definition apply {A:Type} (m : total_map A) (x:string) : A :=
                end
   end.
 
+Check List.fold_left.
+(* Like List.fold_left, but also give the list before and after *)
+Definition fold_extra {A : Type} {B : Type} (f : A -> list B -> B -> list B -> A) (l : list B) (v : A) : A :=
+  let fix aux (processed : list B) (incoming : list B) (acc : A) :=
+    match incoming with
+    | [] => acc
+    | h::t =>
+        let new_acc := f acc processed h t in
+        aux (processed ++ [h]) t new_acc
+    end
+  in aux [] l v.
+
+#[export] Instance shrinkTotalMap {X : Type} `{Shrink X}: Shrink (total_map X) :=
+  {shrink := fun '(d, m) =>
+      (* Shrinking the default value *)
+      (List.map (fun d' => (d', m)) (shrink d)) ++
+      (* Shrinking an entry in the map *)
+      (List.map
+         (fun m' => (d, m'))
+         (fold_extra (fun acc before '(k, v) after =>
+            let modified_entry := List.map (fun v' =>
+                before ++ [(k, v')] ++ after
+              ) (shrink v) in
+
+            modified_entry ++ acc
+         ) m [])
+      ) ++
+      (* Removing an entry in the map *)
+      (List.map
+         (fun m' => (d, m'))
+         (fold_extra (fun acc before '(k, v) after =>
+            let modified_entry := List.map (fun v' =>
+                before ++ after
+              ) (shrink v) in
+
+            modified_entry ++ acc
+         ) m [])
+      )
+  }.
+
 (* Now that we have these maps, use them to define of programs execute *)
 Definition state := total_map nat.
 Definition astate := total_map (list nat).
@@ -432,7 +510,7 @@ Definition astate := total_map (list nat).
 (* QuickChick already knows how to generate states and astates.
    However, we'd like to have a generator that generates nicers {a,}states,
    without duplicates, keys that we use... *)
-Definition genState : G state :=
+Definition gen_state : G state :=
   d <- arbitrary;;
   v0 <- arbitrary;;
   v1 <- arbitrary;;
@@ -443,7 +521,7 @@ Definition genState : G state :=
   ret (d, [("X0",v0); ("X1",v1); ("X2",v2);
            ("X3",v3); ("X4",v4); ("X5",v5)]) % string.
 
-Definition genAState : G astate :=
+Definition gen_astate : G astate :=
   d <- arbitrary;;
   v0 <- arbitrary;;
   v1 <- arbitrary;;
@@ -577,6 +655,32 @@ Definition secret : label := false.
 Definition pub_vars := total_map label.
 Definition pub_arrs := total_map label.
 
+Definition gen_pub_vars : G pub_vars :=
+  default <- arbitrary;;
+  x0 <- arbitrary;;
+  x1 <- arbitrary;;
+  x2 <- arbitrary;;
+  x3 <- arbitrary;;
+  x4 <- arbitrary;;
+  x5 <- arbitrary;;
+  ret (
+    "X0" !-> x0; "X1" !-> x1;
+    "X2" !-> x2; "X3" !-> x3;
+    "X4" !-> x4; "X5" !-> x5;
+    _ !-> default
+  ) % string.
+
+Definition gen_pub_arrs : G pub_vars :=
+  default <- arbitrary;;
+  a0 <- arbitrary;;
+  a1 <- arbitrary;;
+  a2 <- arbitrary;;
+  ret (
+    "A0" !-> a0; "A1" !-> a1;
+    "A2" !-> a2;
+    _ !-> default
+  ) % string.
+
 Definition pub_equiv (P : total_map label) {X:Type} (s1 s2 : total_map X) :=
   forall x:string, apply P x = true -> apply s1 x = apply s2 x.
 
@@ -621,8 +725,8 @@ Definition gen_pub_equiv (P : total_map label) {X: Type} `{Gen X} (s: total_map 
   ) m (ret []);;
   ret (d, new_m).
 
-QuickChick (forAll arbitrary (fun P =>
-    forAll genState (fun s1 =>
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
       pub_equivb P s1 s2
   )))).
@@ -717,25 +821,23 @@ with bexp_aexp_has_label_ind := Induction for bexp_has_label Sort Prop.
 Combined Scheme aexp_bexp_has_label_mutind
   from aexp_bexp_has_label_ind, bexp_aexp_has_label_ind.
 
-(* Returns a variable X0..X5 which has the label l in P *)
-Definition gen_var_with_label (P : pub_vars) (l: label) : G (option string) :=
-  let variables_in_l := (
-    (if Bool.eqb (apply P "X0") l then [ret (Some "X0")] else []) % string ++
-    (if Bool.eqb (apply P "X1") l then [ret (Some "X1")] else []) % string ++
-    (if Bool.eqb (apply P "X2") l then [ret (Some "X2")] else []) % string ++
-    (if Bool.eqb (apply P "X3") l then [ret (Some "X3")] else []) % string ++
-    (if Bool.eqb (apply P "X4") l then [ret (Some "X4")] else []) % string ++
-    (if Bool.eqb (apply P "X5") l then [ret (Some "X5")] else []) % string
-  ) in
-  oneOf_ (ret None) variables_in_l.
+(* Returns a variable which has the label l in P *)
+Definition gen_var_with_label (P : pub_vars) (l: label) : G (option var_id) :=
+  let '(d, m) := P in
+  let all_variables := union (map_dom m) ["X0"; "X1"; "X2"; "X3"; "X4"] % string in
+  let variables_in_l := List.filter (fun v => Bool.eqb (apply P v) l) all_variables in
 
-QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+  oneOf_
+    (ret None)
+    (List.map (fun v => ret (Some (Var v))) variables_in_l).
+
+QuickChick (forAll gen_pub_vars (fun (P : pub_vars) =>
     forAll (gen_var_with_label P public) (fun v => match v with
       | Some v => apply P v
       | None => true
       end
   ))).
-QuickChick (forAll arbitrary (fun (P : pub_vars) =>
+QuickChick (forAll gen_pub_vars (fun (P : pub_vars) =>
     forAll (gen_var_with_label P secret) (fun v => match v with
       | Some v => negb (apply P v)
       | None => true
@@ -839,15 +941,15 @@ Definition gen_aexp_with_label (P : pub_vars) (l: label) :=
 Definition gen_bexp_with_label (P : pub_vars) (l: label) :=
   sized (gen_sized_bexp_with_label P l).
 
-QuickChick (forAll arbitrary (fun P => 
-    forAllShrink genState shrink (fun s1 => 
+QuickChick (forAll gen_pub_vars (fun P => 
+    forAllShrink gen_state shrink (fun s1 => 
     forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
     forAllShrink (gen_aexp_with_label P public) shrink (fun a => 
       (aeval s1 a) =? (aeval s2 a)
   ))))).
 
-QuickChick (forAll arbitrary (fun P => 
-    forAllShrink genState shrink (fun s1 => 
+QuickChick (forAll gen_pub_vars (fun P => 
+    forAllShrink gen_state shrink (fun s1 => 
     forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
     forAllShrink (gen_bexp_with_label P public) shrink (fun b => 
       Bool.eqb (beval s1 b) (beval s2 b)
@@ -967,7 +1069,7 @@ where "P !! PA '|-ct-' c" := (ct_well_typed P PA c).
 (* TERSE: /HIDEFROMHTML *)
 
 (* Generates a variable X such that `can_flow l1 (P X) = true` *)
-Definition gen_can_flow (P : pub_vars) (l1 : label) : G (option string) :=
+Definition gen_can_flow (P : pub_vars) (l1 : label) : G (option var_id) :=
   if l1 then
     (* Public source. Can flow anywhere. *)
     (X <- arbitrary;;
@@ -976,19 +1078,15 @@ Definition gen_can_flow (P : pub_vars) (l1 : label) : G (option string) :=
     (* Secret source. Can only flow in secret variables. *)
     gen_var_with_label P secret.
 
-(* Returns an arbitrary array *)
-Definition gen_array : G string :=
-  n <- freq [(5, ret 0); (3, ret 1); (1, ret 2)];;
-  ret ("X" ++ show n) % string.
-
 (* Returns an array A0..A2 which has the label l in P *)
-Definition gen_array_with_label (PA : pub_arrs) (l: label) : G (option string) :=
-  let arrays_in_l := (
-    (if Bool.eqb (apply PA "A0") l then [ret (Some "A0")] else []) % string ++
-    (if Bool.eqb (apply PA "A1") l then [ret (Some "A1")] else []) % string ++
-    (if Bool.eqb (apply PA "A2") l then [ret (Some "A2")] else []) % string
-  ) in
-  oneOf_ (ret None) arrays_in_l.
+Definition gen_arr_with_label (P : pub_vars) (l: label) : G (option arr_id) :=
+  let '(d, m) := P in
+  let all_variables := union (map_dom m) ["A0"; "A1"; "A2"] % string in
+  let variables_in_l := List.filter (fun v => Bool.eqb (apply P v) l) all_variables in
+
+  oneOf_
+    (ret None)
+    (List.map (fun v => ret (Some (Arr v))) variables_in_l).
 
 Fixpoint gen_sized_ct_well_typed (P : pub_vars) (PA : pub_arrs) (size : nat): G com :=
   let skip := ret <{ skip }> in
@@ -1027,7 +1125,7 @@ Fixpoint gen_sized_ct_well_typed (P : pub_vars) (PA : pub_arrs) (size : nat): G 
   public_read <-
     (* Array reads where the source is public *)
     (i <- gen_aexp_with_label P public;;
-     a <- gen_array_with_label PA public;;
+     a <- gen_arr_with_label PA public;;
      x <- arbitrary;;
      match (a, i) with
      | (Some a, i) => ret [ret <{ x <- a[[i]] }>]
@@ -1036,7 +1134,7 @@ Fixpoint gen_sized_ct_well_typed (P : pub_vars) (PA : pub_arrs) (size : nat): G 
   secret_read <-
     (* Array reads where the source is secret *)
     (i <- gen_aexp_with_label P public;;
-     a <- gen_array_with_label PA secret;;
+     a <- gen_arr_with_label PA secret;;
      x <- gen_var_with_label P secret;;
      match (a, i, x) with
      | (Some a, i, Some x) => ret [ret <{ x <- a[[i]] }>]
@@ -1046,7 +1144,7 @@ Fixpoint gen_sized_ct_well_typed (P : pub_vars) (PA : pub_arrs) (size : nat): G 
     (* Array writes where the source is secret *)
     (e <- gen_aexp_with_label P secret;;
      i <- gen_aexp_with_label P public;;
-     a <- gen_array_with_label PA secret;;
+     a <- gen_arr_with_label PA secret;;
      match (a, i, e) with
      | (Some a, i, x) => ret [ret <{ a[i] <- e }>]
      | _ => ret []
@@ -1061,7 +1159,7 @@ Fixpoint gen_sized_ct_well_typed (P : pub_vars) (PA : pub_arrs) (size : nat): G 
     (* Array writes where the source is public *)
     (e <- gen_aexp_with_label P public;;
      i <- gen_aexp_with_label P public;;
-     a <- gen_array;;
+     a <- arbitrary;;
      ret <{ a[i] <- e }>)
   ] ++ secret_assignements ++ public_read
     ++ secret_write ++ secret_read).
@@ -1072,12 +1170,12 @@ Definition gen_ct_well_typed (P : pub_vars) (PA : pub_arrs) : G com :=
 (** ** Final theorems: noninterference and constant-time security *)
 
 (* Takes ~30 s! *)
-QuickChick (forAll arbitrary (fun P =>
-    forAll arbitrary (fun PA =>
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed P PA) (fun c =>
-    forAll genState (fun s1 =>
+    forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
-    forAll genAState (fun a1 =>
+    forAll gen_astate (fun a1 =>
     forAll (gen_pub_equiv PA a1) (fun a2 =>
       let '(s1', a1', os1') := cteval_no_while c s1 a1 in
       let '(s2', a2', os2') := cteval_no_while c s2 a2 in
@@ -1157,12 +1255,12 @@ Definition obs_eqb (o1 : observation) (o2 : observation) : bool :=
   end.
 
 (* Takes ~30 s! *)
-QuickChick (forAll arbitrary (fun P =>
-    forAll arbitrary (fun PA =>
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed P PA) (fun c =>
-    forAll genState (fun s1 =>
+    forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
-    forAll genAState (fun a1 =>
+    forAll gen_astate (fun a1 =>
     forAll (gen_pub_equiv PA a1) (fun a2 =>
       let '(s1', a1', os1) := cteval_no_while c s1 a1 in
       let '(s2', a2', os2) := cteval_no_while c s2 a2 in
@@ -1675,7 +1773,7 @@ Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (s
 
             if negb (i <? List.length (apply ast a)) && b
             then
-              a' <- gen_array;;
+              a' <- (genVarId).(arbitrary);;
               bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
 
               let ds := [DLoad a' i'] in
@@ -1711,7 +1809,7 @@ Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (s
 
             if negb (i <? List.length (apply ast a)) && b
             then
-              a' <- gen_array;;
+              a' <- (genVarId).(arbitrary);;
               bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
 
               let ds := [DStore a' i'] in
@@ -1808,8 +1906,8 @@ Definition astate_eqb := total_map_beq (list nat) (fun l1 l2 =>
 (* 500 tests takes 120s! *)
 Extract Constant defNumTests    => "500".
 QuickChick (forAll arbitrary (fun c =>
-    forAll arbitrary (fun st =>
-    forAll arbitrary (fun ast =>
+    forAll gen_state (fun st =>
+    forAll gen_astate (fun ast =>
     forAll arbitrary (fun b =>
     forAllMaybe (gen_spec_eval c st ast b) (fun '(ds, st', ast', b', os) =>
       printTestCase ((show ds) ++ nl) (
@@ -1889,15 +1987,15 @@ QuickChick (forAll arbitrary (fun c =>
    if false then p := a[n] else skip
 *)
 
-QuickChick (forAllShrink arbitrary shrink (fun P =>
-    forAllShrink arbitrary shrink (fun PA =>
+QuickChick (forAllShrink gen_pub_vars shrink (fun P =>
+    forAllShrink gen_pub_arrs shrink (fun PA =>
     forAllShrink (gen_ct_well_typed P PA) shrink (fun c =>
 
     forAll arbitrary (fun b =>
 
-    forAllShrink genState shrink (fun s1 =>
+    forAllShrink gen_state shrink (fun s1 =>
     forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
-    forAllShrink genAState shrink (fun a1 =>
+    forAllShrink gen_astate shrink (fun a1 =>
     forAllShrink (gen_pub_equiv PA a1) shrink (fun a2 =>
 
     forAllMaybe (gen_spec_eval c s1 a1 b) (fun '(ds, s1', a1', b1', os1) =>
@@ -1920,15 +2018,15 @@ QuickChick (forAllShrink arbitrary shrink (fun P =>
 
   To fix this, we'll enforce that both execution successfuly terminate.
    *)
-QuickChick (forAllShrink arbitrary shrink (fun P =>
-    forAllShrink arbitrary shrink (fun PA =>
+QuickChick (forAllShrink gen_pub_vars shrink (fun P =>
+    forAllShrink gen_pub_arrs shrink (fun PA =>
     forAllShrink (gen_ct_well_typed P PA) shrink (fun c =>
 
     forAll arbitrary (fun b =>
 
-    forAllShrink genState shrink (fun s1 =>
+    forAllShrink gen_state shrink (fun s1 =>
     forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
-    forAllShrink genAState shrink (fun a1 =>
+    forAllShrink gen_astate shrink (fun a1 =>
     forAllShrink (gen_pub_equiv PA a1) shrink (fun a2 =>
 
     forAllMaybe (gen_spec_eval c s1 a1 b) (fun '(ds, s1', a1', b1', os1) =>
@@ -1952,13 +2050,13 @@ QuickChick (forAllShrink arbitrary shrink (fun P =>
   *)
 
 Extract Constant defNumTests    => "10000".
-QuickChick (forAllShrink arbitrary shrink (fun P =>
-    forAllShrink arbitrary shrink (fun PA =>
+QuickChick (forAllShrink gen_pub_vars shrink (fun P =>
+    forAllShrink gen_pub_arrs shrink (fun PA =>
     forAllShrink (gen_ct_well_typed P PA) shrink (fun c =>
 
-    forAllShrink genState shrink (fun s1 =>
+    forAllShrink gen_state shrink (fun s1 =>
     forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
-    forAllShrink genAState shrink (fun a1 =>
+    forAllShrink gen_astate shrink (fun a1 =>
     forAllShrink (gen_pub_equiv PA a1) shrink (fun a2 =>
 
     forAllMaybe (gen_spec_eval c s1 a1 true) (fun '(ds, s1', a1', b1', os1) =>
@@ -2097,9 +2195,9 @@ QuickChick (forAllShrink arbitrary shrink (fun P =>
     forAllShrink arbitrary shrink (fun PA =>
     forAllShrinkMaybe (gen_ct_well_typed_balanced P PA) shrink (fun c =>
 
-    forAllShrink genState shrink (fun s1 =>
+    forAllShrink gen_state shrink (fun s1 =>
     forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
-    forAllShrink genAState shrink (fun a1 =>
+    forAllShrink gen_astate shrink (fun a1 =>
     forAllShrink (gen_pub_equiv PA a1) shrink (fun a2 =>
 
     forAllMaybe (gen_spec_eval c s1 a1 true) (fun '(ds, s1', a1', b1', os1) =>
@@ -2122,9 +2220,9 @@ Proof. intros c s a b ds s' a' b' os Heval Hb. induction Heval; eauto. Qed.
 
 (* 200 tests, ~60 discards, ~50 seconds*)
 QuickChick (forAll arbitrary (fun c =>
-    forAll arbitrary (fun st =>
-    forAll arbitrary (fun ast =>
-    forAllMaybe (gen_spec_eval_sized 3 c st ast true) (fun '(ds, st', ast', b', os) =>
+    forAll gen_state (fun st =>
+    forAll gen_astate (fun ast =>
+    forAllMaybe (gen_spec_eval c st ast true) (fun '(ds, st', ast', b', os) =>
       b'
   ))))).
 
@@ -2151,9 +2249,9 @@ Definition direction_eqb (d1 : direction) (d2 : direction) : bool :=
 
 (* Way to many discards... *)
 QuickChick (forAll arbitrary (fun c =>
-    forAll arbitrary (fun st =>
-    forAll arbitrary (fun ast =>
-    forAllMaybe (gen_spec_eval_sized 3 c st ast false) (fun '(ds, st', ast', b', os) =>
+    forAll gen_state (fun st =>
+    forAll gen_astate (fun ast =>
+    forAllMaybe (gen_spec_eval c st ast false) (fun '(ds, st', ast', b', os) =>
       implication b' (
         existsb (fun dir => direction_eqb dir DForce) ds
       )
@@ -2190,10 +2288,10 @@ Qed.
 
 (* Way to many discards... *)
 QuickChick (forAll arbitrary (fun c =>
-    forAll arbitrary (fun st =>
-    forAll arbitrary (fun ast =>
+    forAll gen_state (fun st =>
+    forAll gen_astate (fun ast =>
     forAll arbitrary (fun b =>
-    forAllMaybe (gen_spec_eval_sized 3 c st ast b) (fun '(ds, st', ast', b', os) =>
+    forAllMaybe (gen_spec_eval c st ast b) (fun '(ds, st', ast', b', os) =>
       implication
         ((existsb (fun dir => match dir with DLoad _ _ => true | _ => false end) ds) ||
          (existsb (fun dir => match dir with DStore _ _ => true | _ => false end) ds))
