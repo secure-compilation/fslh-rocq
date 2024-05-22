@@ -507,9 +507,6 @@ Definition fold_extra {A : Type} {B : Type} (f : A -> list B -> B -> list B -> A
 Definition state := total_map nat.
 Definition astate := total_map (list nat).
 
-(* QuickChick already knows how to generate states and astates.
-   However, we'd like to have a generator that generates nicers {a,}states,
-   without duplicates, keys that we use... *)
 Definition gen_state : G state :=
   d <- arbitrary;;
   v0 <- arbitrary;;
