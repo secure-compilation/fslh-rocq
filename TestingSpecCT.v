@@ -1727,140 +1727,108 @@ Definition gen_nat_lt (m : nat) : G (option nat) :=
       n <- choose (0, m);;
       returnGen (Some n)
   end.
+
 (* Returns (ds, st', ast', b', os) such that <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> *)
 Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (size : nat): G (option (dirs * state * astate * bool * obs)) :=
-  let base_branches := [
-    (* Spec_Skip *) (1, match c with
-        | <{ skip }> =>
-            let ds := [] in
-            let st' := st in
-            let ast' := ast in
-            let b' := b in
-            let os := [] in
-            returnGen (Some (ds, st', ast', b', os))
+  match c with
+  | <{ skip }> =>
+    let ds := [] in
+    let st' := st in
+    let ast' := ast in
+    let b' := b in
+    let os := [] in
+    returnGen (Some (ds, st', ast', b', os))
+  | <{ x := e }> =>
+    let n := aeval st e in
+
+    let ds := [] in
+    let st' := (x !-> n; st) in
+    let ast' := ast in
+    let b' := b in
+    let os := [] in
+    returnGen (Some (ds, st', ast', b', os))
+  | <{ x <- a[[ie]] }> =>
+    let i := aeval st ie in
+
+    if i <? List.length (apply ast a)
+    then
+      let ds := [DStep] in
+      let st' := (x !-> nth i (apply ast a) 0; st) in
+      let ast' := ast in
+      let b' := b in
+      let os := [OARead a i] in
+      returnGen (Some (ds, st', ast', b', os))
+    else (* i >= List.length (apply ast a) *)
+    if b then
+      a' <- (genVarId).(arbitrary);;
+      bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
+
+      let ds := [DLoad a' i'] in
+      let st' := (x !-> nth i' (apply ast a') 0; st) in
+      let ast' := ast in
+      let b' := true in
+      let os := [OARead a i] in
+      returnGen (Some (ds, st', ast', b', os))
+      )
+    else returnGen None
+  | <{ a[ie] <- e }> =>
+    let i := aeval st ie in
+    let n := aeval st e in
+
+    if i <? List.length (apply ast a)
+    then
+      let ds := [DStep] in
+      let st' := st in
+      let ast' := (a !-> upd i (apply ast a) n; ast) in
+      let b' := b in
+      let os := [OAWrite a i] in
+      returnGen (Some (ds, st', ast', b', os))
+    else (* i >= List.length (apply ast a) *)
+    if b then
+      a' <- (genVarId).(arbitrary);;
+      bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
+
+      let ds := [DStore a' i'] in
+      let st' := st in
+      let ast' := (a' !-> upd i' (apply ast a') n; ast) in
+      let b' := true in
+      let os := [OAWrite a i] in
+      returnGen (Some (ds, st', ast', b', os))
+      )
+    else returnGen None
+  | _ =>
+    match size with
+    | O => returnGen None
+    | S size =>
+        match c with
+        | <{ c1 ; c2 }> =>
+            bindOpt (gen_spec_eval_sized c1 st ast b size) (fun '(ds1, st', ast', b', os1) =>
+            bindOpt (gen_spec_eval_sized c2 st' ast' b' size) (fun '(ds2, st'', ast'', b'', os2) =>
+            returnGen (Some (ds1 ++ ds2, st'', ast'', b'', os1 ++ os2))
+            ))
+        | <{ if be then c1 else c2 end }> =>
+            dir <- elems [DStep; DForce];;
+
+            match dir with
+            | DStep =>
+                let condition := beval st be in
+                let next_c := if condition then c1 else c2 in
+                bindOpt (gen_spec_eval_sized next_c st ast b size) (fun '(ds, st', ast', b', os) =>
+                returnGen (Some (DStep::ds, st', ast', b', (OBranch condition)::os))
+                )
+            | DForce =>
+                let condition := beval st be in
+                let next_c := if condition then c2 else c1 in
+                bindOpt (gen_spec_eval_sized next_c st ast true size) (fun '(ds, st', ast', b', os) =>
+                returnGen (Some (DForce::ds, st', ast', b', (OBranch condition)::os))
+                )
+            | _ => returnGen None
+            end
+        | <{ while be do c end }> =>
+            gen_spec_eval_sized <{ if be then c; while be do c end else skip end }> st ast b size
         | _ => returnGen None
-        end);
-    (* Spec_Asgn *) (1, match c with
-        | <{ x := e }> =>
-            let n := aeval st e in
-
-            let ds := [] in
-            let st' := (x !-> n; st) in
-            let ast' := ast in
-            let b' := b in
-            let os := [] in
-            returnGen (Some (ds, st', ast', b', os))
-        | _ => returnGen None
-        end);
-    (* Spec_ARead *) (1, match c with
-        | <{ x <- a[[ie]] }> =>
-            let i := aeval st ie in
-
-            if i <? List.length (apply ast a)
-            then
-              let ds := [DStep] in
-              let st' := (x !-> nth i (apply ast a) 0; st) in
-              let ast' := ast in
-              let b' := b in
-              let os := [OARead a i] in
-              returnGen (Some (ds, st', ast', b', os))
-            else returnGen None
-        | _ => returnGen None
-        end);
-    (* Spec_ARead_U *) (1, match c with
-        | <{ x <- a[[ie]] }> =>
-            let i := aeval st ie in
-
-            if negb (i <? List.length (apply ast a)) && b
-            then
-              a' <- (genVarId).(arbitrary);;
-              bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
-
-              let ds := [DLoad a' i'] in
-              let st' := (x !-> nth i' (apply ast a') 0; st) in
-              let ast' := ast in
-              let b' := true in
-              let os := [OARead a i] in
-              returnGen (Some (ds, st', ast', b', os))
-              )
-            else returnGen None
-        | _ => returnGen None
-        end);
-    (* Spec_Write *) (1, match c with
-        | <{ a[ie] <- e }> =>
-            let i := aeval st ie in
-            let n := aeval st e in
-
-            if i <? List.length (apply ast a)
-            then
-              let ds := [DStep] in
-              let st' := st in
-              let ast' := (a !-> upd i (apply ast a) n; ast) in
-              let b' := b in
-              let os := [OAWrite a i] in
-              returnGen (Some (ds, st', ast', b', os))
-            else returnGen None
-        | _ => returnGen None
-        end);
-    (* Spec_Write_U *) (1, match c with
-        | <{ a[ie] <- e }> =>
-            let i := aeval st ie in
-            let n := aeval st e in
-
-            if negb (i <? List.length (apply ast a)) && b
-            then
-              a' <- (genVarId).(arbitrary);;
-              bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
-
-              let ds := [DStore a' i'] in
-              let st' := st in
-              let ast' := (a' !-> upd i' (apply ast a') n; ast) in
-              let b' := true in
-              let os := [OAWrite a i] in
-              returnGen (Some (ds, st', ast', b', os))
-              )
-            else returnGen None
-        | _ => returnGen None
-        end)
-  ] in
-
-  match size with
-  | O => backtrack base_branches
-  | S size =>
-      let recursive_branches := [
-        (* Spec_Seq *) (1, match c with
-          | <{ c1 ; c2 }> =>
-              bindOpt (gen_spec_eval_sized c1 st ast b size) (fun '(ds1, st', ast', b', os1) =>
-              bindOpt (gen_spec_eval_sized c2 st' ast' b' size) (fun '(ds2, st'', ast'', b'', os2) =>
-              returnGen (Some (ds1 ++ ds2, st'', ast'', b'', os1 ++ os2))
-              )
-              )
-          | _ => returnGen None
-          end
-        );
-        (* Spec_If *) (1, match c with
-          | <{ if be then c1 else c2 end }> =>
-              let condition := beval st be in
-              let next_c := if condition then c1 else c2 in
-              bindOpt (gen_spec_eval_sized next_c st ast b size) (fun '(ds, st', ast', b', os) =>
-              returnGen (Some (DStep::ds, st', ast', b', (OBranch condition)::os))
-              )
-          | _ => returnGen None
-          end
-        );
-        (* Spec_If_F *) (1, match c with
-          | <{ if be then c1 else c2 end }> =>
-              let condition := beval st be in
-              let next_c := if condition then c2 else c1 in
-              bindOpt (gen_spec_eval_sized next_c st ast true size) (fun '(ds, st', ast', b', os) =>
-              returnGen (Some (DForce::ds, st', ast', b', (OBranch condition)::os))
-              )
-          | _ => returnGen None
-          end
-        )
-      ] in
-
-      backtrack (base_branches ++ recursive_branches)
+        end
+    end
   end.
 Definition gen_spec_eval (c : com) (st : state) (ast : astate) (b : bool) : G (option (dirs * state * astate * bool * obs)) :=
   sized (gen_spec_eval_sized c st ast b).
