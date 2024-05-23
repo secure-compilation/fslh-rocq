@@ -114,6 +114,48 @@ Sample (arbitrarySized 2 : G aexp).
 Sample (arbitrarySized 1 : G bexp). (* TODO: these get too big *)
 Sample (arbitrarySized 1 : G com).
 
+(* HIDE: This one no longer works, but was still in some old QC examples:
+Derive Sized for aexp. *)
+
+Fixpoint size_aexp (a:aexp) : nat :=
+  match a with
+  | ANum _ | AId _ => 1
+  | <{ a1 + a2 }>
+  | <{ a1 - a2 }>
+  | <{ a1 * a2 }> => 1 + size_aexp a1 + size_aexp a2
+  end.
+
+QuickChick (forAll arbitrary (fun (a:aexp) =>
+            collect (size_aexp a) true)).
+
+Fixpoint size_bexp (a:bexp) : nat :=
+  match a with
+  | <{ true }> | <{ false }> => 1
+  | <{ a1 = a2 }>
+  | <{ a1 <> a2 }>
+  | <{ a1 <= a2 }>
+  | <{ a1 > a2 }> => 1 + size_aexp a1 + size_aexp a2
+  | <{ ~b }> => 1 + size_bexp b
+  | <{ b1 && b2 }> => 1 + size_bexp b1 + size_bexp b2
+  end.
+
+QuickChick (forAll arbitrary (fun (b:bexp) =>
+            collect (size_bexp b) true)).
+
+Fixpoint size_com (c:com) : nat :=
+  match c with
+  | <{ skip }> => 1
+  | <{ X := a }> => 1 + size_aexp a
+  | <{ c1 ; c2 }> => 1 + size_com c1 + size_com c2
+  | <{ if b then c1 else c2 end }> =>
+      1 + size_bexp b + size_com c1 + size_com c2
+  | <{ while b do c1 end }> =>
+      1 + size_bexp b + size_com c1
+  end.
+
+QuickChick (forAll arbitrary (fun (c:com) =>
+            collect (size_com c) true)).
+
 (* SOONER: I sometimes have troubles with the printing just stopping;
    not sure if it has to do with the instances below, or it's just a
    QuickChick / Coq / Emacs / Proof General / ... bug. For instance,
