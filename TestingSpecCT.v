@@ -1589,7 +1589,7 @@ Fixpoint program_size (c : com) : nat :=
   | _ => 1
   end.
 Definition compute_gas (c : com) (ds : dirs) : nat :=
-  (S (Datatypes.length ds)) + (program_size c).
+  (S (Datatypes.length ds)) * (program_size c).
 Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
   let ist := (st, ast, b, ds) in
   match spec_eval_engine_aux (compute_gas c ds) c ist with
@@ -1795,7 +1795,11 @@ Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (s
             returnGen (Some (ds1 ++ ds2, st'', ast'', b'', os1 ++ os2))
             ))
         | <{ if be then c1 else c2 end }> =>
-            dir <- elems [DStep; DForce];;
+            dir <- (match b with
+              | true => elems [DStep; DForce]
+              | false => returnGen DStep
+              end
+            );;
 
             match dir with
             | DStep =>
