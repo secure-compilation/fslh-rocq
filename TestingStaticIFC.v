@@ -128,6 +128,14 @@ Fixpoint size_aexp (a:aexp) : nat :=
 QuickChick (forAll arbitrary (fun (a:aexp) =>
             collect (size_aexp a) true)).
 
+(* Time Elapsed: 0.533273s *)
+(* QuickChick (forAll arbitrary (fun (a:aexp) => *)
+(*             true)). *)
+
+(* Time Elapsed: 37.837302s -- with discards *)
+(* QuickChick (forAll arbitrary (fun (a:aexp) => *)
+(*             (implication false false))). *)
+
 Fixpoint size_bexp (a:bexp) : nat :=
   match a with
   | <{ true }> | <{ false }> => 1
@@ -155,6 +163,14 @@ Fixpoint size_com (c:com) : nat :=
 
 QuickChick (forAll arbitrary (fun (c:com) =>
             collect (size_com c) true)).
+
+(* Time Elapsed: 2.964364s *)
+(* QuickChick (forAll arbitrary (fun (c:com) => *)
+(*             true)). *)
+
+(* Time Elapsed: 229.742461s -- with discards *)
+(* QuickChick (forAll arbitrary (fun (c:com) => *)
+(*             (implication false false))). *)
 
 (* SOONER: I sometimes have troubles with the printing just stopping;
    not sure if it has to do with the instances below, or it's just a
