@@ -1394,7 +1394,7 @@ Definition bind {A : Type} {B : Type} (e : evaluator A) (f : A -> evaluator B): 
         end
     | RBlewUp _ => RBlewUp B
     | RInvalidDirection _ => RInvalidDirection B
-    | ROutOfFuel _ => RInvalidDirection B
+    | ROutOfFuel _ => ROutOfFuel B
     end.
 Definition ret {A : Type} (value : A) : evaluator A :=
   fun (ist : input_st) => ROk A value [] ist.
