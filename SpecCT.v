@@ -735,28 +735,55 @@ Definition spec_ct_secure P PA c :=
     <(st2, ast2, false, ds)> =[ c ]=> <(st2', ast2', b2', os2)> ->
     os1 = os2.
 
-(* SOONER: Give example programs that satisfy the cryptographic constant-time
-   discipline ([ct_well_typed]), but that are insecure wrt the speculative
-   semantics above.  For instance, one can write secrets to public arrays using
-   Spec_Write_U, and one can read to public registers from secret Spec_ARead_U.
-   Could look both into simple examples exploiting the semantics, and also into
-   more realistic examples that one can also exploit in practice.
+Definition AP : string := "AP".
+Definition AS : string := "AS".
 
-   b - secret array of size n >= 1
-   a - public array of size n >= 1
-   p - public variable
+Definition spec_insecure_prog := 
+  <{{ if 1 > Z then
+        X <- AP[[Z]];
+        if X <= 5 then Y := 1 else Y := 0 end
+      else skip end }}> .
 
-   Realistic example:
-   i := 0;
-   while i < n do
-     p := p + a[i];
-     i := i + 1;
-   end
-
-   Simple but not so realistic example
-   (safe+secure without speculation, but unsafe+insecure with speculation):
-   if false then p := a[n] else skip
-*)
+Example spec_insecure_prog_is_ct_and_spec_unsecure :
+ exists P PA,
+  P ;; PA |-ct- spec_insecure_prog /\ ~ (spec_ct_secure P PA spec_insecure_prog) .
+Proof.
+  exists (X!-> public; Y!-> public; Z!-> public; _ !-> secret).
+  exists  (AP!-> public; AS!-> secret; _ !-> public).
+  split; unfold spec_insecure_prog.
+  - repeat econstructor;
+    replace (public) with (join public public) at 4 by reflexivity;
+    repeat constructor.
+  - intros H.
+    remember (Z!-> 1; _ !-> 0) as st.
+    remember (AP!-> [1]; AS!-> [1;3]; _ !-> []) as ast1.
+    remember (AP!-> [1]; AS!-> [1;7]; _ !-> []) as ast2.
+    remember (DForce :: ([DLoad "AS" 1] ++ [DStep])) as ds.
+    remember ((OBranch false) :: ([OARead "AP" 1] ++ [OBranch true])) as os1.
+    remember ((OBranch false) :: ([OARead "AP" 1] ++ [OBranch false])) as os2.
+    assert (Heval1: 
+    <(st, ast1, false, ds )> =[ spec_insecure_prog ]=> <( Y!-> 1; X!-> 3; st, ast1, true, os1)>).
+    { unfold spec_insecure_prog; subst.
+      eapply Spec_If_F. eapply Spec_Seq.
+      - eapply Spec_ARead_U; simpl; eauto.
+      - eapply Spec_If; simpl. eapply Spec_Asgn; eauto. }
+    assert (Heval2: 
+      <(st, ast2, false, ds )> =[ spec_insecure_prog ]=> <( Y!-> 0; X!-> 7; st, ast2, true, os2)>).
+      { unfold spec_insecure_prog; subst.
+        eapply Spec_If_F. eapply Spec_Seq.
+        - eapply Spec_ARead_U; simpl; eauto.
+        - eapply Spec_If; simpl. eapply Spec_Asgn; eauto. }
+    subst. eapply H in Heval1.
+    + eapply Heval1 in Heval2. inversion Heval2.
+    + eapply pub_equiv_refl.
+    + intros x Hx. destruct (String.eqb_spec "AP" x) as [HeqAP | HneqAP];
+      destruct (String.eqb_spec "AS" x) as [HeqAS | HneqAS].
+      * subst. do 2 rewrite t_update_eq. reflexivity.
+      * subst. do 2 rewrite t_update_eq. reflexivity.
+      * subst. rewrite t_update_neq in Hx; [| assumption]. 
+        rewrite t_update_eq in Hx. discriminate.
+      * do 4 (rewrite t_update_neq; [| assumption]). reflexivity.
+Qed.
 
 (* HIDE: Just to warm up formalized the first lemma in the Spectre Declassified
    paper: Lemma 1: structural properties of execution *)
