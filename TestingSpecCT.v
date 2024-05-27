@@ -463,8 +463,7 @@ Definition apply {A:Type} (m : total_map A) (x:string) : A :=
                end
   end.
 
-Check List.fold_left.
-(* Like List.fold_left, but also give the list before and after *)
+(* Like List.fold_left, but also gives the list before and after *)
 Definition fold_extra {A : Type} {B : Type} (f : A -> list B -> B -> list B -> A) (l : list B) (v : A) : A :=
   let fix aux (processed : list B) (incoming : list B) (acc : A) :=
     match incoming with
