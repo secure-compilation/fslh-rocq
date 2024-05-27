@@ -735,11 +735,13 @@ Definition spec_ct_secure P PA c :=
     <(st2, ast2, false, ds)> =[ c ]=> <(st2', ast2', b2', os2)> ->
     os1 = os2.
 
+(** ** Example program that is constant time and insecure under speculative execution. *)
+
 Definition AP : string := "AP".
 Definition AS : string := "AS".
 
 Definition spec_insecure_prog := 
-  <{{ if 1 > Z then
+  <{{ if Z <= 0 then
         X <- AP[[Z]];
         if X <= 5 then Y := 1 else Y := 0 end
       else skip end }}> .
