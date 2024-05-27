@@ -402,7 +402,7 @@ Notation "a '[' i ']'  '<-' e"  :=
                                         " else " ++ showComRec z ++ " end)"
          | <{while x do y end}> => "(while " ++ show x ++ " do "
                                             ++ showComRec y ++ " end)"
-         | <{ x <- a[[ i ]] }> => "(" ++ show x ++ " <- " ++ show a ++ "[[ " ++ show i ++ "]])"
+         | <{ x <- a[[ i ]] }> => "(" ++ show x ++ " <- " ++ show a ++ "[[" ++ show i ++ "]])"
          | <{ a[ i ] <- e }> => "(" ++ show a ++ "[" ++ show i ++ "] <- " ++ show e ++ ")"
          end
        in showComRec)%string
@@ -1308,10 +1308,10 @@ Print observation.
     control speculation behavior. *)
 
 Inductive direction :=
-| DStep
-| DForce
-| DLoad (a : string) (i : nat)
-| DStore (a : string) (i : nat).
+  | DStep
+  | DForce
+  | DLoad (a : string) (i : nat)
+  | DStore (a : string) (i : nat).
 
 Definition dirs := list direction.
 
