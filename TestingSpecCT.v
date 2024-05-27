@@ -1378,90 +1378,104 @@ Inductive output_st (A : Type): Type :=
   | RBlewUp : output_st A
   | RInvalidDirection : output_st A
   | ROk : A -> obs -> input_st -> output_st A.
+
 (* An 'evaluator A'. This is the monad.
    It transforms an input state into an output state, returning an A. *)
-Definition evaluator (A : Type): Type := input_st -> (output_st A).
+Record evaluator (A : Type) : Type := mkEvaluator
+  { evaluate : input_st -> output_st A }.
 (* An interpreter is a special kind of evaluator *)
-Definition interpreter : Type := evaluator unit.
+Definition interpreter: Type := evaluator unit.
 
 (* Generic monad operators *)
-Definition bind {A : Type} {B : Type} (e : evaluator A) (f : A -> evaluator B): evaluator B :=
-  fun (ist : input_st) =>
-    match e ist with
-    | ROk _ value os1 ist'  => match (f value) ist' with
-        | ROk _ value os2 ist'' => ROk B value (os1 ++ os2) ist''
-        | ret => ret
+Instance monadEvaluator: Monad evaluator :=
+  { ret := fun A value => mkEvaluator A (fun (ist : input_st) => ROk A value [] ist);
+    bind := fun A B e f =>
+      mkEvaluator B (fun (ist : input_st) =>
+        match evaluate A e ist with
+        | ROk _ value os1 ist'  => match evaluate B (f value) ist' with
+            | ROk _ value os2 ist'' => ROk B value (os1 ++ os2) ist''
+            | ret => ret
+            end
+        | RBlewUp _ => RBlewUp B
+        | RInvalidDirection _ => RInvalidDirection B
+        | ROutOfFuel _ => ROutOfFuel B
         end
-    | RBlewUp _ => RBlewUp B
-    | RInvalidDirection _ => RInvalidDirection B
-    | ROutOfFuel _ => ROutOfFuel B
-    end.
-Definition ret {A : Type} (value : A) : evaluator A :=
-  fun (ist : input_st) => ROk A value [] ist.
+      )
+   }.
 
-(* Not reusing the usual >>= notation since it conflicts with the Monads from Coq's library *)
-Notation "c >>: f" := (bind c f) (at level 58, left associativity).
-Notation "c >> f" := (bind c (fun _ => f)) (at level 58, left associativity).
-
-(* specialized binders *)
+(* specialized operators *)
 Definition finish : interpreter := ret tt.
 
 Definition get_var (name : string): evaluator nat :=
-  fun (ist : input_st) =>
+  mkEvaluator _ (fun (ist : input_st) =>
     let '(st, _, _, _) := ist in
-    ret (apply st name) ist.
+    evaluate _ (ret (apply st name)) ist
+  ).
 Definition get_arr (name : string): evaluator (list nat) :=
-  fun (ist : input_st) =>
+  mkEvaluator _ (fun (ist : input_st) =>
     let '(_, ast, _, _) := ist in
-    ret (apply ast name) ist.
+    evaluate _ (ret (apply ast name)) ist
+  ).
 Definition set_var (name : string) (value : nat) : interpreter :=
-  fun (ist : input_st) =>
+  mkEvaluator _ (fun (ist : input_st) => 
     let '(st, ast, b, ds) := ist in
     let new_st := (name !-> value ; st) in
-    finish (new_st, ast, b, ds).
+    evaluate _ finish (new_st, ast, b, ds)
+  ).
 Definition set_arr (name : string) (value : list nat) : interpreter :=
-  fun (ist : input_st) =>
+  mkEvaluator _ (fun (ist : input_st) => 
     let '(st, ast, b, ds) := ist in
     let new_ast := (name !-> value ; ast) in
-    finish (st, new_ast, b, ds).
+    evaluate _ finish (st, new_ast, b, ds)
+  ).
 Definition start_speculating : interpreter :=
-  fun (ist : input_st) =>
+  mkEvaluator _ (fun (ist : input_st) => 
     let '(st, ast, _, ds) := ist in
-    finish (st, ast, true, ds).
+    evaluate _ finish (st, ast, true, ds)
+  ).
 Definition is_speculating : evaluator bool :=
-  fun (ist : input_st) =>
+  mkEvaluator _ (fun (ist : input_st) =>
     let '(_, _, b, _) := ist in
-    ret b ist.
+    evaluate _ (ret b) ist
+  ).
 Definition eval_aexp (a : aexp) : evaluator nat :=
-  fun (ist : input_st) =>
+  mkEvaluator _ (fun (ist : input_st) =>
     let '(st, _, _, _) := ist in
     let v := aeval st a in
-    ret v ist.
+    evaluate _ (ret v) ist
+  ).
 Definition eval_bexp (b : bexp) : evaluator bool :=
-  fun (ist : input_st) =>
+  mkEvaluator _ (fun (ist : input_st) =>
     let '(st, _, _, _) := ist in
     let v := beval st b in
-    ret v ist.
-
+    evaluate _ (ret v) ist
+  ).
 Definition raise_invalid_direction : interpreter :=
-  fun _ => RInvalidDirection unit.
+  mkEvaluator _ (fun _ =>
+    RInvalidDirection _
+  ).
 Definition raise_explosion : interpreter :=
-  fun _ => RBlewUp unit.
+  mkEvaluator _ (fun _ =>
+    RBlewUp _
+  ).
 Definition raise_out_of_fuel : interpreter :=
-  fun _ => ROutOfFuel unit.
-
+  mkEvaluator _ (fun _ =>
+    ROutOfFuel _
+  ).
 Definition observe (o : observation) : interpreter :=
-  fun (ist : input_st) => ROk unit tt [o] ist.
-
+  mkEvaluator _ (fun (ist : input_st) =>
+    ROk _ tt [o] ist
+  ).
 Definition fetch_direction : evaluator direction :=
-  fun (ist : input_st) =>
+  mkEvaluator _ (fun (ist : input_st) =>
     let '(st, ast, b, ds) := ist in
     match ds with
     | dir::ds' =>
         let new_ist := (st, ast, b, ds') in
-        ret dir new_ist
-    | [] => RInvalidDirection direction
-    end.
+        evaluate _ (ret dir) new_ist
+    | [] => RInvalidDirection _
+    end
+  ).
 
 Fixpoint spec_eval_engine_aux (f : nat) (c : com) : interpreter :=
   match f with
@@ -1472,29 +1486,29 @@ Fixpoint spec_eval_engine_aux (f : nat) (c : com) : interpreter :=
   | <{ skip }> =>
       finish
   | <{ x := e }> =>
-      eval_aexp e >>: fun v =>
-      set_var x v >>
-      finish
+      v <- eval_aexp e;;
+      set_var x v
   | <{ c1 ; c2 }> =>
-      spec_eval_engine_aux f c1 >>
+      spec_eval_engine_aux f c1;;
       spec_eval_engine_aux f c2
   | <{ if b then ct else cf end }> =>
-      eval_bexp b >>: fun condition =>
-      fetch_direction >>: fun dir =>
+      condition <- eval_bexp b;;
+      dir <- fetch_direction;;
       match dir with
       | DStep =>
           (* normal execution... *)
-          let next_c := if condition then ct else cf in
+          (* TODO: why can't I just use 'if condition then ct else cf end'? *)
+          let next_c := if Bool.eqb condition true then ct else cf in
 
-          observe (OBranch condition) >>
+          observe (OBranch condition);;
           spec_eval_engine_aux f next_c
       | DForce =>
           (* branches swapped! *)
           let next_c := if condition then cf else ct in
 
-          start_speculating >>
+          start_speculating;;
 
-          observe (OBranch condition) >>
+          observe (OBranch condition);;
           spec_eval_engine_aux f next_c
       | _ => raise_invalid_direction
       end
@@ -1508,23 +1522,23 @@ Fixpoint spec_eval_engine_aux (f : nat) (c : com) : interpreter :=
       end
     }>
   | <{ x <- a[[ie]] }> =>
-      eval_aexp ie >>: fun i =>
-      get_arr a >>: fun l =>
-      is_speculating >>: fun b =>
-      fetch_direction >>: fun dir =>
+      i <- eval_aexp ie;;
+      l <- get_arr a;;
+      b <- is_speculating;;
+      dir <- fetch_direction;;
       match dir with
       | DStep =>
           if (i <? List.length l) then
-            observe (OARead a i) >>
+            observe (OARead a i);;
             set_var x (nth i l 0)
-          else if b then
+          else if Bool.eqb b true then (* TODO: get rid of Bool.eqb *)
             (* If we're speculating, then DStep is an invalid direction *)
             raise_invalid_direction
           else
             (* If we're not speculating, then it's just a program error *)
             raise_explosion
       | DLoad a' i' =>
-          get_arr a' >>: fun l' =>
+          l' <- get_arr a';;
 
           (* The normal read must be out of bounds *)
           if negb (i <? List.length l) &&
@@ -1532,32 +1546,31 @@ Fixpoint spec_eval_engine_aux (f : nat) (c : com) : interpreter :=
              (i' <? List.length l') &&
              (* Only allowed when speculating *)
              b then
-            observe (OARead a i) >>: fun _ =>
-            set_var x (nth i' l' 0) >>: fun _ =>
-            finish
+            observe (OARead a i);;
+            set_var x (nth i' l' 0)
           else
             raise_invalid_direction
       | _ => raise_invalid_direction
       end
   | <{ a[ie] <- e }> =>
-      eval_aexp e >>: fun n =>
-      eval_aexp ie >>: fun i =>
-      get_arr a >>: fun l =>
-      is_speculating >>: fun b =>
-      fetch_direction >>: fun dir =>
+      n <- eval_aexp e;;
+      i <- eval_aexp ie;;
+      l <- get_arr a;;
+      b <- is_speculating;;
+      dir <- fetch_direction;;
       match dir with
       | DStep =>
           if (i <? List.length l) then
-            observe (OAWrite a i) >>: fun _ =>
+            observe (OAWrite a i);;
             set_arr a (upd i l n)
-          else if b then
+          else if Bool.eqb b true then (* TODO: get rid of Bool.eqb *)
             (* If we're speculating, then DStep is an invalid direction *)
             raise_invalid_direction
           else
             (* If we're not speculating, then it's just a program error *)
             raise_explosion
       | DStore a' i' =>
-          get_arr a' >>: fun l' =>
+          l' <- get_arr a';;
 
           (* The normal read must be out of bounds *)
           if negb (i <? List.length l) &&
@@ -1565,7 +1578,7 @@ Fixpoint spec_eval_engine_aux (f : nat) (c : com) : interpreter :=
                (i' <? List.length l') &&
                (* Only allowed when speculating *)
                b then
-            observe (OAWrite a i) >>
+            observe (OAWrite a i);;
             set_arr a' (upd i' l' n)
           else
             raise_invalid_direction
@@ -1587,7 +1600,7 @@ Definition compute_gas (c : com) (ds : dirs) : nat :=
   (S (Datatypes.length ds)) * (program_size c).
 Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
   let ist := (st, ast, b, ds) in
-  match spec_eval_engine_aux (compute_gas c ds) c ist with
+  match evaluate _ (spec_eval_engine_aux (compute_gas c ds) c) ist with
   | ROk _ _ obs ist => let '(st, ast, b, _) := ist in
       Some (st, ast, b, obs)
   | _ => None
@@ -1595,7 +1608,7 @@ Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds
 (* In addition, checks that we provided exactly enough directions *)
 Definition spec_eval_engine_strict (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
   let ist := (st, ast, b, ds) in
-  match spec_eval_engine_aux (compute_gas c ds) c ist with
+  match evaluate _ (spec_eval_engine_aux (compute_gas c ds) c) ist with
   | ROk _ _ obs ist => let '(ct, ast, b, ds) := ist in
       match ds with
       | [] => Some (st, ast, b, obs)
@@ -1606,7 +1619,7 @@ Definition spec_eval_engine_strict (c : com) (st : state) (ast : astate) (b : bo
 
 Theorem cannot_run_out_of_fuel :
   forall c st ast b ds f,
-    f >= (compute_gas c ds) -> spec_eval_engine_aux f c (st, ast, b, ds) <> ROutOfFuel unit.
+    f >= (compute_gas c ds) -> evaluate _ (spec_eval_engine_aux f c) (st, ast, b, ds) <> ROutOfFuel unit.
 Proof.
 Admitted.
 
