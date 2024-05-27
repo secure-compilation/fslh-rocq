@@ -493,11 +493,7 @@ Definition fold_extra {A : Type} {B : Type} (f : A -> list B -> B -> list B -> A
       (List.map
          (fun m' => (d, m'))
          (fold_extra (fun acc before '(k, v) after =>
-            let modified_entry := List.map (fun v' =>
-                before ++ after
-              ) (shrink v) in
-
-            modified_entry ++ acc
+            (before ++ after) :: acc
          ) m [])
       )
   }.
