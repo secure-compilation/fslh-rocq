@@ -395,7 +395,7 @@ Notation "a '[' i ']'  '<-' e"  :=
       (let fix showComRec (a:com) : string :=
          match a with
          | <{skip}> => "skip"
-         | <{x := y}> => "(" ++ show x ++ ":= " ++ show y ++ ")"
+         | <{x := y}> => "(" ++ show x ++ " := " ++ show y ++ ")"
          | <{x ; y}> => "(" ++ showComRec x ++ " ; " ++ showComRec y ++ ")"
          | <{if x then y else z end}> => "(if " ++ show x ++
                                         " then " ++ showComRec y ++
