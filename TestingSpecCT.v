@@ -1375,7 +1375,7 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
 Definition input_st : Type := state * astate * bool * dirs.
 Inductive output_st (A : Type): Type :=
   | ROutOfFuel : output_st A
-  | RBlewUp : output_st A
+  | ROutOfBounds : output_st A
   | RInvalidDirection : output_st A
   | ROk : A -> obs -> input_st -> output_st A.
 
@@ -1396,7 +1396,7 @@ Instance monadEvaluator: Monad evaluator :=
             | ROk _ value os2 ist'' => ROk B value (os1 ++ os2) ist''
             | ret => ret
             end
-        | RBlewUp _ => RBlewUp B
+        | ROutOfBounds _ => ROutOfBounds B
         | RInvalidDirection _ => RInvalidDirection B
         | ROutOfFuel _ => ROutOfFuel B
         end
@@ -1454,9 +1454,9 @@ Definition raise_invalid_direction : interpreter :=
   mkEvaluator _ (fun _ =>
     RInvalidDirection _
   ).
-Definition raise_explosion : interpreter :=
+Definition raise_out_of_bounds : interpreter :=
   mkEvaluator _ (fun _ =>
-    RBlewUp _
+    ROutOfBounds _
   ).
 Definition raise_out_of_fuel : interpreter :=
   mkEvaluator _ (fun _ =>
@@ -1536,7 +1536,7 @@ Fixpoint spec_eval_engine_aux (f : nat) (c : com) : interpreter :=
             raise_invalid_direction
           else
             (* If we're not speculating, then it's just a program error *)
-            raise_explosion
+            raise_out_of_bounds
       | DLoad a' i' =>
           l' <- get_arr a';;
 
@@ -1568,7 +1568,7 @@ Fixpoint spec_eval_engine_aux (f : nat) (c : com) : interpreter :=
             raise_invalid_direction
           else
             (* If we're not speculating, then it's just a program error *)
-            raise_explosion
+            raise_out_of_bounds
       | DStore a' i' =>
           l' <- get_arr a';;
 
