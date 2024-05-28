@@ -22,20 +22,31 @@ Set Default Goal Selector "!".
     addition to ensuring program counter security, CCT requires
     programmers to not perform memory accesses depending on secrets.
 
-    To model this we first extend the Imp language with arrays. We
-    need such an extension, since otherwise variable accesses in the
+    To model this we will make the Imp language more realistic by adding arrays.
+    We need such an extension, since otherwise variable accesses in the
     original Imp map to memory operations at constant locations, which
     thus cannot depend on secrets, so CCT trivially holds for all
     programs in Imp. Array indices on the other hand are computed at
     runtime, which leads to accessing memory addresses that can depend
-    on secrets, making CCT non-trivial for Imp with arrays. *)
+    on secrets, making CCT non-trivial for Imp with arrays.
+
+    For instance, here is a simple program that is pc secure (since it does no
+    branches), but not constant-time secure (since it's accesses memory based on
+    secret information):
+[[
+   x <- a[[secret]]
+]]
+*)
+
+(* SOONER: Formalize this example later in the chapter. *)
 
 (** ** Constant-time conditional *)
 
 (** But first, we extend the arithmetic expressions of Imp with an [b ? e1 : e2]
     conditional that executes in constant time (for instance using a special
     constant-time conditional move instruction). This constant-time conditional
-    makes arithmetic and boolean expressions mutually inductive. *)
+    will be used in one of our countermeasures below, but it complicates things
+    a bit, since it makes arithmetic and boolean expressions mutually inductive. *)
 
 Inductive aexp : Type :=
   | ANum (n : nat)
@@ -60,7 +71,8 @@ Combined Scheme aexp_bexp_mutind from aexp_bexp_ind,bexp_aexp_ind.
 
 (** ** Typing Constant-time conditional *)
 
-(** Typing of arithmetic and boolean expressions also becomes mutually inductive. *)
+(** Typing of arithmetic and boolean expressions will also become
+    mutually inductive. *)
 
 (** [[[
         P|-b- be \in l   P |-a- a1 \in l1    P |-a- a2 \in l2
@@ -118,9 +130,9 @@ Inductive com : Type :=
   | ARead (x : string) (a : string) (i : aexp) (* <--- NEW *)
   | AWrite (a : string) (i : aexp) (e : aexp)  (* <--- NEW *).
 
-(* HIDE: CH: Wanted to take a:aexp and compute the accessed array, but
-   our maps only have string keys, so had to settle with a:string for
-   now. Seems this still fine though. *)
+(* HIDE: CH: Originally wanted to take a:aexp and compute the accessed array,
+   but our maps only have string keys, so had to settle with a:string for
+   now. Seems this still completely okay in retrospect though. *)
 
 (* HIDE: CH: One alternative (also pointed out by Sven Argo) is that if
    we generalize/duplicate our map library beyond strings we can just
@@ -139,7 +151,9 @@ Inductive com : Type :=
    on types, while currently we manged to avoid that dependency, at
    the cost of duplicating the state. If avoiding the dependency is
    important we could dynamically prevent nat vs array type confusion
-   for now and only return later to prevent it using static typing? *)
+   for now and only return later to prevent it using static typing?
+   Anyway, for now everything seems fine as is and it also matches
+   what papers like Spectre Declassified (see below) already do. *)
 
 (* TERSE: HIDEFROMHTML *)
 
@@ -241,6 +255,8 @@ Definition obs := list observation.
 
 (** We define an instrumented big-step operational semantics based on these
    observations. *)
+
+(* SOONER: Write this down in informal rule format. *)
 
 (* TERSE: HIDEFROMHTML *)
 Reserved Notation
@@ -682,22 +698,31 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
   where "<( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
     (spec_eval c st ast b ds stt astt bb os).
 
-(* HIDE: This semantics already lost one property of Imp, which is only
-   nonterminating executions don't produce a final state. Now if the input
-   directions don't match what the program expects we also get stuck, which for
-   our big-step semantics can't be distinguished from nontermination. This is
-   probably not a problem, but just wanted to mention it. *)
+(* HIDE: This semantics already lost one property of Imp: only nonterminating
+   executions don't produce a final state. Now if the input directions don't
+   match what the program expects or if we non-speculatively access arrays out
+   of bounds we also get stuck, which for our big-step semantics can't be
+   distinguished from nontermination. This is probably not a problem for now,
+   but just wanted to mention it. *)
 
-(** HIDE: Without fences the speculation bit [b] is just a form of instrumentation
-    that doesn't affect the semantics, except adding more stuckness for the [_U] rules. *)
+(* HIDE: Making non-speculative out-of-bounds array accesses stuck is a design
+   decision that matches Spectre Declassified. For languages like Jasmin they
+   use static analysis to verify that programs are non-speculatively safe, so
+   only speculative executions can cause OOB accesses. *)
 
-(* LATER: Could also add fences, but they are not needed for SLH. They would add
+(* HIDE: Without fences the speculation bit [b] is mostly a form of
+   instrumentation that doesn't affect the semantics, except for adding some
+   stuckness for the [_U] rules, corresponding to non-speculative OOB accesses. *)
+
+(* LATER: Could also add fences, but they are not needed for SLH, beyond for
+   enforcing that the speculation flag starts false, which can also be assumed.
+   Fences would add
    a bit of complexity to the big-step semantics, since they behave like a halt
    instruction that prematurely ends execution, which means adding at least one
    more rule for sequencing (basically an error monad, but with a (halt) bit of
    cleverness we can probably avoid extra rules for if and while, since we're
    just threading through things). We likely don't want to treat this stuckness
-   as not producing a final state though, since a stuck fence should be final
+   as not producing a final state though, since a stuck fence should be a final
    state in their small-step semantics (actually they messed that up,
    see next point). *)
 
@@ -705,13 +730,8 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    two IEEE SP 2023 papers. The fact that their rule [Seq-Skip] requires a step
    seems wrong if first command in the sequence is already skip. Also the way
    they define final results seem wrong for stuck fences, and that would either
-   need to be fixed to include stuck fences deep inside or to bubble up stuck
-   fences to the top (error monad, see prev point). *)
-
-(* HIDE: Other fixes we did are to their ideal semantics where in (Ideal_ARead)
-   we are allowing mis-speculated in-bound reads and where we removed
-   (Ideal_ARead_Prot), by merging it with the other two rules and producing the
-   correct direction and removed harmful preconditions in both cases. *)
+   need to be fixed to include stuck fences deep inside as final results 
+   or to bubble up stuck fences to the top (error monad, see prev point). *)
 
 (* HIDE: One design decision here is to neither consume DSteps not to generate
    dummy observations for skip and (register) assignment commands. This leads to
@@ -735,7 +755,7 @@ Definition spec_ct_secure P PA c :=
     <(st2, ast2, false, ds)> =[ c ]=> <(st2', ast2', b2', os2)> ->
     os1 = os2.
 
-(** ** Example program that is constant time and insecure under speculative execution. *)
+(** ** Example constant-time program that is insecure under speculative execution. *)
 
 Definition AP : string := "AP".
 Definition AS : string := "AS".
@@ -869,6 +889,11 @@ Fixpoint sel_slh (P:pub_vars) (c:com) :=
   end)%string.
 
 (** To prove this transformation secure, Spectre Declassified uses an idealized semantics *)
+
+(* HIDE: We had to fix their ideal semantics for the proofs to go though: (1) in
+   (Ideal_ARead) we are allowing mis-speculated in-bound reads; (2) we removed
+   (Ideal_ARead_Prot), by merging it with the other two rules and producing the
+   correct direction; and (3) removed harmful preconditions in both cases. *)
 
 Reserved Notation
          "P '|-' '<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
@@ -1105,7 +1130,8 @@ Qed.
 
 Ltac split4 := split; [|split; [| split] ].
 
-Lemma pub_equiv_update_public : forall P {A:Type} (t1 t2 : total_map A) (X :string) (a1 a2 :A),
+Lemma pub_equiv_update_public : forall P {A:Type}
+    (t1 t2 : total_map A) (X :string) (a1 a2 :A),
   pub_equiv P t1 t2 ->
   P X = public ->
   a1 = a2 ->
@@ -1117,7 +1143,8 @@ Proof.
   - do 2 (rewrite t_update_neq;[| auto]). eapply Hequiv; eauto.
 Qed. 
 
-Lemma pub_equiv_update_secret : forall P {A:Type} (t1 t2 : total_map A) (X :string) (a1 a2 :A),
+Lemma pub_equiv_update_secret : forall P {A:Type}
+    (t1 t2 : total_map A) (X :string) (a1 a2 :A),
   pub_equiv P t1 t2 ->
   P X = secret ->
   pub_equiv P (X!-> a1; t1) (X!-> a2; t2).
@@ -1354,11 +1381,6 @@ Open Scope string_scope.
 
 (** To simplify some proofs we also restrict to while-free programs for now. *)
 
-(* SOONER: Even something as simple as [sel_slh_flag] below turns out to be hard
-   for while loops, since it has the flavour of backwards compiler
-   correctness. For backwards compiler correctness with while we probably need
-   to use a small-step semantics and a simulation direction flipping trick? *)
-
 Fixpoint no_while (c:com) : Prop :=
   match c with
   | <{{while _ do _ end}}> => False
@@ -1368,6 +1390,15 @@ Fixpoint no_while (c:com) : Prop :=
   end.
 
 (** As a warm-up we prove that [sel_slh] properly updates the variable "b". *)
+
+(* SOONER: Even something as simple as [sel_slh_flag] below turns out to be hard
+   for while loops, since it has the flavour of backwards compiler correctness
+   (BCC). For backwards compiler correctness with while we probably need to use
+   a small-step semantics and a simulation direction flipping trick? Any chance
+   that trick can be made to work for a big-step semantics? *)
+
+(* HIDE *)
+(* CH: Here are a couple of failed attempts at generalizing to while loops. *)
 
 (** We start with a failed syntactic generalization *)
 
@@ -1431,6 +1462,7 @@ Proof.
   intros c P s a b ds s' a' b' os Hunused Hsb Heval.
   eapply sel_slh_flag_gen; eauto. apply cequiv_refl.
 Abort.
+(* /HIDE *)
 
 Lemma sel_slh_flag : forall c P s a (b:bool) ds s' a' (b':bool) os,
   unused "b" c ->
@@ -1465,7 +1497,8 @@ Qed.
 
 (** We now prove that [sel_slh] implies the ideal semantics. *)
 
-(* HIDE: no longer used in [sel_slh_ideal], but maybe still useful (TBD) *)
+(* HIDE *)
+(* CH: no longer used in [sel_slh_ideal], but maybe still useful (TBD) *)
 Lemma ideal_unused_same : forall P st ast b ds c st' ast' b' os X,
   unused X c ->
   P |- <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> ->
@@ -1482,6 +1515,7 @@ Proof.
     + apply IHHeval; tauto. 
   - (* While *) apply IHHeval. simpl. tauto.
 Qed.
+(* /HIDE *)
 
 Lemma aeval_beval_unused_update : forall X st n, 
   (forall ae, a_unused X ae -> 
@@ -1686,9 +1720,11 @@ Proof.
   eapply ideal_spec_ct_secure; eauto.
 Qed.
 
+(* HIDE *)
 (* HIDE: The less useful for security direction of the idealized semantics being
-   equivalent to [sel_slh]; easier to prove even for while (forwards compiler
-   correctness). *)
+   equivalent to [sel_slh]; easier to prove even for while, since it has the
+   flavor of forwards compiler correctness (FCC). This would only become useful
+   if we find an easy way to apply the FCC to BCC trick even for big-step semantics. *)
 
 Lemma spec_seq_assoc3 : forall st ast b ds c1 c2 c3 st' ast' b' os,
   <( st, ast, b, ds )> =[ c1; c2; c3 ]=> <( st', ast', b', os )> ->
@@ -1873,3 +1909,5 @@ Qed.
 (* HIDE: Moving syntactic constraints about ds and os out of the conclusions of
    rules and into equality premises could make this proof script less
    verbose. Maybe just define "smart constructors" for that? *)
+
+(* /HIDE *)
