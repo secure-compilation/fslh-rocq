@@ -86,6 +86,9 @@ Definition W : string := "W".
 Definition X : string := "X".
 Definition Y : string := "Y".
 Definition Z : string := "Z".
+Definition A : string := "A".
+Definition AP : string := "AP".
+Definition AS : string := "AS".
 
 Coercion AId : string >-> aexp.
 Coercion ANum : nat >-> aexp.
@@ -797,9 +800,6 @@ Definition spec_ct_secure P PA c :=
     os1 = os2.
 
 (** ** Example constant-time program that is insecure under speculative execution. *)
-
-Definition AP : string := "AP".
-Definition AS : string := "AS".
 
 Definition spec_insecure_prog := 
   <{{ if Z <= 0 then
