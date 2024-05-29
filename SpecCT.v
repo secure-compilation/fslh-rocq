@@ -256,7 +256,48 @@ Definition obs := list observation.
 (** We define an instrumented big-step operational semantics based on these
    observations. *)
 
-(* SOONER: Write this down in informal rule format. *)
+(** [[[
+        
+          ----------------------------------------     (CTE_Skip)
+          <(st , ast)> =[ skip ]=> <(st, ast, [])>
+
+                            aeval st e = n
+      --------------------------------------------------    (CTE_Asgn)
+      <(st, ast)> =[ x := e ]=> <(x !-> n; st, ast, [])>
+
+            <(st, ast)> =[ c1 ]=> <(st', ast', os1)>    
+            <(st', ast')> =[ c2 ]=> <(st'', ast'', os2)>
+      -----------------------------------------------------   (CTE_Seq)
+      <(st, ast)>  =[ c1 ; c2 ]=> <(st'', ast'', os1++os2)>
+
+                  beval st b = true
+                  <(st, ast)> =[ c1 ]=> <(st', ast', os1)>
+  ---------------------------------------------------------------------------   (* CTE_IfTrue *)
+  <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', OBranch true::os1)>
+
+                  beval st b = false
+                  <(st, ast)> =[ c2 ]=> <(st', ast', os1)>
+  ----------------------------------------------------------------------------    (* CTE_IfFalse *)
+  <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', OBranch false::os1)>
+
+  <(st,ast)> =[ if b then c; while b do c end else skip end ]=> <(st', ast', os)>
+  -------------------------------------------------------------------------------   (* CTE_While *)
+              <(st,ast)> =[ while b do c end ]=> <(st', ast', os)>
+
+                    aeval st ie = i
+                    i < length (ast a)
+  --------------------------------------------------------------------------------    (* CTE_AREad *)
+  <(st, ast)> =[ x <- a[[ie]] ]=> <(x !-> nth i (ast a) 0; st, ast, [OARead a i])>
+  
+                                aeval st e = n
+                                aeval st ie = i
+                                i < length (ast a)
+    -------------------------------------------------------------------------------   (* CTE_Write *)
+    <(st, ast)> =[ a[ie] <- e ]=> <(st, a !-> upd i (ast a) n; ast, [OAWrite a i])>
+
+
+]]]
+*)
 
 (* TERSE: HIDEFROMHTML *)
 Reserved Notation
