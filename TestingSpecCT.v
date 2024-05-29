@@ -498,7 +498,7 @@ Definition fold_extra {A : Type} {B : Type} (f : A -> list B -> B -> list B -> A
       )
   }.
 
-(* Now that we have these maps, use them to define of programs execute *)
+(* Now that we have these maps, use them to define how programs execute *)
 Definition state := total_map nat.
 Definition astate := total_map (list nat).
 
