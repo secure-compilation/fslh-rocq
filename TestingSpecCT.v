@@ -1306,82 +1306,69 @@ Inductive ct_well_typed (P:pub_vars) (PA:pub_arrs) : com -> Prop :=
 where "P !! PA '|-ct-' c" := (ct_well_typed P PA c).
 (* TERSE: /HIDEFROMHTML *)
 
-Fixpoint gen_ct_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat): G com :=
+Fixpoint gen_ct_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G com :=
   let skip := ret <{ skip }> in
+  let base_ctors := [
+    (* Skip *)
+    skip;
 
-  (* TODO: not using 'additional_ctors' :/ *)
-  let additional_ctors := match size with
-  | 0 => []
-  | S size' =>
-      let seq_command := (
-        c1 <- gen_ct_well_typed_sized P PA size';;
-        c2 <- gen_ct_well_typed_sized P PA size';;
-        ret <{ c1 ; c2 }>
-      ) in
-      let if_command := (
-        b <- gen_bexp_with_label_sized P public 2;;
-        c1 <- gen_ct_well_typed_sized P PA size';;
-        c2 <- gen_ct_well_typed_sized P PA size';;
-        ret <{ if b then c1 else c1 end }>
-      ) in
-      let while_command := (
-        b <- gen_bexp_with_label_sized P public 2;;
-        c <- gen_ct_well_typed_sized P PA size';;
-        ret <{ while b do c end }>
-      ) in
-
-      [seq_command; if_command; while_command]
-  end in
-
-  secret_assignements <-
-    (* Assignements where the value is secret *)
-    (a <- gen_aexp_with_label_sized P secret 2;;
-     X <- gen_can_flow P secret;;
-     match X with
-     | Some X => ret [ret <{ X := a }>]
-     | None => ret []
-     end);;
-  public_read <-
-    (* Array reads where the source is public *)
-    (i <- gen_aexp_with_label_sized P public 2;;
-     a <- gen_arr_with_label PA public;;
-     x <- arbitrary;;
-     match (a, i) with
-     | (Some a, i) => ret [ret <{ x <- a[[i]] }>]
-     | _ => ret []
-     end);;
-  secret_read <-
-    (* Array reads where the source is secret *)
-    (i <- gen_aexp_with_label_sized P public 2;;
-     a <- gen_arr_with_label PA secret;;
-     x <- gen_var_with_label P secret;;
-     match (a, i, x) with
-     | (Some a, i, Some x) => ret [ret <{ x <- a[[i]] }>]
-     | _ => ret []
-     end);;
-  secret_write <-
-    (* Array writes where the source is secret *)
-    (e <- gen_aexp_with_label_sized P secret 2;;
-     i <- gen_aexp_with_label_sized P public 2;;
-     a <- gen_arr_with_label PA secret;;
-     match (a, i, e) with
-     | (Some a, i, x) => ret [ret <{ a[i] <- e }>]
-     | _ => ret []
-     end);;
-
-  oneOf_ skip (skip :: [
-    (* Assignements where the value is public *)
-    (a <- gen_aexp_with_label_sized P public 2;;
-     X <- arbitrary;;
+    (* Assignments *)
+    (X <- (genVarId).(arbitrary);;
+     let l := apply P X in
+     a <- (if l then gen_aexp_with_label_sized P public 2 else arbitrary);;
      ret <{ X := a }>);
 
-    (* Array writes where the source is public *)
-    (e <- gen_aexp_with_label_sized P public 2;;
+    (* Array writes *)
+    (a <- (genArrId).(arbitrary);;
      i <- gen_aexp_with_label_sized P public 2;;
-     a <- arbitrary;;
-     ret <{ a[i] <- e }>)
-  ] ++ secret_assignements ++ public_read
-    ++ secret_write ++ secret_read).
+     let l := apply PA a in
+     e <- match l with
+       | false => arbitrary
+       | true => gen_aexp_with_label_sized P public 2
+       end;;
+     ret <{ a[i] <- e }>);
+
+    (* Array reads
+       We sometimes return `skip` in order not to backtrack. *)
+    (x <- (genVarId).(arbitrary);;
+     let l := apply P x in
+     i <- gen_aexp_with_label_sized P public 2;;
+     a <- match l with
+       | true => gen_arr_with_label PA public
+       | false => (a <- arbitrary;; ret (Some a))
+       end;;
+     match a with
+     | None => ret <{ skip }>
+     | Some a => ret <{ x <- a[[i]] }>
+     end)
+  ] in
+
+  match size with
+  | O => oneOf_ skip base_ctors
+  | S size' =>
+      let recursive_ctors := [
+        (
+          c1 <- gen_ct_well_typed_sized P PA size';;
+          c2 <- gen_ct_well_typed_sized P PA size';;
+          ret <{ c1; c2 }>
+        );
+
+        (
+          b <- gen_bexp_with_label_sized P public 2;;
+          c1 <- gen_ct_well_typed_sized P PA size';;
+          c2 <- gen_ct_well_typed_sized P PA size';;
+          ret <{ if b then c1 else c2 end }>
+        );
+
+        (
+          b <- gen_bexp_with_label_sized P public 2;;
+          c <- gen_ct_well_typed_sized P PA size';;
+          ret <{ while b do c end }>
+        )
+      ] in
+
+      oneOf_ skip (recursive_ctors ++ base_ctors)
+  end.
 
 (** ** Final theorems: noninterference and constant-time security *)
 
