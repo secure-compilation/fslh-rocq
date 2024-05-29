@@ -613,35 +613,147 @@ Inductive cteval : com -> state -> astate -> state -> astate -> obs -> Prop :=
   where "<( st , ast )> =[ c ]=> <( stt , astt , os )>" := (cteval c st ast stt astt os).
 (* TERSE: /HIDEFROMHTML *)
 
-(* TODO: Think about a version with loops *)
-Fixpoint cteval_no_while (c : com) (st : state) (ast : astate) : state * astate * obs :=
+Module CTInterpreter.
+
+(* Interpreter for constant time *)
+Definition input_st : Type := state * astate.
+Inductive output_st (A : Type): Type :=
+  | ROutOfFuel : output_st A
+  | ROutOfBounds : output_st A
+  | ROk : A -> obs -> input_st -> output_st A.
+
+(* An 'evaluator A'. This is the monad.
+   It transforms an input state into an output state, returning an A. *)
+Record evaluator (A : Type) : Type := mkEvaluator
+  { evaluate : input_st -> output_st A }.
+(* An interpreter is a special kind of evaluator *)
+Definition interpreter: Type := evaluator unit.
+
+(* Generic monad operators *)
+Instance monadEvaluator: Monad evaluator :=
+  { ret := fun A value => mkEvaluator A (fun (ist : input_st) => ROk A value [] ist);
+    bind := fun A B e f =>
+      mkEvaluator B (fun (ist : input_st) =>
+        match evaluate A e ist with
+        | ROk _ value os1 ist'  => match evaluate B (f value) ist' with
+            | ROk _ value os2 ist'' => ROk B value (os1 ++ os2) ist''
+            | ret => ret
+            end
+        | ROutOfBounds _ => ROutOfBounds B
+        | ROutOfFuel _ => ROutOfFuel B
+        end
+      )
+   }.
+
+(* specialized operators *)
+Definition finish : interpreter := ret tt.
+
+Definition get_var (name : string): evaluator nat :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, _) := ist in
+    evaluate _ (ret (apply st name)) ist
+  ).
+Definition get_arr (name : string): evaluator (list nat) :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(_, ast) := ist in
+    evaluate _ (ret (apply ast name)) ist
+  ).
+Definition set_var (name : string) (value : nat) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, ast) := ist in
+    let new_st := (name !-> value ; st) in
+    evaluate _ finish (new_st, ast)
+  ).
+Definition set_arr (name : string) (value : list nat) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, ast) := ist in
+    let new_ast := (name !-> value ; ast) in
+    evaluate _ finish (st, new_ast)
+  ).
+Definition eval_aexp (a : aexp) : evaluator nat :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, _) := ist in
+    let v := aeval st a in
+    evaluate _ (ret v) ist
+  ).
+Definition eval_bexp (b : bexp) : evaluator bool :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, _) := ist in
+    let v := beval st b in
+    evaluate _ (ret v) ist
+  ).
+Definition raise_out_of_bounds : interpreter :=
+  mkEvaluator _ (fun _ =>
+    ROutOfBounds _
+  ).
+Definition raise_out_of_fuel : interpreter :=
+  mkEvaluator _ (fun _ =>
+    ROutOfFuel _
+  ).
+Definition observe (o : observation) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    ROk _ tt [o] ist
+  ).
+
+Fixpoint cteval_engine_aux (f : nat) (c : com) : interpreter :=
+  match f with
+  | O => raise_out_of_fuel
+  | S f =>
+
   match c with
-  | <{ skip }> => (st, ast, [])
-  | <{ x := e }> => let n := aeval st e in
-      ((x !-> n; st), ast, [])
+  | <{ skip }> =>
+      finish
+  | <{ x := e }> =>
+      v <- eval_aexp e;;
+      set_var x v
   | <{ c1 ; c2 }> =>
-      let '(st', ast', obs') := cteval_no_while c1 st ast in
-      let '(st'', ast'', obs'') := cteval_no_while c2 st' ast' in
-      (st'', ast'', obs' ++ obs'')
+      cteval_engine_aux f c1;;
+      cteval_engine_aux f c2
   | <{ if b then ct else cf end }> =>
-      if beval st b then
-        let '(st', ast', obs') := cteval_no_while ct st ast in
-        (st', ast', (OBranch true)::obs')
+      condition <- eval_bexp b;;
+      let next_c := if Bool.eqb condition true then ct else cf in
+
+      observe (OBranch condition);;
+      cteval_engine_aux f next_c
+  | <{ while be do c end }> =>
+    cteval_engine_aux f <{
+      if be then
+        c;
+        while be do c end
       else
-        let '(st', ast', obs') := cteval_no_while cf st ast in
-        (st', ast', (OBranch false)::obs')
-  | <{ while b do c end }> =>
-      (* Skip while loop *)
-      (st, ast, [])
+        skip
+      end
+    }>
   | <{ x <- a[[ie]] }> =>
-      let i := aeval st ie in
-      (* TODO: how to enforce the i < Datatypes.length (apply ast a) condition ? *)
-      ((x !-> nth i (apply ast a) 0; st), ast, [OARead a i])
+      i <- eval_aexp ie;;
+      l <- get_arr a;;
+
+      if (i <? List.length l) then
+        observe (OARead a i);;
+        set_var x (nth i l 0)
+      else
+        (* If we're not speculating, then it's just a program error *)
+        raise_out_of_bounds
   | <{ a[ie] <- e }> =>
-      let i := aeval st ie in
-      let n := aeval st e in
-      (* TODO: how to enforce the i < Datatypes.length (apply ast a) condition ? *)
-      (st, (a !-> upd i (apply ast a) n; ast), [OAWrite a i])
+      n <- eval_aexp e;;
+      i <- eval_aexp ie;;
+      l <- get_arr a;;
+
+      if (i <? List.length l) then
+        observe (OAWrite a i);;
+        set_arr a (upd i l n)
+      else
+        (* If we're not speculating, then it's just a program error *)
+        raise_out_of_bounds
+  end
+  end.
+End CTInterpreter.
+
+Definition cteval_engine (f : nat) (c : com) (st : state) (ast : astate) : option (state * astate * obs) :=
+  let ist := (st, ast) in
+  match CTInterpreter.evaluate _ (CTInterpreter.cteval_engine_aux f c) ist with
+  | CTInterpreter.ROk _ _ os (st', ast') => Some (st', ast', os)
+  | _ => None
   end.
 
 (** ** Type system for cryptographic constant-time programming *)
@@ -1071,9 +1183,13 @@ Fixpoint gen_pc_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G
           c1 <- gen_pc_well_typed_sized P PA size';;
           c2 <- gen_pc_well_typed_sized P PA size';;
           ret <{ if b then c1 else c2 end }>
-        )
+        );
 
-        (* TODO: Our constant time interpreter doesn't support while loops *)
+        (
+          b <- gen_bexp_with_label_sized P public 2;;
+          c <- gen_pc_well_typed_sized P PA size';;
+          ret <{ while b do c end }>
+        )
       ] in
 
       oneOf_ skip (recursive_ctors ++ base_ctors)
@@ -1111,10 +1227,14 @@ QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_astate (fun a1 =>
     forAll (gen_pub_equiv_and_same_length P a1) (fun a2 =>
 
-    let '(s1', a1', os1') := cteval_no_while c s1 a1 in
-    let '(s2', a2', os2') := cteval_no_while c s2 a2 in
-
-    obs_eqb os1' os2'
+    let r1 := cteval_engine 1000 c s1 a1 in
+    let r2 := cteval_engine 1000 c s2 a2 in
+    match (r1, r2) with
+    | (Some (s1', a1', os1'), Some (s2', a2', os2')) =>
+        implication true (obs_eqb os1' os2')
+    | _ => (* discard *)
+        implication false false
+    end
   )))))))).
 
 (* TERSE: /HIDEFROMHTML *)
@@ -1265,6 +1385,8 @@ Fixpoint gen_ct_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat): G 
 
 (** ** Final theorems: noninterference and constant-time security *)
 
+(* TODO: quite slow *)
+Extract Constant defNumTests => "500".
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
@@ -1272,10 +1394,16 @@ QuickChick (forAll gen_pub_vars (fun P =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
     forAll gen_astate (fun a1 =>
     forAll (gen_pub_equiv PA a1) (fun a2 =>
-      let '(s1', a1', os1') := cteval_no_while c s1 a1 in
-      let '(s2', a2', os2') := cteval_no_while c s2 a2 in
-      (pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
+      let r1 := cteval_engine 1000 c s1 a1 in
+      let r2 := cteval_engine 1000 c s2 a2 in
+      match (r1, r2) with
+      | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
+          implication true ((pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2'))
+      | _ => (* discard *)
+          implication false false
+      end
   )))))))).
+Extract Constant defNumTests => "10000".
 
 Theorem ct_well_typed_noninterferent :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
@@ -1341,6 +1469,8 @@ Proof.
 Qed.*)
 (* /FOLD *)
 
+(* TODO: quite slow *)
+Extract Constant defNumTests => "500".
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
@@ -1348,10 +1478,16 @@ QuickChick (forAll gen_pub_vars (fun P =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
     forAll gen_astate (fun a1 =>
     forAll (gen_pub_equiv PA a1) (fun a2 =>
-      let '(s1', a1', os1) := cteval_no_while c s1 a1 in
-      let '(s2', a2', os2) := cteval_no_while c s2 a2 in
-      obs_eqb os1 os2
+      let r1 := cteval_engine 1000 c s1 a1 in
+      let r2 := cteval_engine 1000 c s2 a2 in
+      match (r1, r2) with
+      | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
+          implication true (obs_eqb os1 os2)
+      | _ => (* discard *)
+          implication false false
+      end
   )))))))).
+Extract Constant defNumTests => "10000".
 
 Theorem ct_well_typed_ct_secure :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
@@ -1474,7 +1610,9 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
   where "<( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
     (spec_eval c st ast b ds stt astt bb os).
 
-(* Interpreter for constant time programs *)
+Module SpecCTInterpreter.
+
+(* Interpreter for speculative constant time *)
 Definition input_st : Type := state * astate * bool * dirs.
 Inductive output_st (A : Type): Type :=
   | ROutOfFuel : output_st A
@@ -1520,13 +1658,13 @@ Definition get_arr (name : string): evaluator (list nat) :=
     evaluate _ (ret (apply ast name)) ist
   ).
 Definition set_var (name : string) (value : nat) : interpreter :=
-  mkEvaluator _ (fun (ist : input_st) => 
+  mkEvaluator _ (fun (ist : input_st) =>
     let '(st, ast, b, ds) := ist in
     let new_st := (name !-> value ; st) in
     evaluate _ finish (new_st, ast, b, ds)
   ).
 Definition set_arr (name : string) (value : list nat) : interpreter :=
-  mkEvaluator _ (fun (ist : input_st) => 
+  mkEvaluator _ (fun (ist : input_st) =>
     let '(st, ast, b, ds) := ist in
     let new_ast := (name !-> value ; ast) in
     evaluate _ finish (st, new_ast, b, ds)
@@ -1701,30 +1839,33 @@ Fixpoint program_size (c : com) : nat :=
   end.
 Definition compute_gas (c : com) (ds : dirs) : nat :=
   (S (Datatypes.length ds)) * (program_size c).
-Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
-  let ist := (st, ast, b, ds) in
-  match evaluate _ (spec_eval_engine_aux (compute_gas c ds) c) ist with
-  | ROk _ _ obs ist => let '(st, ast, b, _) := ist in
-      Some (st, ast, b, obs)
-  | _ => None
-  end.
-(* In addition, checks that we provided exactly enough directions *)
-Definition spec_eval_engine_strict (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
-  let ist := (st, ast, b, ds) in
-  match evaluate _ (spec_eval_engine_aux (compute_gas c ds) c) ist with
-  | ROk _ _ obs ist => let '(ct, ast, b, ds) := ist in
-      match ds with
-      | [] => Some (st, ast, b, obs)
-      | _ => None
-      end
-  | _ => None
-  end.
 
 Theorem cannot_run_out_of_fuel :
   forall c st ast b ds f,
     f >= (compute_gas c ds) -> evaluate _ (spec_eval_engine_aux f c) (st, ast, b, ds) <> ROutOfFuel unit.
 Proof.
 Admitted.
+
+End SpecCTInterpreter.
+
+Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
+  let ist := (st, ast, b, ds) in
+  match SpecCTInterpreter.evaluate _ (SpecCTInterpreter.spec_eval_engine_aux (SpecCTInterpreter.compute_gas c ds) c) ist with
+  | SpecCTInterpreter.ROk _ _ obs ist => let '(st, ast, b, _) := ist in
+      Some (st, ast, b, obs)
+  | _ => None
+  end.
+(* In addition, checks that we provided exactly enough directions *)
+Definition spec_eval_engine_strict (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
+  let ist := (st, ast, b, ds) in
+  match SpecCTInterpreter.evaluate _ (SpecCTInterpreter.spec_eval_engine_aux (SpecCTInterpreter.compute_gas c ds) c) ist with
+  | SpecCTInterpreter.ROk _ _ obs ist => let '(ct, ast, b, ds) := ist in
+      match ds with
+      | [] => Some (st, ast, b, obs)
+      | _ => None
+      end
+  | _ => None
+  end.
 
 (* Simple tests *)
 Eval compute in
