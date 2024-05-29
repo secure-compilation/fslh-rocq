@@ -559,6 +559,16 @@ Inductive observation : Type :=
 
 Definition obs := list observation.
 
+Definition observation_eqb (os1 : observation) (os2 : observation) : bool :=
+  match os1, os2 with
+  | OBranch b, OBranch b' => Bool.eqb b b'
+  | OARead a i, OARead a' i' => (String.eqb a a') && (i =? i')
+  | OAWrite a i, OAWrite a' i' => (String.eqb a a') && (i =? i')
+  | _, _ => false
+  end.
+Definition obs_eqb (o1 : obs) (o2 : obs) : bool :=
+  forallb (fun '(os1, os2) => observation_eqb os1 os2) (List.combine o1 o2).
+
 (** We define an instrumented big-step operational semantics based on these
    observations. *)
 
@@ -1230,14 +1240,6 @@ Proof.
 Qed.*)
 (* /FOLD *)
 
-Definition obs_eqb (o1 : observation) (o2 : observation) : bool :=
-  match o1, o2 with
-  | OBranch b1, OBranch b2 => Bool.eqb b1 b2
-  | OARead a1 i1, OARead a2 i2 => (i1 =? i2) && (String.eqb a1 a2)
-  | OAWrite a1 i1, OAWrite a2 i2 => (i1 =? i2) && (String.eqb a1 a2)
-  | _, _ => false
-  end.
-
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
@@ -1247,7 +1249,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
     forAll (gen_pub_equiv PA a1) (fun a2 =>
       let '(s1', a1', os1) := cteval_no_while c s1 a1 in
       let '(s2', a2', os2) := cteval_no_while c s2 a2 in
-      forallb (fun '(b1, b2) => obs_eqb b1 b2) (List.combine os1 os2)
+      obs_eqb os1 os2
   )))))))).
 
 Theorem ct_well_typed_ct_secure :
@@ -1831,14 +1833,6 @@ Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (s
     end
   end.
 
-Definition observation_eqb (os1 : observation) (os2 : observation) : bool :=
-  match os1, os2 with
-  | OBranch b, OBranch b' => Bool.eqb b b'
-  | OARead a i, OARead a' i' => (String.eqb a a') && (i =? i')
-  | OAWrite a i, OAWrite a' i' => (String.eqb a a') && (i =? i')
-  | _, _ => false
-  end.
-
 Definition total_map_beq (a:Type) (a_beq:a->a->bool) (m1 m2 : total_map a) :=
   match m1, m2 with
   | (d1,lm1), (d2,lm2) => a_beq d1 d2 &&
@@ -1882,7 +1876,7 @@ QuickChick (forAll (arbitrarySized 2) (fun c =>
           (state_eqb st' st_) &&
           (astate_eqb ast' ast_) &&
           (Bool.eqb b_ b') &&
-          (forallb (fun '(o1, o2) => observation_eqb o1 o2) (List.combine os os_))
+          obs_eqb os os_
       | None => false
       end)
   )))))).
