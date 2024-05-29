@@ -1953,16 +1953,28 @@ QuickChick (forAll (arbitrarySized 2) (fun c =>
    if false then p := a[n] else skip
 *)
 
-QuickChick (forAllShrink gen_pub_vars shrink (fun P =>
-    forAllShrink gen_pub_arrs shrink (fun PA =>
-    forAllShrink (gen_ct_well_typed_sized P PA 3) shrink (fun c =>
+Definition forAllShrinkNonDet {A prop : Type} {_ : Checkable prop} `{Show A}
+           (n : nat) (gen : G A) (shrinker : A -> list A) (pf : A -> prop) : Checker :=
+  let repeated_shrinker (x : A) : list A :=
+    List.concat (List.repeat (shrinker x) n) in
+  bindGen gen (fun x : A =>
+                 shrinking repeated_shrinker x (fun x' =>
+                                         printTestCase (show x' ++ newline) (pf x'))).
+
+(* TODO: I don't think simply using the generic shrinker
+         works when generating objects with non-generic generators *)
+(* TODO: 100 isn't enough, but increasing it leads to too many performance problems.
+         forAllShrinkNonDet needs to be changed to be more efficient. *)
+QuickChick (forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
+    forAllShrinkNonDet 100 gen_pub_arrs shrink (fun PA =>
+    forAllShrinkNonDet 100 (gen_ct_well_typed_sized P PA 3) shrink (fun c =>
 
     forAll arbitrary (fun b =>
 
-    forAllShrink gen_state shrink (fun s1 =>
-    forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
-    forAllShrink gen_astate shrink (fun a1 =>
-    forAllShrink (gen_pub_equiv PA a1) shrink (fun a2 =>
+    forAllShrinkNonDet 100 gen_state shrink (fun s1 =>
+    forAllShrinkNonDet 100 (gen_pub_equiv P s1) shrink (fun s2 =>
+    forAllShrinkNonDet 100 gen_astate shrink (fun a1 =>
+    forAllShrinkNonDet 100 (gen_pub_equiv PA a1) shrink (fun a2 =>
 
     forAllMaybe (gen_spec_eval_sized c s1 a1 b 3) (fun '(ds, s1', a1', b1', os1) =>
       match spec_eval_engine c s2 a2 b ds with
