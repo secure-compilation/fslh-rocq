@@ -683,6 +683,39 @@ Definition gen_pub_arrs : G pub_vars :=
     _ !-> default
   ) % string.
 
+(* Returns a variable which has the label l in P *)
+Definition gen_var_with_label (P : pub_vars) (l: label) : G (option var_id) :=
+  let '(d, m) := P in
+  let all_variables := union (map_dom m) ["X0"; "X1"; "X2"; "X3"; "X4"] % string in
+  let variables_in_l := List.filter (fun v => Bool.eqb (apply P v) l) all_variables in
+
+  oneOf_
+    (ret None)
+    (List.map (fun v => ret (Some (Var v))) variables_in_l).
+
+QuickChick (forAll gen_pub_vars (fun (P : pub_vars) =>
+    forAll (gen_var_with_label P public) (fun v => match v with
+      | Some v => apply P v
+      | None => true
+      end
+  ))).
+QuickChick (forAll gen_pub_vars (fun (P : pub_vars) =>
+    forAll (gen_var_with_label P secret) (fun v => match v with
+      | Some v => negb (apply P v)
+      | None => true
+      end
+  ))).
+
+(* Returns an array A0..A2 which has the label l in P *)
+Definition gen_arr_with_label (P : pub_vars) (l: label) : G (option arr_id) :=
+  let '(d, m) := P in
+  let all_variables := union (map_dom m) ["A0"; "A1"; "A2"] % string in
+  let variables_in_l := List.filter (fun v => Bool.eqb (apply P v) l) all_variables in
+
+  oneOf_
+    (ret None)
+    (List.map (fun v => ret (Some (Arr v))) variables_in_l).
+
 Definition pub_equiv (P : total_map label) {X:Type} (s1 s2 : total_map X) :=
   forall x:string, apply P x = true -> apply s1 x = apply s2 x.
 
@@ -759,6 +792,16 @@ Proof. apply andb_prop. Qed.
 
 Definition can_flow (l1 l2 : label) : bool := l1 || negb l2.
 
+(* Generates a variable X such that `can_flow l1 (P X) = true` *)
+Definition gen_can_flow (P : pub_vars) (l1 : label) : G (option var_id) :=
+  if l1 then
+    (* Public source. Can flow anywhere. *)
+    (X <- arbitrary;;
+    ret (Some X))
+  else
+    (* Secret source. Can only flow in secret variables. *)
+    gen_var_with_label P secret.
+
 Reserved Notation "P '|-a-' a \IN l" (at level 40).
 Reserved Notation "P '|-b-' b \IN l" (at level 40).
 
@@ -822,29 +865,6 @@ Scheme aexp_bexp_has_label_ind := Induction for aexp_has_label Sort Prop
 with bexp_aexp_has_label_ind := Induction for bexp_has_label Sort Prop.
 Combined Scheme aexp_bexp_has_label_mutind
   from aexp_bexp_has_label_ind, bexp_aexp_has_label_ind.
-
-(* Returns a variable which has the label l in P *)
-Definition gen_var_with_label (P : pub_vars) (l: label) : G (option var_id) :=
-  let '(d, m) := P in
-  let all_variables := union (map_dom m) ["X0"; "X1"; "X2"; "X3"; "X4"] % string in
-  let variables_in_l := List.filter (fun v => Bool.eqb (apply P v) l) all_variables in
-
-  oneOf_
-    (ret None)
-    (List.map (fun v => ret (Some (Var v))) variables_in_l).
-
-QuickChick (forAll gen_pub_vars (fun (P : pub_vars) =>
-    forAll (gen_var_with_label P public) (fun v => match v with
-      | Some v => apply P v
-      | None => true
-      end
-  ))).
-QuickChick (forAll gen_pub_vars (fun (P : pub_vars) =>
-    forAll (gen_var_with_label P secret) (fun v => match v with
-      | Some v => negb (apply P v)
-      | None => true
-      end
-  ))).
 
 (* TODO: it would be cool to derive it automatically, like that: *)
 (* Derive ArbitrarySizedSuchThat for (fun a => aexp_has_label P a l). *)
@@ -997,6 +1017,106 @@ Proof.
   apply noninterferent_aexp_bexp. assumption.
 Qed.
 
+(* Counterexample: PC well typed programs aren't secure with respect to
+                   constant time execution. *)
+Fixpoint gen_pc_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G com :=
+  let skip := ret <{ skip }> in
+  let base_ctors := [
+    (* Skip *)
+    skip;
+
+    (* Assignments *)
+    (X <- (genVarId).(arbitrary);;
+     let l := apply P X in
+     a <- (if l then gen_aexp_with_label_sized P public 2 else arbitrary);;
+     ret <{ X := a }>);
+
+    (* Array writes *)
+    (a <- (genArrId).(arbitrary);;
+     i <- arbitrary;;
+     let l := apply PA a in
+     e <- match l with
+       | false => arbitrary
+       | true => gen_aexp_with_label_sized P public 2
+       end;;
+     ret <{ a[i] <- e }>);
+
+    (* Array reads
+       We sometimes return `skip` in order not to backtrack. *)
+    (x <- (genVarId).(arbitrary);;
+     let l := apply P x in
+     i <- arbitrary;;
+     a <- match l with
+       | true => gen_arr_with_label PA public
+       | false => (a <- arbitrary;; ret (Some a))
+       end;;
+     match a with
+     | None => ret <{ skip }>
+     | Some a => ret <{ x <- a[[i]] }>
+     end)
+  ] in
+
+  match size with
+  | O => oneOf_ skip base_ctors
+  | S size' =>
+      let recursive_ctors := [
+        (
+          c1 <- gen_pc_well_typed_sized P PA size';;
+          c2 <- gen_pc_well_typed_sized P PA size';;
+          ret <{ c1; c2 }>
+        );
+
+        (
+          b <- gen_bexp_with_label_sized P public 2;;
+          c1 <- gen_pc_well_typed_sized P PA size';;
+          c2 <- gen_pc_well_typed_sized P PA size';;
+          ret <{ if b then c1 else c2 end }>
+        )
+
+        (* TODO: Our constant time interpreter doesn't support while loops *)
+      ] in
+
+      oneOf_ skip (recursive_ctors ++ base_ctors)
+  end.
+
+(* Given a pub_arrs, returns a new pub_arrs that is publicly equivalent
+   and where all arrays have the same length.
+   This is often desirable not to find trivial counterexamples where one execution
+   crashes because of an out-of-bounds access, while the second execution succeeds. *)
+Definition gen_pub_equiv_and_same_length (PA : pub_arrs) (a : astate) : G astate :=
+  let fix gen_same_length (l : list nat) : G (list nat) :=
+    match l with
+    | _::q => q' <- gen_same_length q;;
+        x <- arbitrary;;
+        ret (x::q')
+    | [] => ret []
+    end in
+
+  let '(d, m) := a in
+  new_m <- List.fold_left (fun (acc : G (Map (list nat))) (c : string * (list nat)) => let '(k, v) := c in
+    new_m <- acc;;
+    new_v <- (if apply PA k
+      then ret v
+      else gen_same_length v);;
+    ret ((k, new_v)::new_m)
+  ) m (ret []);;
+  ret (d, new_m).
+
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
+    forAll (sized (gen_pc_well_typed_sized P PA)) (fun c =>
+
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+    forAll gen_astate (fun a1 =>
+    forAll (gen_pub_equiv_and_same_length P a1) (fun a2 =>
+
+    let '(s1', a1', os1') := cteval_no_while c s1 a1 in
+    let '(s2', a2', os2') := cteval_no_while c s2 a2 in
+
+    obs_eqb os1' os2'
+  )))))))).
+
 (* TERSE: /HIDEFROMHTML *)
 
 (** [[[
@@ -1066,29 +1186,10 @@ Inductive ct_well_typed (P:pub_vars) (PA:pub_arrs) : com -> Prop :=
 where "P !! PA '|-ct-' c" := (ct_well_typed P PA c).
 (* TERSE: /HIDEFROMHTML *)
 
-(* Generates a variable X such that `can_flow l1 (P X) = true` *)
-Definition gen_can_flow (P : pub_vars) (l1 : label) : G (option var_id) :=
-  if l1 then
-    (* Public source. Can flow anywhere. *)
-    (X <- arbitrary;;
-    ret (Some X))
-  else
-    (* Secret source. Can only flow in secret variables. *)
-    gen_var_with_label P secret.
-
-(* Returns an array A0..A2 which has the label l in P *)
-Definition gen_arr_with_label (P : pub_vars) (l: label) : G (option arr_id) :=
-  let '(d, m) := P in
-  let all_variables := union (map_dom m) ["A0"; "A1"; "A2"] % string in
-  let variables_in_l := List.filter (fun v => Bool.eqb (apply P v) l) all_variables in
-
-  oneOf_
-    (ret None)
-    (List.map (fun v => ret (Some (Arr v))) variables_in_l).
-
 Fixpoint gen_ct_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat): G com :=
   let skip := ret <{ skip }> in
 
+  (* TODO: not using 'additional_ctors' :/ *)
   let additional_ctors := match size with
   | 0 => []
   | S size' =>
