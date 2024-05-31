@@ -1106,108 +1106,201 @@ Combined Scheme aexp_bexp_has_label_mutind
 (* Derive ArbitrarySizedSuchThat for (fun a => aexp_has_label P a l). *)
 
 (* To implement Gen, we can combine a sized generator and sized *)
-Fixpoint gen_aexp_with_label_sized (P : pub_vars) (l: label) (size : nat) : G aexp :=
+Fixpoint gen_public_aexp_sized (P : pub_vars) (size : nat) : G aexp :=
   match size with
     | 0 =>
-        if l then
-          (* For a public aexp: we have to be careful! *)
-          let num := (bindGen arbitrary (fun n => ret (ANum n))) in
+        n <- arbitrary;;
+        let num := ret (ANum n) in
 
-          X <- gen_var_with_label P l;;
-          let var := match X with
-            | Some X => [ret (AId X)]
-            | None => []
-            end in
+        X <- gen_var_with_label P public;;
+        let var := match X with
+          | Some X => [ret (AId X)]
+          | None => []
+          end in
 
-          oneOf_ num (var ++ [num])
-        else
-          (* For a secret aexp, then anything works *)
-          arbitrarySized 0
+        oneOf_ num (num::var)
     | S size' =>
-        if l then
-          let num := (bindGen arbitrary (fun n => ret (ANum n))) in
-          X <- gen_var_with_label P l;;
-          let var := match X with
-            | Some X => [ret (AId X)]
-            | None => []
-            end in
+        n <- arbitrary;;
+        let num := ret (ANum n) in
 
-          let possibilities := (num :: var) ++ [
-            (a1 <- gen_aexp_with_label_sized P l size';;
-             a2 <- gen_aexp_with_label_sized P l size';;
-             ret <{ a1 + a2 }>);
-            (a1 <- gen_aexp_with_label_sized P l size';;
-             a2 <- gen_aexp_with_label_sized P l size';;
-             ret <{ a1 - a2 }>);
-            (a1 <- gen_aexp_with_label_sized P l size';;
-             a2 <- gen_aexp_with_label_sized P l size';;
-             ret <{ a1 * a2 }>);
-            (be <- gen_bexp_with_label_sized P l size';;
-             a1 <- gen_aexp_with_label_sized P l size';;
-             a2 <- gen_aexp_with_label_sized P l size';;
-             ret <{ be ? a1 : a2 }>)
+        X <- gen_var_with_label P public;;
+        let var := match X with
+          | Some X => [ret (AId X)]
+          | None => []
+          end in
+
+        let possibilities := (num :: var) ++ [
+          (a1 <- gen_public_aexp_sized P size';;
+           a2 <- gen_public_aexp_sized P size';;
+           ret <{ a1 + a2 }>);
+          (a1 <- gen_public_aexp_sized P size';;
+           a2 <- gen_public_aexp_sized P size';;
+           ret <{ a1 - a2 }>);
+          (a1 <- gen_public_aexp_sized P size';;
+           a2 <- gen_public_aexp_sized P size';;
+           ret <{ a1 * a2 }>);
+          (be <- gen_public_bexp_sized P size';;
+           a1 <- gen_public_aexp_sized P size';;
+           a2 <- gen_public_aexp_sized P size';;
+           ret <{ be ? a1 : a2 }>)
+        ] in
+
+        oneOf_ num possibilities
+    end
+with gen_public_bexp_sized (P : pub_vars) (size : nat) : G bexp :=
+  match size with
+    | 0 =>
+        oneOf [
+          ret <{ true }>;
+          ret <{ false }>
+        ]
+    | S size' =>
+        oneOf_ (ret <{ true }>) [
+          ret <{ true }>;
+          ret <{ false }>;
+          (a1 <- gen_public_aexp_sized P size';;
+           a2 <- gen_public_aexp_sized P size';;
+           ret <{ a1 = a2 }>);
+          (a1 <- gen_public_aexp_sized P size';;
+           a2 <- gen_public_aexp_sized P size';;
+           ret <{ a1 <> a2 }>);
+          (a1 <- gen_public_aexp_sized P size';;
+           a2 <- gen_public_aexp_sized P size';;
+           ret <{ a1 <= a2 }>);
+          (a1 <- gen_public_aexp_sized P size';;
+           a2 <- gen_public_aexp_sized P size';;
+           ret <{ a1 > a2 }>);
+          (b <- gen_public_bexp_sized P size';;
+           ret <{ ~b }>);
+          (b1 <- gen_public_bexp_sized P size';;
+           b2 <- gen_public_bexp_sized P size';;
+           ret <{ b1 && b2 }>)
+        ]
+  end.
+
+Fixpoint gen_secret_aexp_sized (P : pub_vars) (size : nat) : G (option aexp) :=
+  match size with
+    | 0 =>
+        X <- gen_var_with_label P secret;;
+        match X with
+        | Some X => ret (Some (AId X))
+        | None => ret None
+        end
+    | S size' =>
+        (* secret *)
+        X <- gen_var_with_label P secret;;
+        match X with
+        | Some X =>
+          let num := ret (Some (AId X)) in
+
+          let possibilities := [
+            (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
+             bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
+             ret (Some <{ a1 + a2 }>))));
+            (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
+             bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
+             ret (Some <{ a1 - a2 }>))));
+            (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
+             bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
+             ret (Some <{ a1 * a2 }>))));
+            (bindOpt (gen_secret_bexp_sized P size') (fun be =>
+             bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
+             bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
+             ret (Some <{ be ? a1 : a2 }>)))));
+
+            num
           ] in
 
-          (* For a public aexp: we have to be careful! *)
           oneOf_ num possibilities
-        else
-          (* For a secret aexp, then anything works *)
-          arbitrarySized size
-  end
-with gen_bexp_with_label_sized (P : pub_vars) (l : label) (size : nat) : G bexp :=
+        | None => ret None
+        end
+    end
+with gen_secret_bexp_sized (P : pub_vars) (size : nat) : G (option bexp) :=
   match size with
-    | 0 =>
-        if l then
-          (* For a public aexp: we have to be careful! *)
-          oneOf [
-            ret <{ true }>;
-            ret <{ false }>
-          ]
-        else
-          (* For a secret aexp, then anything works *)
-          arbitrarySized 0
+    | 0 => ret None
     | S size' =>
-        if l then
-          (* For a public aexp: we have to be careful! *)
-          oneOf [
-            ret <{ true }>;
-            ret <{ false }>;
-            (a1 <- gen_aexp_with_label_sized P l size';;
-             a2 <- gen_aexp_with_label_sized P l size';;
-             ret <{ a1 <= a2 }>);
-            (a1 <- gen_aexp_with_label_sized P l size';;
-             a2 <- gen_aexp_with_label_sized P l size';;
-             ret <{ a1 > a2 }>);
-            (a1 <- gen_aexp_with_label_sized P l size';;
-             a2 <- gen_aexp_with_label_sized P l size';;
-             ret <{ a1 = a2 }>);
-            (a1 <- gen_aexp_with_label_sized P l size';;
-             a2 <- gen_aexp_with_label_sized P l size';;
-             ret <{ a1 <> a2 }>);
-            (b <- gen_bexp_with_label_sized P l size';;
-             ret <{ ~b }>);
-            (b1 <- gen_bexp_with_label_sized P l size';;
-             b2 <- gen_bexp_with_label_sized P l size';;
-             ret <{ b1 && b2 }>)
-          ]
-        else
-          (* For a secret aexp, then anything works *)
-          arbitrarySized size
+        oneOf [
+          (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
+           bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
+           ret (Some <{ a1 <= a2 }>))));
+          (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
+           bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
+           ret (Some <{ a1 > a2 }>))));
+          (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
+           bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
+           ret (Some <{ a1 = a2 }>))));
+          (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
+           bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
+           ret (Some <{ a1 <> a2 }>))));
+          (bindOpt (gen_secret_bexp_sized P size') (fun b =>
+           ret (Some <{ ~b }>)));
+          (bindOpt (gen_secret_bexp_sized P size') (fun b1 =>
+           bindOpt (gen_secret_bexp_sized P size') (fun b2 =>
+           ret (Some <{ b1 && b2 }>))))
+        ]
   end.
+
+Definition forAllMaybeShrink {A prop : Type} {_ : Checkable prop} `{Show A}
+           (gen : G (option A)) (shrinker : A -> list A) (pf : A -> prop) : Checker :=
+  bindGen gen (fun mx =>
+                 match mx with
+                 | Some x => shrinking shrinker x (fun x' => printTestCase (show x' ++ newline) (pf x'))
+                 | None => checker tt
+                 end
+              ).
 
 QuickChick (forAll gen_pub_vars (fun P => 
     forAllShrink gen_state shrink (fun s1 => 
     forAllShrink (gen_pub_equiv P s1) (shrink_pub_equiv_state P s1) (fun s2 =>
-    forAllShrink (gen_aexp_with_label_sized P public 3) shrink (fun a => 
+    forAllShrink (gen_public_aexp_sized P 3) shrink (fun a =>
       (aeval s1 a) =? (aeval s2 a)
   ))))).
 
 QuickChick (forAll gen_pub_vars (fun P => 
     forAllShrink gen_state shrink (fun s1 => 
     forAllShrink (gen_pub_equiv P s1) (shrink_pub_equiv_state P s1) (fun s2 =>
-    forAllShrink (gen_bexp_with_label_sized P public 3) shrink (fun b => 
+    forAllShrink (gen_public_bexp_sized P 3) shrink (fun b =>
       Bool.eqb (beval s1 b) (beval s2 b)
   ))))).
+
+Fixpoint label_of_aexp (P : pub_vars) (a : aexp) : label := match a with
+  | ANum _ => public
+  | AId v => apply P v
+  | <{ a1 + a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ a1 - a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ a1 * a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ be ? a1 : a2 }> => join (label_of_bexp P be) (join (label_of_aexp P a1) (label_of_aexp P a2))
+end
+with label_of_bexp (P : pub_vars) (b : bexp) : label := match b with
+  | <{ a1 = a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ a1 <> a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ a1 <= a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ a1 > a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ ~b }> => label_of_bexp P b
+  | <{ b1 && b2 }> => join (label_of_bexp P b1) (label_of_bexp P b2)
+  | <{ true }> => public
+  | <{ false }> => public
+end.
+
+(* TODO: too many discards associatied with secret aexp/bexp generation
+QuickChick (forAll gen_pub_vars (fun P =>
+  forAll arbitrary (fun l =>
+
+  forAll (sized (gen_public_aexp_sized P)) (fun a =>
+    Bool.eqb (label_of_aexp P a) l
+  )))).
+QuickChick (forAll gen_pub_vars (fun P =>
+  forAllMaybe (sized (gen_secret_aexp_sized P)) (fun a =>
+    Bool.eqb (label_of_aexp P a) secret
+  ))). *)
+QuickChick (forAll gen_pub_vars (fun P =>
+  forAll (sized (gen_public_bexp_sized P)) (fun b =>
+    Bool.eqb (label_of_bexp P b) public
+  ))).
+QuickChick (forAll gen_pub_vars (fun P =>
+  forAllMaybe (sized (gen_secret_bexp_sized P)) (fun b =>
+    Bool.eqb (label_of_bexp P b) public
+  ))).
 
 Theorem noninterferent_aexp_bexp : forall P s1 s2,
   pub_equiv P s1 s2 ->
@@ -1264,7 +1357,7 @@ Fixpoint gen_pc_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G
     (* Assignments *)
     (X <- (genVarId).(arbitrary);;
      let l := apply P X in
-     a <- (if l then gen_aexp_with_label_sized P public 2 else arbitrary);;
+     a <- (if l then gen_public_aexp_sized P 2 else arbitrary);;
      ret <{ X := a }>);
 
     (* Array writes *)
@@ -1273,7 +1366,7 @@ Fixpoint gen_pc_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G
      let l := apply PA a in
      e <- match l with
        | false => arbitrary
-       | true => gen_aexp_with_label_sized P public 2
+       | true => gen_public_aexp_sized P 2
        end;;
      ret <{ a[i] <- e }>);
 
@@ -1303,14 +1396,14 @@ Fixpoint gen_pc_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G
         );
 
         (
-          b <- gen_bexp_with_label_sized P public 2;;
+          b <- gen_public_bexp_sized P 2;;
           c1 <- gen_pc_well_typed_sized P PA size';;
           c2 <- gen_pc_well_typed_sized P PA size';;
           ret <{ if b then c1 else c2 end }>
         );
 
         (
-          b <- gen_bexp_with_label_sized P public 2;;
+          b <- gen_public_bexp_sized P 2;;
           c <- gen_pc_well_typed_sized P PA size';;
           ret <{ while b do c end }>
         )
@@ -1439,16 +1532,16 @@ Fixpoint gen_ct_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G
     (* Assignments *)
     (X <- (genVarId).(arbitrary);;
      let l := apply P X in
-     a <- (if l then gen_aexp_with_label_sized P public 2 else arbitrary);;
+     a <- (if l then gen_public_aexp_sized P 2 else arbitrary);;
      ret <{ X := a }>);
 
     (* Array writes *)
     (a <- (genArrId).(arbitrary);;
-     i <- gen_aexp_with_label_sized P public 2;;
+     i <- gen_public_aexp_sized P 2;;
      let l := apply PA a in
      e <- match l with
        | false => arbitrary
-       | true => gen_aexp_with_label_sized P public 2
+       | true => gen_public_aexp_sized P 2
        end;;
      ret <{ a[i] <- e }>);
 
@@ -1456,7 +1549,7 @@ Fixpoint gen_ct_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G
        We sometimes return `skip` in order not to backtrack. *)
     (x <- (genVarId).(arbitrary);;
      let l := apply P x in
-     i <- gen_aexp_with_label_sized P public 2;;
+     i <- gen_public_aexp_sized P 2;;
      a <- match l with
        | true => gen_arr_with_label PA public
        | false => (a <- arbitrary;; ret (Some a))
@@ -1478,14 +1571,14 @@ Fixpoint gen_ct_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G
         );
 
         (
-          b <- gen_bexp_with_label_sized P public 2;;
+          b <- gen_public_bexp_sized P 2;;
           c1 <- gen_ct_well_typed_sized P PA size';;
           c2 <- gen_ct_well_typed_sized P PA size';;
           ret <{ if b then c1 else c2 end }>
         );
 
         (
-          b <- gen_bexp_with_label_sized P public 2;;
+          b <- gen_public_bexp_sized P 2;;
           c <- gen_ct_well_typed_sized P PA size';;
           ret <{ while b do c end }>
         )
