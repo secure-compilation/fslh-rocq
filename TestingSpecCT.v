@@ -1250,16 +1250,16 @@ Definition forAllMaybeShrink {A prop : Type} {_ : Checkable prop} `{Show A}
               ).
 
 QuickChick (forAll gen_pub_vars (fun P => 
-    forAllShrink gen_state shrink (fun s1 => 
-    forAllShrink (gen_pub_equiv P s1) (shrink_pub_equiv_state P s1) (fun s2 =>
-    forAllShrink (gen_public_aexp_sized P 3) shrink (fun a =>
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+    forAll (gen_public_aexp_sized P 3) (fun a =>
       (aeval s1 a) =? (aeval s2 a)
   ))))).
 
 QuickChick (forAll gen_pub_vars (fun P => 
-    forAllShrink gen_state shrink (fun s1 => 
-    forAllShrink (gen_pub_equiv P s1) (shrink_pub_equiv_state P s1) (fun s2 =>
-    forAllShrink (gen_public_bexp_sized P 3) shrink (fun b =>
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+    forAll (gen_public_bexp_sized P 3) (fun b =>
       Bool.eqb (beval s1 b) (beval s2 b)
   ))))).
 
@@ -1301,6 +1301,122 @@ QuickChick (forAll gen_pub_vars (fun P =>
   forAllMaybe (sized (gen_secret_bexp_sized P)) (fun b =>
     Bool.eqb (label_of_bexp P b) public
   ))).
+
+Definition shrink_var_preserve_label (P : pub_vars) (v : var_id) : list var_id :=
+  let '(Var v) := v in
+
+  let fix get_first_var_with_label (n : nat) : option var_id :=
+    let var := ("X" ++ (String (ascii_of_nat n) EmptyString)) % string in
+    if Bool.eqb (apply P var) (apply P v)
+    then Some (Var var)
+    else (match n with
+      | O => None
+      | S n => get_first_var_with_label n
+      end
+    )
+  in
+
+  (* Assume v is of the form Xn *)
+  match get 1 v with
+  | Some c => match nat_of_ascii c - nat_of_ascii "0" with
+      | 0 => []
+      | S pred => match get_first_var_with_label pred with
+        | None => []
+        | Some v => [v]
+        end
+      end
+  | None => []
+  end.
+
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll arbitrary (fun (X : var_id) =>
+
+    let l := apply P X in
+
+    forallb (fun '(Var X') => Bool.eqb (apply P X') l) (shrink_var_preserve_label P X)
+  ))).
+
+(* Shrinker that preserve the label of aexp/bexp *)
+Fixpoint shrink_bexp_with_label (P : pub_vars) (l : label) (b : bexp) : list bexp :=
+  match b with
+  | <{ a1 = a2 }> =>
+      (map (fun shrunk : aexp => <{ shrunk = a2 }>) (shrink_aexp_with_label P l a1)) ++
+      (map (fun shrunk : aexp => <{ a1 = shrunk }>) (shrink_aexp_with_label P l a2))
+  | <{ a1 <> a2 }> =>
+      (map (fun shrunk : aexp => <{ shrunk <> a2 }>) (shrink_aexp_with_label P l a1)) ++
+      (map (fun shrunk : aexp => <{ a1 <> shrunk }>) (shrink_aexp_with_label P l a2))
+  | <{ a1 <= a2 }> =>
+      (map (fun shrunk : aexp => <{ shrunk <= a2 }>) (shrink_aexp_with_label P l a1)) ++
+      (map (fun shrunk : aexp => <{ a1 <= shrunk }>) (shrink_aexp_with_label P l a2))
+  | <{ a1 > a2 }> =>
+      (map (fun shrunk : aexp => <{ shrunk > a2 }>) (shrink_aexp_with_label P l a1)) ++
+      (map (fun shrunk : aexp => <{ a1 > shrunk }>) (shrink_aexp_with_label P l a2))
+  | <{ ~ b1 }> =>
+      [b1] ++
+      (map (fun shrunk : bexp => <{ ~ shrunk }>) (shrink_bexp_with_label P l b1))
+  | <{ b1 && b2 }> =>
+      [b1; b2] ++
+      (map (fun shrunk : bexp => <{ shrunk && b2 }>) (shrink_bexp_with_label P l b1)) ++
+      (map (fun shrunk : bexp => <{ b1 && shrunk }>) (shrink_bexp_with_label P l b2))
+  | _ => []
+  end
+with shrink_aexp_with_label (P : pub_vars) (l : label) (a : aexp) : list aexp :=
+  match a with
+  | ANum n => map (fun n => ANum n) (shrink n)
+  | AId v => map (fun v => AId v) (shrink_var_preserve_label P v)
+  | <{ a1 + a2 }> =>
+      [a1; a2] ++
+      (map (fun shrunk : aexp => <{ shrunk + a2 }>) (shrink_aexp_with_label P l a1)) ++
+      (map (fun shrunk : aexp => <{ a1 + shrunk }>) (shrink_aexp_with_label P l a2))
+  | <{ a1 - a2 }> =>
+      [a1; a2] ++
+      (map (fun shrunk : aexp => <{ shrunk - a2 }>) (shrink_aexp_with_label P l a1)) ++
+      (map (fun shrunk : aexp => <{ a1 - shrunk }>) (shrink_aexp_with_label P l a2))
+  | <{ a1 * a2 }> =>
+      [a1; a2] ++
+      (map (fun shrunk : aexp => <{ shrunk * a2 }>) (shrink_aexp_with_label P l a1)) ++
+      (map (fun shrunk : aexp => <{ a1 * shrunk }>) (shrink_aexp_with_label P l a2))
+  | <{ be ? a1 : a2 }> =>
+      (map (fun shrunk : bexp => <{ shrunk ? a1 : a2 }>) (shrink_bexp_with_label P l be)) ++
+      [a1; a2] ++
+      (map (fun shrunk : aexp => <{ be ? shrunk : a2 }>) (shrink_aexp_with_label P l a1)) ++
+      (map (fun shrunk : aexp => <{ be ? a1 : shrunk }>) (shrink_aexp_with_label P l a2))
+  end.
+
+QuickChick (forAll gen_pub_vars (fun P =>
+  forAll (sized (gen_public_aexp_sized P)) (fun a =>
+  let candidates := shrink_aexp_with_label P public a in
+
+  printTestCase ((show candidates) ++ nl)
+
+  (forallb (fun a' => Bool.eqb (label_of_aexp P a') public) candidates)
+))).
+QuickChick (forAll gen_pub_vars (fun P =>
+  forAll (sized (gen_public_bexp_sized P)) (fun b =>
+  let candidates := shrink_bexp_with_label P public b in
+
+  printTestCase ((show candidates) ++ nl)
+
+  (forallb (fun b' => Bool.eqb (label_of_bexp P b') public) candidates)
+))).
+(* TODO: Too many discards.
+QuickChick (forAll gen_pub_vars (fun P =>
+  forAll (sized (gen_secret_aexp_sized P)) (fun a =>
+  let candidates := shrink_aexp_with_label P secret a in
+
+  printTestCase ((show candidates) ++ nl)
+
+  (forallb (fun a' => Bool.eqb (label_of_aexp P a') secret) candidates)
+))).
+QuickChick (forAll gen_pub_vars (fun P =>
+  forAll (sized (gen_secret_bexp_sized P)) (fun b =>
+  let candidates := shrink_bexp_with_label P secret b in
+
+  printTestCase ((show candidates) ++ nl)
+
+  (forallb (fun b' => Bool.eqb (label_of_bexp P b') secret) candidates)
+))).
+*)
 
 Theorem noninterferent_aexp_bexp : forall P s1 s2,
   pub_equiv P s1 s2 ->
