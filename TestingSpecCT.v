@@ -3247,6 +3247,34 @@ Proof.
   eapply ideal_spec_ct_secure; eauto.
 Qed.
 
+(* Test that spec_ct holds for sel_slh
+
+   500 tests: 15s, 33% discards *)
+Extract Constant defNumTests => "500".
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
+
+    forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
+    let hardened := sel_slh P c in
+
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+    let s1 := ("b" !-> 0; s1) in
+    let s2 := ("b" !-> 0; s2) in
+
+    forAll gen_astate (fun a1 =>
+    forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
+
+    forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100) (fun '(ds, s1', a1', b', os1) =>
+      match spec_eval_engine hardened s2 a2 false ds with
+      | Some (s2', a2', b'', os2) => checker (
+          obs_eqb os1 os2
+        )
+      | None => checker tt (* If the second execution crashes, this isn't a counterexample *)
+      end
+    ))))))))).
+Extract Constant defNumTests => "10000".
+
 (* HIDE: The less useful for security direction of the idealized semantics being
    equivalent to [sel_slh]; easier to prove even for while (forwards compiler
    correctness). *)
