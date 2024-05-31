@@ -2122,6 +2122,7 @@ QuickChick (forAll (arbitrarySized 2) (fun c =>
       | None => false
       end)
   )))))).
+Extract Constant defNumTests => "10000".
 
 (* HIDE: This semantics already lost one property of Imp, which is only
    nonterminating executions don't produce a final state. Now if the input
@@ -2233,16 +2234,16 @@ QuickChick (forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
   To fix this, we'll enforce that both execution successfuly terminate.
    *)
 
-QuickChick (forAllShrink gen_pub_vars shrink (fun P =>
-    forAllShrink gen_pub_arrs shrink (fun PA =>
-    forAllShrink (gen_ct_well_typed_sized P PA 3) shrink (fun c =>
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
+    forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
 
     forAll arbitrary (fun b =>
 
-    forAllShrink gen_state shrink (fun s1 =>
-    forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
-    forAllShrink gen_astate shrink (fun a1 =>
-    forAllShrink (gen_pub_equiv PA a1) shrink (fun a2 =>
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+    forAll gen_astate (fun a1 =>
+    forAll (gen_pub_equiv PA a1) (fun a2 =>
 
     forAllMaybe (gen_spec_eval_sized c s1 a1 b 3) (fun '(ds, s1', a1', b1', os1) =>
       match spec_eval_engine c s2 a2 b ds with
@@ -2267,26 +2268,36 @@ QuickChick (forAllShrink gen_pub_vars shrink (fun P =>
     Let's try to force it to find something that's initially not speculating.
   *)
 
-(* TODO: doesn't find anything :'(
-QuickChick (forAllShrink gen_pub_vars shrink (fun P =>
-    forAllShrink gen_pub_arrs shrink (fun PA =>
-    forAllShrink (gen_ct_well_typed_sized P PA 4) shrink (fun c =>
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
 
-    forAllShrink gen_state shrink (fun s1 =>
-    forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
-    forAllShrink gen_astate shrink (fun a1 =>
-    forAllShrink (gen_pub_equiv PA a1) shrink (fun a2 =>
+    forAll (gen_ct_well_typed_sized P PA 2) (fun c =>
 
-    let b := false in  (* <---- changed ! *)
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+    forAll gen_astate (fun a1 =>
+    forAll (gen_pub_equiv PA a1) (fun a2 =>
 
-    forAllMaybe (sized (gen_spec_eval_sized c s1 a1 b)) (fun '(ds, s1', a1', b1', os1) =>
+    let b := false in (* <---- changed ! *)
+
+    forAllMaybe (gen_spec_eval_sized c s1 a1 b 1000) (fun '(ds, s1', a1', b1', os1) =>
       match spec_eval_engine c s2 a2 b ds with
       | Some (s2', a2', b2', os2') =>
           (pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
       | _ => true (* <---- changed! *)
       end
-  ))))))))).
-*)
+    )
+  )))))))).
+
+(* Now, it finds counterexamples such as:
+    c = A2[2] <- X1
+    st1 = (X1 !-> 0) ; ast1 (A0 !-> [0])
+    st2 = (X1 !-> 3) ; ast2 (A0 !-> [0])
+    speculative execution. A2 secret ; X1 secret ; A0 public
+    ds = [DForce; DStore A0 0]
+
+    Cool!
+  *)
 
 (* HIDE: Just to warm up formalized the first lemma in the Spectre Declassified
    paper: Lemma 1: structural properties of execution *)
