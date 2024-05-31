@@ -2308,13 +2308,15 @@ Lemma speculation_bit_monotonic : forall c s a b ds s' a' b' os,
   b' = true.
 Proof. intros c s a b ds s' a' b' os Heval Hb. induction Heval; eauto. Qed.
 
-(* 200 tests, ~60 discards, ~50 seconds*)
-QuickChick (forAll arbitrary (fun c =>
+(* 500 tests, ~18 discards, ~20 seconds*)
+Extract Constant defNumTests => "500".
+QuickChick (forAll (arbitrarySized 3) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
-    forAllMaybe (gen_spec_eval c st ast true) (fun '(ds, st', ast', b', os) =>
+    forAllMaybe (gen_spec_eval_sized c st ast true 100) (fun '(ds, st', ast', b', os) =>
       b'
   ))))).
+Extract Constant defNumTests => "10000".
 
 (* HIDE: This one is weaker for big-step semantics, but it's still helpful below *)
 Lemma speculation_needs_force : forall c s a b ds s' a' b' os,
@@ -2337,15 +2339,15 @@ Definition direction_eqb (d1 : direction) (d2 : direction) : bool :=
   | _, _ => false
   end.
 
-(* Way to many discards... *)
-QuickChick (forAll arbitrary (fun c =>
+(* Way too many discards to be able to test this. *)
+(*QuickChick (forAll (arbitrarySized 3) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
-    forAllMaybe (gen_spec_eval c st ast false) (fun '(ds, st', ast', b', os) =>
+    forAllMaybe (gen_spec_eval_sized c st ast false 100) (fun '(ds, st', ast', b', os) =>
       implication b' (
         existsb (fun dir => direction_eqb dir DForce) ds
       )
-  ))))).
+  ))))).*)
 
 (* HIDE: Also this one is weaker for big-step semantics *)
 Lemma unsafe_access_needs_speculation : forall c s a b ds s' a' b' os ax i,
@@ -2376,8 +2378,8 @@ Proof.
         { right. apply in_or_app. tauto. }
 Qed.
 
-(* Way to many discards... *)
-QuickChick (forAll arbitrary (fun c =>
+(* Way too many discards to test this. *)
+(*QuickChick (forAll arbitrary (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
     forAll arbitrary (fun b =>
@@ -2386,7 +2388,7 @@ QuickChick (forAll arbitrary (fun c =>
         ((existsb (fun dir => match dir with DLoad _ _ => true | _ => false end) ds) ||
          (existsb (fun dir => match dir with DStore _ _ => true | _ => false end) ds))
         ((existsb (fun dir => direction_eqb dir DForce) ds) || b)
-  )))))).
+  )))))).*)
 
 (** We can recover sequential execution from [spec_eval] if there is no
     speculation, so all directives are [DStep] and speculation flag starts [false]. *)
@@ -2395,6 +2397,15 @@ Definition seq_spec_eval (c:com) (s:state) (a:astate)
     (s':state) (a':astate) (os:obs) : Prop :=
   exists ds, (forall d, In d ds -> d = DStep) /\
     <(s, a, false, ds)> =[ c ]=> <(s', a', false, os)>.
+
+(* Way too many discards to test this *)
+(*QuickChick (forAll (arbitrarySized 3) (fun c =>
+    forAll gen_state (fun st =>
+    forAll gen_astate (fun ast =>
+    forAllMaybe (gen_spec_eval_sized c st ast false 100) (fun '(ds, st', ast', b', os) =>
+      let contains_only_steps := List.forallb (fun x => direction_eqb x DStep) ds in
+      implication contains_only_steps (negb b')
+  ))))).*)
 
 (* LATER: We should be able to prove that [cteval] and [seq_spec_eval] coincide, so
    by [ct_well_typed_ct_secure] also directly get their Lemma 2. *)
