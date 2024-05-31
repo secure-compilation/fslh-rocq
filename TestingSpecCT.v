@@ -335,7 +335,7 @@ Inductive com : Type :=
    be to use a type system to combine the two states into one, yet to
    keep accessing the arrays only with the special ARead and AWrite
    operations above. This would make this part of the chapter depend
-   on types, while currently we manged to avoid that dependency, at
+   on types, while currently we managed to avoid that dependency, at
    the cost of duplicating the state. If avoiding the dependency is
    important we could dynamically prevent nat vs array type confusion
    for now and only return later to prevent it using static typing? *)
