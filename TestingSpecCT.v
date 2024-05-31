@@ -859,10 +859,11 @@ Definition pub_equivb_astate (P : total_map label) (a1 a2 : astate) : bool :=
                    (map_dom mP)
   end.
 
-(* TODO: can we automatically derive this? *)
 (* TODO: do the proof. (looks hard) *)
 (* #[export] Instance decPubEquiv P (s1 s2 : state) : Dec (pub_equiv P s1 s2). *)
 (* Proof. dec_eq. Defined. *)
+
+(* TODO: can we automatically derive this? *)
 Definition gen_pub_equiv (P : total_map label) {X: Type} `{Gen X} (s: total_map X) : G (total_map X) :=
   let '(d, m) := s in
   new_m <- List.fold_left (fun (acc : G (Map X)) (c : string * X) => let '(k, v) := c in
@@ -876,6 +877,123 @@ QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
       pub_equivb P s1 s2
+  )))).
+
+(* TODO: it would be cool to unify these two shrinkers. *)
+Definition shrink_pub_equiv_state (P : total_map label) (s : state) : state -> list state :=
+  fun '(d, m) =>
+    (* We can only shrink the default value iif nothing secret uses it.
+       If the default for P is "secret", then we can always find a variable not in m that is secret.
+       Otherwise, we can shrink if all public values in P are explicit in s *)
+    let can_shrink_default := (
+      let '(default_visiblity, visiblities) := P in
+
+      if default_visiblity
+      then false
+      else
+        let public_variables := List.filter (fun x =>
+          apply P x
+        ) (map_dom visiblities) in
+
+        forallb (fun v => List.existsb (fun '(v', _) => String.eqb v v') m) public_variables
+    ) in
+
+    let secret_entries_shrunk := (List.map
+         (fun m' => (d, m'))
+         (fold_extra (fun acc before '(k, v) after =>
+            let modified_entry := if apply P k
+              then []
+              else List.map (fun v' =>
+                  before ++ [(k, v')] ++ after
+                ) (shrink v) in
+
+            modified_entry ++ acc
+         ) m [])
+      ) in
+
+    (* We can only remove secret entries or public entries that have
+       the same value as the default value *)
+    let entries_removed := List.map
+        (fun m' => (d, m'))
+        (fold_extra (fun acc before '(k, v) after =>
+           let replacement :=
+             if negb (apply P k) || (v =? d)
+             then before ++ after (* public or same value as default *)
+             else before ++ (k, v) :: after in
+
+           replacement :: acc
+        ) m []) in
+
+    if can_shrink_default
+    then (List.map (fun d' => (d', m)) (shrink d)) ++ (secret_entries_shrunk ++ entries_removed)
+    else secret_entries_shrunk ++ entries_removed.
+Definition shrink_pub_equiv_astate (P : total_map label) (a : astate) : astate -> list astate :=
+  fun '(d, m) =>
+    (* We can only shrink the default value iif nothing secret uses it.
+       If the default for P is "secret", then we can always find a variable not in m that is secret.
+       Otherwise, we can shrink if all public values in P are explicit in s *)
+    let can_shrink_default := (
+      let '(default_visiblity, visiblities) := P in
+
+      if default_visiblity
+      then false
+      else
+        let public_variables := List.filter (fun x =>
+          apply P x
+        ) (map_dom visiblities) in
+
+        forallb (fun v => List.existsb (fun '(v', _) => String.eqb v v') m) public_variables
+    ) in
+
+    let secret_entries_shrunk := (List.map
+         (fun m' => (d, m'))
+         (fold_extra (fun acc before '(k, v) after =>
+            let modified_entry := if apply P k
+              then []
+              else List.map (fun v' =>
+                  before ++ [(k, v')] ++ after
+                ) (shrink v) in
+
+            modified_entry ++ acc
+         ) m [])
+      ) in
+
+    (* We can only remove secret entries or public entries that have
+       the same value as the default value *)
+    let entries_removed := List.map
+        (fun m' => (d, m'))
+        (fold_extra (fun acc before '(k, v) after =>
+           let replacement :=
+             if negb (apply P k) || (forallb (fun '(x1, x2) => x1 =? x2) (List.combine v d))
+             then before ++ after (* public or same value as default *)
+             else before ++ (k, v) :: after in
+
+           replacement :: acc
+        ) m []) in
+
+    if can_shrink_default
+    then (List.map (fun d' => (d', m)) (shrink d)) ++ (secret_entries_shrunk ++ entries_removed)
+    else secret_entries_shrunk ++ entries_removed.
+
+QuickChick (forAll gen_pub_vars (fun P =>
+
+    forAll gen_state (fun s =>
+    forAll (gen_pub_equiv P s) (fun s' =>
+
+    let shrunk := shrink_pub_equiv_state P s s' in
+    printTestCase ((show shrunk) ++ nl) (
+      forallb (fun s'' => pub_equivb P s s'') shrunk
+    )
+  )))).
+QuickChick (forAll gen_pub_vars (fun P =>
+
+    forAll gen_astate (fun a =>
+    forAll (gen_pub_equiv P a) (fun a' =>
+
+    let shrunk := shrink_pub_equiv_astate P a a' in
+    printTestCase ((show shrunk) ++ nl) (
+      forallb (fun a'' => pub_equivb_astate P a a'') shrunk
+    )
   )))).
 
 Lemma pub_equiv_refl : forall {X:Type} (P : total_map label) (s : total_map X),
@@ -1073,14 +1191,14 @@ with gen_bexp_with_label_sized (P : pub_vars) (l : label) (size : nat) : G bexp 
 
 QuickChick (forAll gen_pub_vars (fun P => 
     forAllShrink gen_state shrink (fun s1 => 
-    forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
+    forAllShrink (gen_pub_equiv P s1) (shrink_pub_equiv_state P s1) (fun s2 =>
     forAllShrink (gen_aexp_with_label_sized P public 3) shrink (fun a => 
       (aeval s1 a) =? (aeval s2 a)
   ))))).
 
 QuickChick (forAll gen_pub_vars (fun P => 
     forAllShrink gen_state shrink (fun s1 => 
-    forAllShrink (gen_pub_equiv P s1) shrink (fun s2 =>
+    forAllShrink (gen_pub_equiv P s1) (shrink_pub_equiv_state P s1) (fun s2 =>
     forAllShrink (gen_bexp_with_label_sized P public 3) shrink (fun b => 
       Bool.eqb (beval s1 b) (beval s2 b)
   ))))).
@@ -2209,9 +2327,9 @@ QuickChick (forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
     forAll arbitrary (fun b =>
 
     forAllShrinkNonDet 100 gen_state shrink (fun s1 =>
-    forAllShrinkNonDet 100 (gen_pub_equiv P s1) shrink (fun s2 =>
+    forAllShrinkNonDet 100 (gen_pub_equiv P s1) (shrink_pub_equiv_state P s1) (fun s2 =>
     forAllShrinkNonDet 100 gen_astate shrink (fun a1 =>
-    forAllShrinkNonDet 100 (gen_pub_equiv PA a1) shrink (fun a2 =>
+    forAllShrinkNonDet 100 (gen_pub_equiv PA a1) (shrink_pub_equiv_astate P a1) (fun a2 =>
 
     forAllMaybe (gen_spec_eval_sized c s1 a1 b 3) (fun '(ds, s1', a1', b1', os1) =>
       match spec_eval_engine c s2 a2 b ds with
