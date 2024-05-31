@@ -1955,6 +1955,23 @@ Definition gen_nat_lt (m : nat) : G (option nat) :=
       returnGen (Some n)
   end.
 
+Definition gen_arr_not_nil (ast : astate) : G (option arr_id) :=
+  let '(d, m) := ast in
+  let arr_not_empty : list string := List.filter (fun a =>
+    match apply ast a with
+    | [] => false
+    | _ => true
+    end) (map_dom m) in
+
+  match d with
+  | [] => elems_ None (List.map (fun (x : string) => Some (Arr x)) arr_not_empty)
+  | _ =>
+      let not_empty_as_default : list string := List.filter (fun a =>
+        negb (List.existsb (fun x => String.eqb x a) (map_dom m))
+      ) ["A0"; "A1"; "A2"] % string in
+      elems_ None (List.map (fun x => Some (Arr x)) (arr_not_empty ++ not_empty_as_default))
+  end.
+
 (* Returns (ds, st', ast', b', os) such that <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> *)
 Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (size : nat): G (option (dirs * state * astate * bool * obs)) :=
   match c with
@@ -1987,7 +2004,7 @@ Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (s
       returnGen (Some (ds, st', ast', b', os))
     else (* i >= List.length (apply ast a) *)
     if b then
-      a' <- (genVarId).(arbitrary);;
+      bindOpt (gen_arr_not_nil ast) (fun a' => (* prioritize generating a non-empty array *)
       bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
 
       let ds := [DLoad a' i'] in
@@ -1996,7 +2013,7 @@ Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (s
       let b' := true in
       let os := [OARead a i] in
       returnGen (Some (ds, st', ast', b', os))
-      )
+      ))
     else returnGen None
   | <{ a[ie] <- e }> =>
     let i := aeval st ie in
@@ -2012,7 +2029,7 @@ Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (s
       returnGen (Some (ds, st', ast', b', os))
     else (* i >= List.length (apply ast a) *)
     if b then
-      a' <- (genVarId).(arbitrary);;
+      bindOpt (gen_arr_not_nil ast) (fun a' => (* prioritize generating a non-empty array *)
       bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
 
       let ds := [DStore a' i'] in
@@ -2021,7 +2038,7 @@ Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (s
       let b' := true in
       let os := [OAWrite a i] in
       returnGen (Some (ds, st', ast', b', os))
-      )
+      ))
     else returnGen None
   | _ =>
     match size with
