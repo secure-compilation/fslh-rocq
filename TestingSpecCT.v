@@ -2051,11 +2051,7 @@ Fixpoint gen_spec_eval_sized (c : com) (st : state) (ast : astate) (b : bool) (s
             returnGen (Some (ds1 ++ ds2, st'', ast'', b'', os1 ++ os2))
             ))
         | <{ if be then c1 else c2 end }> =>
-            dir <- (match b with
-              | true => elems [DStep; DForce]
-              | false => returnGen DStep
-              end
-            );;
+            dir <- elems [DStep; DForce];;
 
             match dir with
             | DStep =>
