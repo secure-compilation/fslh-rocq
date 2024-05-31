@@ -38,8 +38,6 @@ Set Default Goal Selector "!".
 ]]
 *)
 
-(* SOONER: Formalize this example later in the chapter. *)
-
 (** ** Constant-time conditional *)
 
 (** But first, we extend the arithmetic expressions of Imp with an [b ? e1 : e2]
@@ -558,6 +556,25 @@ Inductive ct_well_typed (P:pub_vars) (PA:pub_arrs) : com -> Prop :=
 
 where "P ;; PA '|-ct-' c" := (ct_well_typed P PA c).
 (* TERSE: /HIDEFROMHTML *)
+
+(** ** Example pc secure program that is not constant-time secure *)
+
+Definition ct_insecure_prog :=
+   <{{ X <- A[[Y]] }}> .
+
+(* This program is trivially pc secure, because it does not branch at all.
+   But it is not constant-time secure, if Y is a secret variable. This is 
+   even if X and A are secrets like shown below. *)
+
+Example ct_insecure_prog_is_not_ct : exists P PA,
+  ~ (P ;; PA |-ct- ct_insecure_prog) .
+Proof.
+  remember (X!-> secret; Y!-> secret; _!-> public) as P.
+  remember (A!-> secret; _!-> public) as PA.
+  exists P. exists PA. unfold ct_insecure_prog. intros H.
+  inversion H; subst; clear H. inversion H2.
+Qed.
+
 
 (** ** Final theorems: noninterference and constant-time security *)
 
