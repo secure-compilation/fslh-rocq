@@ -3411,6 +3411,138 @@ Proof.
 Qed. *)
 Admitted.
 
+(* Returns (ds, st', ast', b', os) such that P |- <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> *)
+Fixpoint gen_ideal_eval_sized (P : pub_vars) (c : com) (st : state) (ast : astate) (b : bool) (size : nat): G (option (dirs * state * astate * bool * obs)) :=
+  match c with
+  | <{ skip }> =>
+    let ds := [] in
+    let st' := st in
+    let ast' := ast in
+    let b' := b in
+    let os := [] in
+    returnGen (Some (ds, st', ast', b', os))
+  | <{ x := e }> =>
+    let n := aeval st e in
+
+    let ds := [] in
+    let st' := (x !-> n; st) in
+    let ast' := ast in
+    let b' := b in
+    let os := [] in
+    returnGen (Some (ds, st', ast', b', os))
+  | <{ x <- a[[ie]] }> =>
+    let i := aeval st ie in
+
+    if i <? List.length (apply ast a)
+    then
+      let ds := [DStep] in
+      let st' := (x !-> if b && apply P x then 0 else nth i (apply ast a) 0; st) in
+      let ast' := ast in
+      let b' := b in
+      let os := [OARead a i] in
+      returnGen (Some (ds, st', ast', b', os))
+    else (* i >= List.length (apply ast a) *)
+    if b then
+      bindOpt (gen_arr_not_nil ast) (fun a' => (* prioritize generating a non-empty array *)
+      bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
+
+      let ds := [DLoad a' i'] in
+      let st' := (x !-> if apply P x then 0 else nth i' (apply ast a') 0; st) in
+      let ast' := ast in
+      let b' := true in
+      let os := [OARead a i] in
+      returnGen (Some (ds, st', ast', b', os))
+      ))
+    else returnGen None
+  | <{ a[ie] <- e }> =>
+    let i := aeval st ie in
+    let n := aeval st e in
+
+    if i <? List.length (apply ast a)
+    then
+      let ds := [DStep] in
+      let st' := st in
+      let ast' := (a !-> upd i (apply ast a) n; ast) in
+      let b' := b in
+      let os := [OAWrite a i] in
+      returnGen (Some (ds, st', ast', b', os))
+    else (* i >= List.length (apply ast a) *)
+    if b then
+      bindOpt (gen_arr_not_nil ast) (fun a' => (* prioritize generating a non-empty array *)
+      bindOpt (gen_nat_lt (List.length (apply ast a'))) (fun i' =>
+
+      let ds := [DStore a' i'] in
+      let st' := st in
+      let ast' := (a' !-> upd i' (apply ast a') n; ast) in
+      let b' := true in
+      let os := [OAWrite a i] in
+      returnGen (Some (ds, st', ast', b', os))
+      ))
+    else returnGen None
+  | _ =>
+    match size with
+    | O => returnGen None
+    | S size =>
+        match c with
+        | <{ c1 ; c2 }> =>
+            bindOpt (gen_ideal_eval_sized P c1 st ast b size) (fun '(ds1, st', ast', b', os1) =>
+            bindOpt (gen_ideal_eval_sized P c2 st' ast' b' size) (fun '(ds2, st'', ast'', b'', os2) =>
+            returnGen (Some (ds1 ++ ds2, st'', ast'', b'', os1 ++ os2))
+            ))
+        | <{ if be then c1 else c2 end }> =>
+            dir <- elems [DStep; DForce];;
+
+            match dir with
+            | DStep =>
+                let condition := beval st be in
+                let next_c := if condition then c1 else c2 in
+                bindOpt (gen_ideal_eval_sized P next_c st ast b size) (fun '(ds, st', ast', b', os) =>
+                returnGen (Some (DStep::ds, st', ast', b', (OBranch condition)::os))
+                )
+            | DForce =>
+                let condition := beval st be in
+                let next_c := if condition then c2 else c1 in
+                bindOpt (gen_ideal_eval_sized P next_c st ast true size) (fun '(ds, st', ast', b', os) =>
+                returnGen (Some (DForce::ds, st', ast', b', (OBranch condition)::os))
+                )
+            | _ => returnGen None
+            end
+        | <{ while be do c end }> =>
+            gen_ideal_eval_sized P <{ if be then c; while be do c end else skip end }> st ast b size
+        | _ => returnGen None
+        end
+    end
+  end.
+
 (* HIDE: Moving syntactic constraints about ds and os out of the conclusions of
    rules and into equality premises could make this proof script less
    verbose. Maybe just define "smart constructors" for that? *)
+
+(* 10000 tests: 32 minutes, 15% discards *)
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll arbitrary (fun c =>
+
+    forAll gen_state (fun st =>
+    forAll gen_astate (fun ast =>
+
+    forAll arbitrary (fun b =>
+
+    forAllMaybe (gen_ideal_eval_sized P c st ast b 100) (fun '(ds, st', ast', b', os) =>
+      let hardened := sel_slh P c in
+      printTestCase ((show hardened) ++ nl) (
+
+      let input_state_with_b := "b" !-> (if b then 1 else 0); st in
+      let output_state_with_b := "b" !-> (if b' then 1 else 0); st' in
+
+      match spec_eval_engine hardened input_state_with_b ast b ds with
+      | Some (st'', ast'', b'', os') =>
+          printTestCase ((show st'') ++ nl) (
+          printTestCase ((show ast'') ++ nl) (
+
+          (state_eqb st'' output_state_with_b) && (astate_eqb ast' ast'') &&
+          (Bool.eqb b' b'') && (obs_eqb os os')
+          ))
+      | None => checker tt (* If the second execution crashes, this isn't a counterexample *)
+      end
+    )))))))).
+
