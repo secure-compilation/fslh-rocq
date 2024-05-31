@@ -255,44 +255,50 @@ with arbitrarySized_impl_aexp (size : nat) : G aexp :=
   {| arbitrarySized := arbitrarySized_impl_bexp |}.
 
 (* Derive Shrink for aexp and bexp. *)
-(* The code below was auto-generated, that's why it is ugly. *)
-Fixpoint shrink_impl_bexp (x : bexp) : list bexp :=
-  match x with
-  | <{ p0 = p1 }> =>
-      (map (fun shrunk : aexp => <{ shrunk = p1 }>) (shrink_impl_aexp p0) ++ []) ++
-      (map (fun shrunk : aexp => <{ p0 = shrunk }>) (shrink_impl_aexp p1) ++ []) ++ []
-  | <{ p0 <> p1 }> =>
-      (map (fun shrunk : aexp => <{ shrunk <> p1 }>) (shrink_impl_aexp p0) ++ []) ++
-      (map (fun shrunk : aexp => <{ p0 <> shrunk }>) (shrink_impl_aexp p1) ++ []) ++ []
-  | <{ p0 <= p1 }> =>
-      (map (fun shrunk : aexp => <{ shrunk <= p1 }>) (shrink_impl_aexp p0) ++ []) ++
-      (map (fun shrunk : aexp => <{ p0 <= shrunk }>) (shrink_impl_aexp p1) ++ []) ++ []
-  | <{ p0 > p1 }> =>
-      (map (fun shrunk : aexp => <{ shrunk > p1 }>) (shrink_impl_aexp p0) ++ []) ++
-      (map (fun shrunk : aexp => <{ p0 > shrunk }>) (shrink_impl_aexp p1) ++ []) ++ []
-  | <{ ~ p0 }> => ([p0] ++ map (fun shrunk : bexp => <{ ~ shrunk }>) (shrink_impl_bexp p0) ++ []) ++ []
-  | <{ p0 && p1 }> =>
-      ([p0] ++ map (fun shrunk : bexp => <{ shrunk && p1 }>) (shrink_impl_bexp p0) ++ []) ++
-      ([p1] ++ map (fun shrunk : bexp => <{ p0 && shrunk }>) (shrink_impl_bexp p1) ++ []) ++ []
+Fixpoint shrink_impl_bexp (b : bexp) : list bexp :=
+  match b with
+  | <{ a1 = a2 }> =>
+      (map (fun shrunk : aexp => <{ shrunk = a2 }>) (shrink_impl_aexp a1)) ++
+      (map (fun shrunk : aexp => <{ a1 = shrunk }>) (shrink_impl_aexp a2))
+  | <{ a1 <> a2 }> =>
+      (map (fun shrunk : aexp => <{ shrunk <> a2 }>) (shrink_impl_aexp a1)) ++
+      (map (fun shrunk : aexp => <{ a1 <> shrunk }>) (shrink_impl_aexp a2))
+  | <{ a1 <= a2 }> =>
+      (map (fun shrunk : aexp => <{ shrunk <= a2 }>) (shrink_impl_aexp a1)) ++
+      (map (fun shrunk : aexp => <{ a1 <= shrunk }>) (shrink_impl_aexp a2))
+  | <{ a1 > a2 }> =>
+      (map (fun shrunk : aexp => <{ shrunk > a2 }>) (shrink_impl_aexp a1)) ++
+      (map (fun shrunk : aexp => <{ a1 > shrunk }>) (shrink_impl_aexp a2))
+  | <{ ~ b1 }> =>
+      [b1] ++
+      (map (fun shrunk : bexp => <{ ~ shrunk }>) (shrink_impl_bexp b1))
+  | <{ b1 && b2 }> =>
+      [b1; b2] ++
+      (map (fun shrunk : bexp => <{ shrunk && b2 }>) (shrink_impl_bexp b1)) ++
+      (map (fun shrunk : bexp => <{ b1 && shrunk }>) (shrink_impl_bexp b2))
   | _ => []
   end
-with shrink_impl_aexp (x : aexp) : list aexp :=
-  match x with
-  | ANum p0 => map (fun n => ANum n) (map (fun shrunk : nat => shrunk) (shrink p0))
-  | AId p0 => map (fun n => AId n) (map (fun shrunk : var_id => shrunk) (shrink p0))
-  | <{ p0 + p1 }> =>
-      ([p0] ++ map (fun shrunk : aexp => <{ shrunk + p1 }>) (shrink_impl_aexp p0) ++ []) ++
-      ([p1] ++ map (fun shrunk : aexp => <{ p0 + shrunk }>) (shrink_impl_aexp p1) ++ []) ++ []
-  | <{ p0 - p1 }> =>
-      ([p0] ++ map (fun shrunk : aexp => <{ shrunk - p1 }>) (shrink_impl_aexp p0) ++ []) ++
-      ([p1] ++ map (fun shrunk : aexp => <{ p0 - shrunk }>) (shrink_impl_aexp p1) ++ []) ++ []
-  | <{ p0 * p1 }> =>
-      ([p0] ++ map (fun shrunk : aexp => <{ shrunk * p1 }>) (shrink_impl_aexp p0) ++ []) ++
-      ([p1] ++ map (fun shrunk : aexp => <{ p0 * shrunk }>) (shrink_impl_aexp p1) ++ []) ++ []
-  | <{ p0 ? p1 : p2 }> =>
-      (map (fun shrunk : bexp => <{ shrunk ? p1 : p2 }>) (shrink_impl_bexp p0) ++ []) ++
-      ([p1] ++ map (fun shrunk : aexp => <{ p0 ? shrunk : p2 }>) (shrink_impl_aexp p1) ++ []) ++
-      ([p2] ++ map (fun shrunk : aexp => <{ p0 ? p1 : shrunk }>) (shrink_impl_aexp p2) ++ []) ++ []
+with shrink_impl_aexp (a : aexp) : list aexp :=
+  match a with
+  | ANum n => map (fun n => ANum n) (shrink n)
+  | AId v => map (fun v => AId v) (shrink v)
+  | <{ a1 + a2 }> =>
+      [a1; a2] ++
+      (map (fun shrunk : aexp => <{ shrunk + a2 }>) (shrink_impl_aexp a1)) ++
+      (map (fun shrunk : aexp => <{ a1 + shrunk }>) (shrink_impl_aexp a2))
+  | <{ a1 - a2 }> =>
+      [a1; a2] ++
+      (map (fun shrunk : aexp => <{ shrunk - a2 }>) (shrink_impl_aexp a1)) ++
+      (map (fun shrunk : aexp => <{ a1 - shrunk }>) (shrink_impl_aexp a2))
+  | <{ a1 * a2 }> =>
+      [a1; a2] ++
+      (map (fun shrunk : aexp => <{ shrunk * a2 }>) (shrink_impl_aexp a1)) ++
+      (map (fun shrunk : aexp => <{ a1 * shrunk }>) (shrink_impl_aexp a2))
+  | <{ be ? a1 : a2 }> =>
+      (map (fun shrunk : bexp => <{ shrunk ? a1 : a2 }>) (shrink_impl_bexp be)) ++
+      [a1; a2] ++
+      (map (fun shrunk : aexp => <{ be ? shrunk : a2 }>) (shrink_impl_aexp a1)) ++
+      (map (fun shrunk : aexp => <{ be ? a1 : shrunk }>) (shrink_impl_aexp a2))
   end.
 
 #[export] Instance shrinkAexp : Shrink aexp :=
