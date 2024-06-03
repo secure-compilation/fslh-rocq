@@ -947,13 +947,99 @@ Qed.
 (** We can recover sequential execution from [spec_eval] if there is no
     speculation, so all directives are [DStep] and speculation flag starts [false]. *)
 
-Definition seq_spec_eval (c:com) (s:state) (a:astate)
-    (s':state) (a':astate) (os:obs) : Prop :=
+Definition seq_spec_eval (c :com) (st :state) (ast :astate)
+    (st' :state) (ast' :astate) (os :obs) : Prop :=
   exists ds, (forall d, In d ds -> d = DStep) /\
-    <(s, a, false, ds)> =[ c ]=> <(s', a', false, os)>.
+    <(st, ast, false, ds)> =[ c ]=> <(st', ast', false, os)>.
 
-(* LATER: We should be able to prove that [cteval] and [seq_spec_eval] coincide, so
-   by [ct_well_typed_ct_secure] also directly get their Lemma 2. *)
+(* Sequential execution is equivalent to constant-time evaluation, i.e. [cteval].  *)
+
+Lemma cteval_equiv_seq_spec_eval : forall c st ast st' ast' os,
+  seq_spec_eval c st ast st' ast' os <-> <(st, ast)> =[ c ]=> <(st', ast', os)> .
+Proof.
+  intros c st ast st' ast' os. unfold seq_spec_eval. split; intros H.
+  - (* -> *)
+    destruct H as [ds [Hstep Heval] ].
+    induction Heval; try (now econstructor; eauto).
+    + (* Spec_Seq *) eapply CTE_Seq.
+      * eapply IHHeval1. intros d HdIn.
+        assert (L: In d ds1 \/ In d ds2) by (left; assumption).
+        eapply in_or_app in L. eapply Hstep in L. assumption.
+      * eapply IHHeval2. intros d HdIn.
+        assert (L: In d ds1 \/ In d ds2) by (right; assumption).
+        eapply in_or_app in L. eapply Hstep in L. assumption.
+    + (* Spec_If *) destruct (beval st be) eqn:Eqbe.
+      * eapply CTE_IfTrue; [assumption |].
+        eapply IHHeval. intros d HdIn.
+        apply (in_cons DStep d) in HdIn. apply Hstep in HdIn. assumption.
+      * eapply CTE_IfFalse; [assumption |].
+        eapply IHHeval. intros d HdIn.
+        apply (in_cons DStep d) in HdIn. apply Hstep in HdIn. assumption.
+    + (* Spec_IF_F; contra *) exfalso.
+      assert (L: ~(DForce = DStep)) by discriminate. apply L.
+      apply (Hstep DForce). apply in_eq.
+    + (* Spec_ARead_U; contra *) exfalso.
+      assert (L: ~(DLoad a' i' = DStep)) by discriminate. apply L.
+      apply (Hstep (DLoad a' i')). apply in_eq.
+    + (* Spec_AWrite_U; contra *) exfalso.
+      assert (L: ~(DStore a' i' = DStep)) by discriminate. apply L.
+      apply (Hstep (DStore a' i')). apply in_eq.
+  - (* <- *)
+    induction H.
+    + (* CTE_Skip *) 
+      exists []; split; [| eapply Spec_Skip].
+      simpl. intros d Contra; destruct Contra.
+    + (* CTE_Asgn *)
+      exists []; split; [| eapply Spec_Asgn; assumption].
+      simpl. intros d Contra; destruct Contra.
+    + (* CTE_Seq *)
+      destruct IHcteval1 as [ds1 [Hds1 Heval1] ]. 
+      destruct IHcteval2 as [ds2 [Hds2 Heval2] ].
+      exists (ds1 ++ ds2). split; [| eapply Spec_Seq; eassumption].
+      intros d HdIn. apply in_app_or in HdIn. destruct HdIn as [Hin1 | Hin2]. 
+      * apply Hds1 in Hin1. assumption.
+      * apply Hds2 in Hin2. assumption.
+    + (* CTE_IfTrue *)
+      destruct IHcteval as [ds [Hds Heval] ]. exists (DStep :: ds). split.
+      * intros d HdIn. apply in_inv in HdIn. 
+        destruct HdIn as [Heq | HIn]; [symmetry; assumption | apply Hds; assumption]. 
+      * rewrite <- H. eapply Spec_If. rewrite H; simpl. assumption.
+    + (* CTE_IfFalse *)
+      destruct IHcteval as [ds [Hds Heval] ]. exists (DStep :: ds). split.
+      * intros d HdIn. apply in_inv in HdIn. 
+        destruct HdIn as [Heq | HIn]; [symmetry; assumption | apply Hds; assumption]. 
+      * rewrite <- H. eapply Spec_If. rewrite H; simpl. assumption.
+    + (* CTE_While *)
+      destruct IHcteval as [ds [Hds Heval] ]. exists ds. 
+      split; [assumption |]. eapply Spec_While; assumption.
+    + (* CTE_ARead *) 
+      exists [DStep]. split.
+      * simpl. intros d HdIn. destruct HdIn as [Heq | Contra]; [| destruct Contra].
+        symmetry. assumption.
+      * eapply Spec_ARead; assumption.
+    + (* CTE_AWrite *)
+      exists [DStep]. split.
+      * simpl. intros d HdIn. destruct HdIn as [Heq | Contra]; [| destruct Contra].
+        symmetry. assumption.
+      * eapply Spec_Write; assumption.
+Qed. 
+
+(* HIDE: This is Lemma 2 from Spectre Declassified *)
+
+Lemma ct_well_typed_seq_spec_eval_ct_secure :
+  forall P PA c st1 st2 ast1 ast2 st1' st2' ast1' ast2' os1 os2,
+    P ;; PA |-ct- c ->
+    pub_equiv P st1 st2 ->
+    pub_equiv PA ast1 ast2 ->
+    seq_spec_eval c st1 ast1 st1' ast1' os1 ->
+    seq_spec_eval c st2 ast2 st2' ast2' os2 ->
+    os1 = os2.
+Proof.
+  intros P PA c st1 st2 ast1 ast2 st1' st2' ast1' ast2' os1 os2 Hwt
+    HP HPA Heval1 Heval2.
+  apply cteval_equiv_seq_spec_eval in Heval1, Heval2. 
+  apply ct_well_typed_ct_secure in Hwt. eapply Hwt; eauto.
+Qed.
 
 (** Selective SLH transformation that we will show enforces speculative
     constant-time security. *)
