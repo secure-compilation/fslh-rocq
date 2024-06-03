@@ -1178,66 +1178,88 @@ with gen_public_bexp_sized (P : pub_vars) (size : nat) : G bexp :=
         ]
   end.
 
-Fixpoint gen_secret_aexp_sized (P : pub_vars) (size : nat) : G (option aexp) :=
+Fixpoint gen_secret_aexp_sized_nofail (dummy : var_id) (secret_variables : list var_id) (size : nat) : G aexp :=
   match size with
-    | 0 =>
-        X <- gen_var_with_label P secret;;
-        match X with
-        | Some X => ret (Some (AId X))
-        | None => ret None
-        end
-    | S size' =>
-        (* secret *)
-        X <- gen_var_with_label P secret;;
-        match X with
-        | Some X =>
-          let num := ret (Some (AId X)) in
-
-          let possibilities := [
-            (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
-             bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
-             ret (Some <{ a1 + a2 }>))));
-            (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
-             bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
-             ret (Some <{ a1 - a2 }>))));
-            (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
-             bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
-             ret (Some <{ a1 * a2 }>))));
-            (bindOpt (gen_secret_bexp_sized P size') (fun be =>
-             bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
-             bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
-             ret (Some <{ be ? a1 : a2 }>)))));
-
-            num
-          ] in
-
-          oneOf_ num possibilities
-        | None => ret None
-        end
+  | 0 => X <- elems_ dummy secret_variables;; ret (AId X)
+  | S size' =>
+      (* secret *)
+      oneOf [
+        (X <- elems_ dummy secret_variables;;
+         ret (AId X));
+        (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+         a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+         ret <{ a1 + a2 }>);
+        (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+         a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+         ret <{ a1 - a2 }>);
+        (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+         a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+         ret <{ a1 * a2 }>);
+        (be <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
+         a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+         a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+         ret <{ be ? a1 : a2 }>)
+      ]
     end
-with gen_secret_bexp_sized (P : pub_vars) (size : nat) : G (option bexp) :=
+with gen_secret_bexp_sized_nofail (dummy : var_id) (secret_variables : list var_id) (size : nat) : G bexp :=
   match size with
-    | 0 => ret None
+    | 0 => (* Cheat so that we don't have to return None *)
+        oneOf [
+          (x1 <- elems_ dummy secret_variables;;
+           x2 <- elems_ dummy secret_variables;;
+           ret <{ (AId x1) <= (AId x2) }>);
+          (x1 <- elems_ dummy secret_variables;;
+           x2 <- elems_ dummy secret_variables;;
+           ret <{ (AId x1) > (AId x2) }>);
+          (x1 <- elems_ dummy secret_variables;;
+           x2 <- elems_ dummy secret_variables;;
+           ret <{ (AId x1) = (AId x2) }>);
+          (x1 <- elems_ dummy secret_variables;;
+           x2 <- elems_ dummy secret_variables;;
+           ret <{ (AId x1) <> (AId x2) }>)
+        ]
     | S size' =>
         oneOf [
-          (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
-           bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
-           ret (Some <{ a1 <= a2 }>))));
-          (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
-           bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
-           ret (Some <{ a1 > a2 }>))));
-          (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
-           bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
-           ret (Some <{ a1 = a2 }>))));
-          (bindOpt (gen_secret_aexp_sized P size') (fun a1 =>
-           bindOpt (gen_secret_aexp_sized P size') (fun a2 =>
-           ret (Some <{ a1 <> a2 }>))));
-          (bindOpt (gen_secret_bexp_sized P size') (fun b =>
-           ret (Some <{ ~b }>)));
-          (bindOpt (gen_secret_bexp_sized P size') (fun b1 =>
-           bindOpt (gen_secret_bexp_sized P size') (fun b2 =>
-           ret (Some <{ b1 && b2 }>))))
+          (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+           a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+           ret <{ a1 <= a2 }>);
+          (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+           a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+           ret <{ a1 > a2 }>);
+          (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+           a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+           ret <{ a1 = a2 }>);
+          (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+           a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+           ret <{ a1 <> a2 }>);
+          (b <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
+           ret <{ ~b }>);
+          (b1 <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
+           b2 <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
+           ret <{ b1 && b2 }>)
         ]
+  end.
+Definition gen_secret_aexp_sized (P : pub_vars) (size : nat) : G (option aexp) :=
+  let all_variables := union (map_dom (snd P)) ["X0"; "X1"; "X2"; "X3"; "X4"] % string in
+  let secret_variables := List.filter (fun v => negb (apply P v)) all_variables in
+  let secret_variables := List.map (fun v => Var v) secret_variables in
+
+  match secret_variables with
+  | [] => ret None
+  | dummy::_ =>
+      a <- gen_secret_aexp_sized_nofail dummy secret_variables size;;
+      ret (Some a)
+  end.
+Definition gen_secret_bexp_sized (P : pub_vars) (size : nat) : G (option bexp) :=
+  let all_variables := union (map_dom (snd P)) ["X0"; "X1"; "X2"; "X3"; "X4"] % string in
+  let secret_variables := List.filter (fun v => negb (apply P v)) all_variables in
+  let secret_variables := List.map (fun v => Var v) secret_variables in
+
+  match secret_variables with
+  | [] => ret None
+  | dummy::_ =>
+      b <- gen_secret_bexp_sized_nofail dummy secret_variables size;;
+      ret (Some b)
   end.
 
 Definition forAllMaybeShrink {A prop : Type} {_ : Checkable prop} `{Show A}
@@ -1282,24 +1304,21 @@ with label_of_bexp (P : pub_vars) (b : bexp) : label := match b with
   | <{ false }> => public
 end.
 
-(* TODO: too many discards associatied with secret aexp/bexp generation
 QuickChick (forAll gen_pub_vars (fun P =>
-  forAll arbitrary (fun l =>
-
   forAll (sized (gen_public_aexp_sized P)) (fun a =>
-    Bool.eqb (label_of_aexp P a) l
-  )))).
+    Bool.eqb (label_of_aexp P a) public
+  ))).
 QuickChick (forAll gen_pub_vars (fun P =>
-  forAllMaybe (sized (gen_secret_aexp_sized P)) (fun a =>
+  forAllMaybe (gen_secret_aexp_sized P 3) (fun a =>
     Bool.eqb (label_of_aexp P a) secret
-  ))). *)
+  ))).
 QuickChick (forAll gen_pub_vars (fun P =>
-  forAll (sized (gen_public_bexp_sized P)) (fun b =>
+  forAll (gen_public_bexp_sized P 3) (fun b =>
     Bool.eqb (label_of_bexp P b) public
   ))).
 QuickChick (forAll gen_pub_vars (fun P =>
-  forAllMaybe (sized (gen_secret_bexp_sized P)) (fun b =>
-    Bool.eqb (label_of_bexp P b) public
+  forAllMaybe (gen_secret_bexp_sized P 3) (fun b =>
+    Bool.eqb (label_of_bexp P b) secret
   ))).
 
 Definition shrink_var_preserve_label (P : pub_vars) (v : var_id) : list var_id :=
