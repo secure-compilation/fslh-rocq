@@ -2625,8 +2625,6 @@ Definition forAllShrinkNonDet {A prop : Type} {_ : Checkable prop} `{Show A}
                  shrinking repeated_shrinker x (fun x' =>
                                          printTestCase (show x' ++ newline) (pf x'))).
 
-(* TODO: I don't think simply using the generic shrinker
-         works when generating objects with non-generic generators *)
 (* TODO: 100 isn't enough, but increasing it leads to too many performance problems.
          forAllShrinkNonDet needs to be changed to be more efficient. *)
 QuickChick (forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
