@@ -1442,9 +1442,8 @@ QuickChick (forAll gen_pub_vars (fun P =>
 
   (forallb (fun b' => Bool.eqb (label_of_bexp P b') public) candidates)
 ))).
-(* TODO: Too many discards.
 QuickChick (forAll gen_pub_vars (fun P =>
-  forAll (sized (gen_secret_aexp_sized P)) (fun a =>
+  forAllMaybe (gen_secret_aexp_sized P 3) (fun a =>
   let candidates := shrink_aexp_with_label P secret a in
 
   printTestCase ((show candidates) ++ nl)
@@ -1452,14 +1451,13 @@ QuickChick (forAll gen_pub_vars (fun P =>
   (forallb (fun a' => Bool.eqb (label_of_aexp P a') secret) candidates)
 ))).
 QuickChick (forAll gen_pub_vars (fun P =>
-  forAll (sized (gen_secret_bexp_sized P)) (fun b =>
+  forAllMaybe (gen_secret_bexp_sized P 3) (fun b =>
   let candidates := shrink_bexp_with_label P secret b in
 
   printTestCase ((show candidates) ++ nl)
 
   (forallb (fun b' => Bool.eqb (label_of_bexp P b') secret) candidates)
 ))).
-*)
 
 Theorem noninterferent_aexp_bexp : forall P s1 s2,
   pub_equiv P s1 s2 ->
