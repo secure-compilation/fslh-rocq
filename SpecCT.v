@@ -1788,19 +1788,19 @@ Qed.
 (** Finally, we use this to prove spec_ct for sel_slh. *)
 
 Theorem sel_slh_spec_ct_secure :
-  forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds,
+  forall P PA c st1 st2 ast1 ast2 st1' st2' ast1' ast2' b1' b2' os1 os2 ds,
     P ;; PA |-ct- c ->
-    pub_equiv P s1 s2 ->
-    pub_equiv PA a1 a2 ->
+    pub_equiv P st1 st2 ->
+    pub_equiv PA ast1 ast2 ->
     unused "b" c ->
     no_while c ->
-    s1 "b" = 0 ->
-    s2 "b" = 0 ->
-    <(s1, a1, false, ds)> =[ sel_slh P c ]=> <(s1', a1', b1', os1)> ->
-    <(s2, a2, false, ds)> =[ sel_slh P c ]=> <(s2', a2', b2', os2)> ->
+    st1 "b" = 0 ->
+    st2 "b" = 0 ->
+    <(st1, ast1, false, ds)> =[ sel_slh P c ]=> <(st1', ast1', b1', os1)> ->
+    <(st2, ast2, false, ds)> =[ sel_slh P c ]=> <(st2', ast2', b2', os2)> ->
     os1 = os2.
 Proof.
-  intros P PA c s1 s2 a1 a2 s1' s2' a1' a2' b1' b2' os1 os2 ds
+  intros P PA c st1 st2 ast1 ast2 st1' st2' ast1' ast2' b1' b2' os1 os2 ds
     Hwt Heq Haeq Hunused Hnowhile Hs1b Hs2b Heval1 Heval2.
   eapply sel_slh_ideal in Heval1; try assumption.
   eapply sel_slh_ideal in Heval2; try assumption.
