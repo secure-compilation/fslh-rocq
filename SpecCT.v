@@ -341,7 +341,7 @@ Inductive cteval : com -> state -> astate -> state -> astate -> obs -> Prop :=
   where "<( st , ast )> =[ c ]=> <( stt , astt , os )>" := (cteval c st ast stt astt os).
 (* TERSE: /HIDEFROMHTML *)
 
-(** ** Type system for cryptographic constant-time programming *)
+(** ** Constant-time security definition *)
 
 (* TERSE: HIDEFROMHTML *)
 Definition label := bool.
@@ -372,6 +372,58 @@ Proof.
   unfold pub_equiv. intros X P s1 s2 s3 H12 H23 x Px.
   rewrite H12; try rewrite H23; auto.
 Qed.
+
+Definition ct_secure P PA c :=
+  forall st1 st2 ast1 ast2 st1' st2' ast1' ast2' os1 os2,
+    pub_equiv P st1 st2 ->
+    pub_equiv PA ast1 ast2 ->
+    <(st1, ast1)> =[ c ]=> <(st1', ast1', os1)> ->
+    <(st2, ast2)> =[ c ]=> <(st2', ast2', os2)> ->
+    os1 = os2.
+
+(** ** Example pc secure program that is not constant-time secure *)
+
+Definition ct_insecure_prog :=
+   <{{ X <- A[[Y]] }}> .
+
+(* This program is trivially pc secure, because it does not branch at all.
+   But it is not constant-time secure, if Y is a secret variable. This is
+   shown below. *)
+
+Example ct_insecure_prog_is_not_ct_secure : exists P PA,
+  ~ (ct_secure P PA ct_insecure_prog) .
+Proof.
+  remember (X!-> public; Y!-> secret; _!-> public) as P.
+  remember (A!-> secret; _!-> public) as PA.
+  exists P. exists PA. unfold ct_secure, ct_insecure_prog; intros H.
+  remember (Y!-> 1; _ !-> 0) as st1.
+  remember (Y!-> 2; _ !-> 0) as st2.
+  remember (A!-> [1;2;3]; _!-> []) as ast.
+  assert (Heval1: <(st1, ast)> =[ct_insecure_prog]=> <(X!->2; st1, ast, [OARead A 1])>).
+  { unfold ct_insecure_prog; subst.
+    replace (X !-> 2; Y !-> 1; _ !-> 0) 
+      with (X !-> nth 1 ((A!-> [1;2;3]; _!-> []) A) 0; Y !-> 1; _ !-> 0)
+        by (reflexivity).
+    eapply CTE_ARead; simpl; auto. }
+  assert (Heval2: <(st2, ast)> =[ct_insecure_prog]=> <(X!->3; st2, ast, [OARead A 2])>).
+  { unfold ct_insecure_prog; subst.
+    replace (X !-> 3; Y !-> 2; _ !-> 0) 
+      with (X !-> nth 2 ((A!-> [1;2;3]; _!-> []) A) 0; Y !-> 2; _ !-> 0)
+        by (reflexivity).
+      eapply CTE_ARead; simpl; auto. }
+  subst. eapply H in Heval2; eauto.
+  - inversion Heval2.
+  - intros x Hx. destruct (String.eqb_spec Y x) as [Heq | Hneq].
+    + subst. rewrite t_update_neq in Hx; [| discriminate].
+      rewrite t_update_eq in Hx. discriminate.
+    + do 2 (rewrite t_update_neq; [| assumption]). reflexivity.
+  - apply pub_equiv_refl.
+Qed.
+(* TERSE: /HIDEFROMHTML *)
+
+(** ** Type system for cryptographic constant-time programming *)
+
+(* TERSE: HIDEFROMHTML *)
 
 Definition join (l1 l2 : label) : label := l1 && l2.
 
@@ -557,25 +609,6 @@ Inductive ct_well_typed (P:pub_vars) (PA:pub_arrs) : com -> Prop :=
 where "P ;; PA '|-ct-' c" := (ct_well_typed P PA c).
 (* TERSE: /HIDEFROMHTML *)
 
-(** ** Example pc secure program that is not constant-time secure *)
-
-Definition ct_insecure_prog :=
-   <{{ X <- A[[Y]] }}> .
-
-(* This program is trivially pc secure, because it does not branch at all.
-   But it is not constant-time secure, if Y is a secret variable. This is 
-   even if X and A are secrets like shown below. *)
-
-Example ct_insecure_prog_is_not_ct : exists P PA,
-  ~ (P ;; PA |-ct- ct_insecure_prog) .
-Proof.
-  remember (X!-> secret; Y!-> secret; _!-> public) as P.
-  remember (A!-> secret; _!-> public) as PA.
-  exists P. exists PA. unfold ct_insecure_prog. intros H.
-  inversion H; subst; clear H. inversion H2.
-Qed.
-
-
 (** ** Final theorems: noninterference and constant-time security *)
 
 Theorem ct_well_typed_noninterferent :
@@ -638,20 +671,16 @@ Proof.
 Qed.
 (* /FOLD *)
 
-Theorem ct_well_typed_ct_secure :
-  forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
-    P ;; PA |-ct- c ->
-    pub_equiv P s1 s2 ->
-    pub_equiv PA a1 a2 ->
-    <(s1, a1)> =[ c ]=> <(s1', a1', os1)> ->
-    <(s2, a2)> =[ c ]=> <(s2', a2', os2)> ->
-    os1 = os2.
+Theorem ct_well_typed_ct_secure : forall P PA c,
+  P ;; PA |-ct- c ->
+  ct_secure P PA c.
 (* FOLD *)
 Proof.
-  intros P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2
-    Hwt Heq Haeq Heval1 Heval2.
-  generalize dependent s2'. generalize dependent s2.
-  generalize dependent a2'. generalize dependent a2.
+  unfold ct_secure.
+  intros P PA c Hwt st1 st2 ast1 ast2 st1' st2' ast1' ast2' os1 os2
+    Heq Haeq Heval1 Heval2.
+  generalize dependent st2'. generalize dependent st2.
+  generalize dependent ast2'. generalize dependent ast2.
   generalize dependent os2.
   induction Heval1; intros os2' a2 Haeq a2' s2 Heq s2' Heval2;
     inversion Heval2; inversion Hwt; subst.
