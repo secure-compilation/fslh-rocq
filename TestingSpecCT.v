@@ -1327,7 +1327,31 @@ Definition shrink_var_preserve_label (P : pub_vars) (v : var_id) : list var_id :
       end
   | None => []
   end.
+Definition shrink_arr_preserve_label (P : pub_vars) (v : arr_id) : list arr_id :=
+  let '(Arr v) := v in
 
+  let fix get_first_arr_with_label (n : nat) : option arr_id :=
+    let arr := ("A" ++ (String (ascii_of_nat n) EmptyString)) % string in
+    if Bool.eqb (apply P arr) (apply P v)
+    then Some (Arr arr)
+    else (match n with
+      | O => None
+      | S n => get_first_arr_with_label n
+      end
+    )
+  in
+
+  (* Assume v is of the form An *)
+  match get 1 v with
+  | Some c => match nat_of_ascii c - nat_of_ascii "0" with
+      | 0 => []
+      | S pred => match get_first_arr_with_label pred with
+        | None => []
+        | Some v => [v]
+        end
+      end
+  | None => []
+  end.
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll arbitrary (fun (X : var_id) =>
 
@@ -1701,6 +1725,59 @@ Fixpoint gen_ct_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G
       ] in
 
       oneOf_ skip (recursive_ctors ++ base_ctors)
+  end.
+
+Fixpoint shrink_ct_well_typed (P : pub_vars) (PA : pub_arrs) (c : com) : list com :=
+  match c with
+    | <{{ skip }}> => []
+    | <{{ x := e }}> =>
+        let l := label_of_aexp P e in
+
+        (* when shrinking the variable, we have to preserve: can_flow l (P x) *)
+        (map (fun shrunk : var_id => <{{ shrunk := e }}>) (match l with
+          | true => shrink x (* public and secret are possible *)
+          | false => shrink_var_preserve_label P x (* only secret (if e is secret, and x is too) *)
+          end)) ++
+        (* preserve P |-a- e \in l *)
+        (map (fun shrunk : aexp => <{{ x := shrunk }}>) (shrink_aexp_with_label P l e))
+    | <{{ c1; c2 }}> =>
+        [c1; c2] ++
+        (map (fun shrunk : com => <{{ shrunk; c2 }}>) (shrink_ct_well_typed P PA c1)) ++
+        (map (fun shrunk : com => <{{ c1; shrunk }}>) (shrink_ct_well_typed P PA c2))
+    | <{{ if be then c1 else c2 end }}> =>
+        [c1; c2] ++
+        (map (fun shrunk : bexp => <{{ if shrunk then c1 else c2 end }}>) (shrink_bexp_with_label P public be)) ++
+        (map (fun shrunk : com => <{{ if be then shrunk else c2 end }}>) (shrink_ct_well_typed P PA c1)) ++
+        (map (fun shrunk : com => <{{ if be then c1 else shrunk end }}>) (shrink_ct_well_typed P PA c2))
+    | <{{ while be do c end }}> =>
+        [c] ++
+        (map (fun shrunk : bexp => <{{ while shrunk do c end }}>) (shrink_bexp_with_label P public be)) ++
+        (map (fun shrunk : com => <{{ while be do shrunk end }}>) (shrink_ct_well_typed P PA c))
+    | <{{ x <- a [[i]] }}> =>
+        (* preserve can_flow (PA a) (P x) = true *)
+        (map (fun shrunk : var_id => <{{ shrunk <- a [[i]] }}>) (match apply PA a with
+          | true => shrink x (* secret and public are possible *)
+          | false => shrink_var_preserve_label P x (* only secret (if a is secret, then x is too) *)
+          end)) ++
+        (* preserve can_flow (PA a) (P x) = true *)
+        (map (fun shrunk : arr_id => <{{ x <- shrunk [[i]] }}>) (match apply P x with
+          | true => shrink_arr_preserve_label PA a (* only public *)
+          | false => shrink a (* secret and public are possible *)
+          end)) ++
+        (* preserve P |-a- i \in public *)
+        (map (fun shrunk : aexp => <{{ x <- a [[shrunk]] }}>) (shrink_aexp_with_label P public i))
+    | <{{ a [ie] <- e }}> =>
+        let l := label_of_aexp P e in
+
+        (* preserve can_flow l (PA a) *)
+        (map (fun shrunk : arr_id => <{{ shrunk [ie] <- e }}>) (match l with
+          | true => shrink_arr_preserve_label PA a (* only public *)
+          | false => shrink a (* secret and public are possible *)
+          end)) ++
+        (* preserve P |-a- ie \in public *)
+        (map (fun shrunk : aexp => <{{ a [shrunk] <- e }}>) (shrink_aexp_with_label P public ie)) ++
+        (* preserve P |-a- e \in l *)
+        (map (fun shrunk : aexp => <{{ a [ie] <- shrunk }}>) (shrink_aexp_with_label P l e))
   end.
 
 (** ** Final theorems: noninterference and constant-time security *)
@@ -2537,7 +2614,7 @@ Definition forAllShrinkNonDet {A prop : Type} {_ : Checkable prop} `{Show A}
          forAllShrinkNonDet needs to be changed to be more efficient. *)
 QuickChick (forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
     forAllShrinkNonDet 100 gen_pub_arrs shrink (fun PA =>
-    forAllShrinkNonDet 100 (gen_ct_well_typed_sized P PA 3) shrink (fun c =>
+    forAllShrinkNonDet 100 (gen_ct_well_typed_sized P PA 3) (shrink_ct_well_typed P PA) (fun c =>
 
     forAll arbitrary (fun b =>
 
