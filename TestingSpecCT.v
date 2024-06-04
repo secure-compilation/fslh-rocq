@@ -2042,7 +2042,7 @@ Record evaluator (A : Type) : Type := mkEvaluator
 Definition interpreter: Type := evaluator unit.
 
 (* Generic monad operators *)
-Instance monadEvaluator: Monad evaluator :=
+#[export] Instance monadEvaluator: Monad evaluator :=
   { ret := fun A value => mkEvaluator A (fun (ist : input_st) => ROk A value [] ist);
     bind := fun A B e f =>
       mkEvaluator B (fun (ist : input_st) =>
