@@ -2084,3 +2084,41 @@ Qed.
    verbose. Maybe just define "smart constructors" for that? *)
 
 (* /HIDE *)
+
+(* Not currently true, but could be made true by extending the final
+   configurations with errors for wrong directions or out of bounds accesses. *)
+Axiom ideal_terminates : forall P c st ast b ds, exists stt astt bb os,
+  P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>.
+
+Axiom spec_determinism : forall c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
+  <( st , ast , b , ds )> =[ c ]=> <( stt1 , astt1 , bb1 , os1 )> ->
+  <( st , ast , b , ds )> =[ c ]=> <( stt2 , astt2 , bb2 , os2 )> ->
+  stt1 = stt2 /\ astt1 = astt2 /\ bb1 = bb2 /\ os1 = os2.
+
+Require Import Classical.
+
+Lemma sel_slh_ideal' : forall c P st ast (b:bool) ds st' ast' (b':bool) os,
+  unused "b" c ->
+  st "b" = (if b then 1 else 0) ->
+  <(st, ast, b, ds)> =[ sel_slh P c ]=> <(st', ast', b', os)> ->
+  P |- <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
+Proof.
+  intros.
+  assert(G : forall st'', st'' <> st' -> ~
+    <( st, ast, b, ds )> =[ (sel_slh P c) ]=> <( st'', ast', b', os )>).
+    { intros. intro Hc.
+      pose proof (spec_determinism _ _ _ _ _ _ _ _ _ _ _ _ _ H1 Hc). firstorder. }
+  assert(G' : forall st'', st'' <> st' -> ~
+    P |- <( st, ast, b, ds )> =[ c ]=> <( st'', ast', b', os )>).
+    { intros. intro Hc. apply ideal_sel_slh in Hc; try assumption.
+      rewrite <- H0 in Hc. rewrite t_update_same in Hc.
+      replace ("b" !-> (if b' then 1 else 0); st'') with st'' in Hc by admit. (* wrong! *)
+      apply G in Hc; assumption. }
+  pose proof (ideal_terminates P c st ast b ds) as G''.
+  destruct G'' as [stt''' [astt''' [bb''' [os''' G''] ] ] ].
+  assert(G''' : forall st'',
+    P |- <( st, ast, b, ds )> =[ c ]=> <( st'', ast', b', os )> -> st'' = st').
+    { intros. apply NNPP. intro Hc. firstorder. }
+  (* eapply G''' in G''. -- but need more foralls in G''' *)
+  assert(G4: stt''' = st') by admit. rewrite G4 in G''.
+Admitted.
