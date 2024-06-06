@@ -205,48 +205,84 @@ Definition shrink_name (name : string) : list string :=
 
 (* QuickChick does not support mutual inductive types. *)
 (* Derive Arbitrary for aexp and bexp. *)
-(* The code below was auto-generated, that's why it is ugly. *)
 Fixpoint arbitrarySized_impl_bexp (size : nat) : G bexp :=
   match size with
-  | 0 => oneOf [returnGen <{ true }>; returnGen <{ false }>]
+  | 0 => oneOf [
+        returnGen <{ true }>;
+        returnGen <{ false }>
+      ]
   | S size' =>
-      freq [ (1, returnGen <{ true }>); (1, returnGen <{ false }>);
-      (1,
-       bindGen (arbitrarySized_impl_aexp size')
-         (fun p0 : aexp => bindGen (arbitrarySized_impl_aexp size') (fun p1 : aexp => returnGen <{ p0 = p1 }>)));
-      (1,
-       bindGen (arbitrarySized_impl_aexp size')
-         (fun p0 : aexp => bindGen (arbitrarySized_impl_aexp size') (fun p1 : aexp => returnGen <{ p0 <> p1 }>)));
-      (1,
-       bindGen (arbitrarySized_impl_aexp size')
-         (fun p0 : aexp => bindGen (arbitrarySized_impl_aexp size') (fun p1 : aexp => returnGen <{ p0 <= p1 }>)));
-      (1,
-       bindGen (arbitrarySized_impl_aexp size')
-         (fun p0 : aexp => bindGen (arbitrarySized_impl_aexp size') (fun p1 : aexp => returnGen <{ p0 > p1 }>)));
-      (1, bindGen (arbitrarySized_impl_bexp size') (fun p0 : bexp => returnGen <{ ~ p0 }>));
-      (1,
-       bindGen (arbitrarySized_impl_bexp size')
-         (fun p0 : bexp => bindGen (arbitrarySized_impl_bexp size') (fun p1 : bexp => returnGen <{ p0 && p1 }>)))]
+      oneOf [
+        returnGen <{ true }>;
+        returnGen <{ false }>;
+        thunkGen (fun _ =>
+          a1 <- arbitrarySized_impl_aexp size';;
+          a2 <- arbitrarySized_impl_aexp size';;
+          returnGen <{ a1 = a2 }>
+        );
+        thunkGen (fun _ =>
+          a1 <- arbitrarySized_impl_aexp size';;
+          a2 <- arbitrarySized_impl_aexp size';;
+          returnGen <{ a1 <> a2 }>
+        );
+        thunkGen (fun _ =>
+          a1 <- arbitrarySized_impl_aexp size';;
+          a2 <- arbitrarySized_impl_aexp size';;
+          returnGen <{ a1 <= a2 }>
+        );
+        thunkGen (fun _ =>
+          a1 <- arbitrarySized_impl_aexp size';;
+          a2 <- arbitrarySized_impl_aexp size';;
+          returnGen <{ a1 > a2 }>
+        );
+        thunkGen (fun _ =>
+          b <- arbitrarySized_impl_bexp size';;
+          returnGen <{ ~b }>
+        );
+        thunkGen (fun _ =>
+          b1 <- arbitrarySized_impl_bexp size';;
+          b2 <- arbitrarySized_impl_bexp size';;
+          returnGen <{ b1 && b2 }>
+        )
+      ]
   end
 with arbitrarySized_impl_aexp (size : nat) : G aexp :=
   match size with
-  | 0 => oneOf [bindGen arbitrary (fun p0 : nat => returnGen (ANum p0)); bindGen arbitrary (fun p0 : var_id => returnGen (AId p0))]
+  | 0 =>
+      oneOf [
+        (n <- arbitrary;;
+         returnGen (ANum n));
+        (v <- arbitrary;;
+         returnGen (AId v))
+      ]
   | S size' =>
-      freq [ (1, bindGen arbitrary (fun p0 : nat => returnGen (ANum p0))); (1, bindGen arbitrary (fun p0 : var_id => returnGen (AId p0)));
-      (1,
-       bindGen (arbitrarySized_impl_aexp size')
-         (fun p0 : aexp => bindGen (arbitrarySized_impl_aexp size') (fun p1 : aexp => returnGen <{ p0 + p1 }>)));
-      (1,
-       bindGen (arbitrarySized_impl_aexp size')
-         (fun p0 : aexp => bindGen (arbitrarySized_impl_aexp size') (fun p1 : aexp => returnGen <{ p0 - p1 }>)));
-      (1,
-       bindGen (arbitrarySized_impl_aexp size')
-         (fun p0 : aexp => bindGen (arbitrarySized_impl_aexp size') (fun p1 : aexp => returnGen <{ p0 * p1 }>)));
-      (1,
-       bindGen (arbitrarySized_impl_bexp size')
-         (fun p0 : bexp =>
-          bindGen (arbitrarySized_impl_aexp size')
-            (fun p1 : aexp => bindGen (arbitrarySized_impl_aexp size') (fun p2 : aexp => returnGen <{ p0 ? p1 : p2 }>))))]
+      oneOf [
+        (n <- arbitrary;;
+         returnGen (ANum n));
+        (v <- arbitrary;;
+         returnGen (AId v));
+        thunkGen (fun _ =>
+          a1 <- arbitrarySized_impl_aexp size';;
+          a2 <- arbitrarySized_impl_aexp size';;
+          returnGen <{ a1 + a2 }>
+        );
+        thunkGen (fun _ =>
+          a1 <- arbitrarySized_impl_aexp size';;
+          a2 <- arbitrarySized_impl_aexp size';;
+          returnGen <{ a1 - a2 }>
+        );
+        thunkGen (fun _ =>
+          a1 <- arbitrarySized_impl_aexp size';;
+          a2 <- arbitrarySized_impl_aexp size';;
+          returnGen <{ a1 * a2 }>
+        );
+        thunkGen (fun _ =>
+          be <- arbitrarySized_impl_bexp size';;
+          a1 <- arbitrarySized_impl_aexp size';;
+          a2 <- arbitrarySized_impl_aexp size';;
+          returnGen <{ be ? a1 : a2 }>
+        )
+      ]
   end.
 
 #[export] Instance genSizedAexp : GenSized aexp :=
@@ -414,6 +450,7 @@ Notation "a '[' i ']'  '<-' e"  :=
        in showComRec)%string
   }.
 
+(* TODO: thunk these too if they aren't by default. *)
 Derive Arbitrary for com.
 
 (* As was the case in TestingStaticIFC, let's which to maps that are lists of pairs *)
@@ -1130,19 +1167,27 @@ Fixpoint gen_public_aexp_sized (P : pub_vars) (size : nat) : G aexp :=
           end in
 
         let possibilities := (num :: var) ++ [
-          (a1 <- gen_public_aexp_sized P size';;
-           a2 <- gen_public_aexp_sized P size';;
-           ret <{ a1 + a2 }>);
-          (a1 <- gen_public_aexp_sized P size';;
-           a2 <- gen_public_aexp_sized P size';;
-           ret <{ a1 - a2 }>);
-          (a1 <- gen_public_aexp_sized P size';;
-           a2 <- gen_public_aexp_sized P size';;
-           ret <{ a1 * a2 }>);
-          (be <- gen_public_bexp_sized P size';;
-           a1 <- gen_public_aexp_sized P size';;
-           a2 <- gen_public_aexp_sized P size';;
-           ret <{ be ? a1 : a2 }>)
+          thunkGen (fun _ =>
+            a1 <- gen_public_aexp_sized P size';;
+            a2 <- gen_public_aexp_sized P size';;
+            ret <{ a1 + a2 }>
+          );
+          thunkGen (fun _ =>
+            a1 <- gen_public_aexp_sized P size';;
+            a2 <- gen_public_aexp_sized P size';;
+            ret <{ a1 - a2 }>
+          );
+          thunkGen (fun _ =>
+            a1 <- gen_public_aexp_sized P size';;
+            a2 <- gen_public_aexp_sized P size';;
+            ret <{ a1 * a2 }>
+          );
+          thunkGen (fun _ =>
+            be <- gen_public_bexp_sized P size';;
+            a1 <- gen_public_aexp_sized P size';;
+            a2 <- gen_public_aexp_sized P size';;
+            ret <{ be ? a1 : a2 }>
+          )
         ] in
 
         oneOf_ num possibilities
@@ -1180,63 +1225,95 @@ with gen_public_bexp_sized (P : pub_vars) (size : nat) : G bexp :=
 
 Fixpoint gen_secret_aexp_sized_nofail (dummy : var_id) (secret_variables : list var_id) (size : nat) : G aexp :=
   match size with
-  | 0 => X <- elems_ dummy secret_variables;; ret (AId X)
+  | 0 =>
+      X <- elems_ dummy secret_variables;;
+      ret (AId X)
   | S size' =>
       (* secret *)
       oneOf [
-        (X <- elems_ dummy secret_variables;;
-         ret (AId X));
-        (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-         a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-         ret <{ a1 + a2 }>);
-        (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-         a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-         ret <{ a1 - a2 }>);
-        (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-         a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-         ret <{ a1 * a2 }>);
-        (be <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
-         a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-         a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-         ret <{ be ? a1 : a2 }>)
+        thunkGen (fun _ =>
+          X <- elems_ dummy secret_variables;;
+          ret (AId X)
+        );
+        thunkGen (fun _ =>
+          a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+          a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+          ret <{ a1 + a2 }>
+        );
+        thunkGen (fun _ =>
+          a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+          a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+          ret <{ a1 - a2 }>
+        );
+        thunkGen (fun _ =>
+          a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+          a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+          ret <{ a1 * a2 }>
+        );
+        thunkGen (fun _ =>
+          be <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
+          a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+          a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+          ret <{ be ? a1 : a2 }>
+        )
       ]
     end
 with gen_secret_bexp_sized_nofail (dummy : var_id) (secret_variables : list var_id) (size : nat) : G bexp :=
   match size with
     | 0 => (* Cheat so that we don't have to return None *)
         oneOf [
-          (x1 <- elems_ dummy secret_variables;;
-           x2 <- elems_ dummy secret_variables;;
-           ret <{ (AId x1) <= (AId x2) }>);
-          (x1 <- elems_ dummy secret_variables;;
-           x2 <- elems_ dummy secret_variables;;
-           ret <{ (AId x1) > (AId x2) }>);
-          (x1 <- elems_ dummy secret_variables;;
-           x2 <- elems_ dummy secret_variables;;
-           ret <{ (AId x1) = (AId x2) }>);
-          (x1 <- elems_ dummy secret_variables;;
-           x2 <- elems_ dummy secret_variables;;
-           ret <{ (AId x1) <> (AId x2) }>)
+          thunkGen (fun _ =>
+            x1 <- elems_ dummy secret_variables;;
+            x2 <- elems_ dummy secret_variables;;
+            ret <{ (AId x1) <= (AId x2) }>
+          );
+          thunkGen (fun _ =>
+            x1 <- elems_ dummy secret_variables;;
+            x2 <- elems_ dummy secret_variables;;
+            ret <{ (AId x1) > (AId x2) }>
+          );
+          thunkGen (fun _ =>
+            x1 <- elems_ dummy secret_variables;;
+            x2 <- elems_ dummy secret_variables;;
+            ret <{ (AId x1) = (AId x2) }>
+          );
+          thunkGen (fun _ =>
+            x1 <- elems_ dummy secret_variables;;
+            x2 <- elems_ dummy secret_variables;;
+            ret <{ (AId x1) <> (AId x2) }>
+          )
         ]
     | S size' =>
         oneOf [
-          (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-           a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-           ret <{ a1 <= a2 }>);
-          (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-           a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-           ret <{ a1 > a2 }>);
-          (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-           a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-           ret <{ a1 = a2 }>);
-          (a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-           a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
-           ret <{ a1 <> a2 }>);
-          (b <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
-           ret <{ ~b }>);
-          (b1 <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
-           b2 <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
-           ret <{ b1 && b2 }>)
+          thunkGen (fun _ =>
+            a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+            a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+            ret <{ a1 <= a2 }>
+          );
+          thunkGen (fun _ =>
+            a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+            a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+            ret <{ a1 > a2 }>
+          );
+          thunkGen (fun _ =>
+            a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+            a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+            ret <{ a1 = a2 }>
+          );
+          thunkGen (fun _ =>
+            a1 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+            a2 <- gen_secret_aexp_sized_nofail dummy secret_variables size';;
+            ret <{ a1 <> a2 }>
+          );
+          thunkGen (fun _ =>
+            b <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
+            ret <{ ~b }>
+          );
+          thunkGen (fun _ =>
+            b1 <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
+            b2 <- gen_secret_bexp_sized_nofail dummy secret_variables size';;
+            ret <{ b1 && b2 }>
+          )
         ]
   end.
 Definition gen_secret_aexp_sized (P : pub_vars) (size : nat) : G (option aexp) :=
@@ -1512,54 +1589,60 @@ Fixpoint gen_pc_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G
     skip;
 
     (* Assignments *)
-    (X <- (genVarId).(arbitrary);;
-     let l := apply P X in
-     a <- (if l then gen_public_aexp_sized P 2 else arbitrary);;
-     ret <{ X := a }>);
+    thunkGen (fun _ =>
+      X <- (genVarId).(arbitrary);;
+      let l := apply P X in
+      a <- (if l then gen_public_aexp_sized P 2 else arbitrary);;
+      ret <{ X := a }>
+    );
 
     (* Array writes *)
-    (a <- (genArrId).(arbitrary);;
-     i <- arbitrary;;
-     let l := apply PA a in
-     e <- match l with
-       | false => arbitrary
-       | true => gen_public_aexp_sized P 2
-       end;;
-     ret <{ a[i] <- e }>);
+    thunkGen (fun _ =>
+      a <- (genArrId).(arbitrary);;
+      i <- arbitrary;;
+      let l := apply PA a in
+      e <- match l with
+        | false => arbitrary
+        | true => gen_public_aexp_sized P 2
+        end;;
+      ret <{ a[i] <- e }>
+    );
 
     (* Array reads
        We sometimes return `skip` in order not to backtrack. *)
-    (x <- (genVarId).(arbitrary);;
-     let l := apply P x in
-     i <- arbitrary;;
-     a <- match l with
-       | true => gen_arr_with_label PA public
-       | false => (a <- arbitrary;; ret (Some a))
-       end;;
-     match a with
-     | None => ret <{ skip }>
-     | Some a => ret <{ x <- a[[i]] }>
-     end)
+    thunkGen (fun _ =>
+      x <- (genVarId).(arbitrary);;
+      let l := apply P x in
+      i <- arbitrary;;
+      a <- match l with
+        | true => gen_arr_with_label PA public
+        | false => (a <- arbitrary;; ret (Some a))
+        end;;
+      match a with
+      | None => ret <{ skip }>
+      | Some a => ret <{ x <- a[[i]] }>
+      end
+    )
   ] in
 
   match size with
   | O => oneOf_ skip base_ctors
   | S size' =>
       let recursive_ctors := [
-        (
+        thunkGen (fun _ =>
           c1 <- gen_pc_well_typed_sized P PA size';;
           c2 <- gen_pc_well_typed_sized P PA size';;
           ret <{ c1; c2 }>
         );
 
-        (
+        thunkGen (fun _ =>
           b <- gen_public_bexp_sized P 2;;
           c1 <- gen_pc_well_typed_sized P PA size';;
           c2 <- gen_pc_well_typed_sized P PA size';;
           ret <{ if b then c1 else c2 end }>
         );
 
-        (
+        thunkGen (fun _ =>
           b <- gen_public_bexp_sized P 2;;
           c <- gen_pc_well_typed_sized P PA size';;
           ret <{ while b do c end }>
@@ -1687,54 +1770,60 @@ Fixpoint gen_ct_well_typed_sized (P : pub_vars) (PA : pub_arrs) (size : nat) : G
     skip;
 
     (* Assignments *)
-    (X <- (genVarId).(arbitrary);;
-     let l := apply P X in
-     a <- (if l then gen_public_aexp_sized P 2 else arbitrary);;
-     ret <{ X := a }>);
+    thunkGen (fun _ =>
+      X <- (genVarId).(arbitrary);;
+      let l := apply P X in
+      a <- (if l then gen_public_aexp_sized P 2 else arbitrary);;
+      ret <{ X := a }>
+    );
 
     (* Array writes *)
-    (a <- (genArrId).(arbitrary);;
-     i <- gen_public_aexp_sized P 2;;
-     let l := apply PA a in
-     e <- match l with
-       | false => arbitrary
-       | true => gen_public_aexp_sized P 2
-       end;;
-     ret <{ a[i] <- e }>);
+    thunkGen (fun _ =>
+      a <- (genArrId).(arbitrary);;
+      i <- gen_public_aexp_sized P 2;;
+      let l := apply PA a in
+      e <- match l with
+        | false => arbitrary
+        | true => gen_public_aexp_sized P 2
+        end;;
+      ret <{ a[i] <- e }>
+    );
 
     (* Array reads
        We sometimes return `skip` in order not to backtrack. *)
-    (x <- (genVarId).(arbitrary);;
-     let l := apply P x in
-     i <- gen_public_aexp_sized P 2;;
-     a <- match l with
-       | true => gen_arr_with_label PA public
-       | false => (a <- arbitrary;; ret (Some a))
-       end;;
-     match a with
-     | None => ret <{ skip }>
-     | Some a => ret <{ x <- a[[i]] }>
-     end)
+    thunkGen (fun _ =>
+      x <- (genVarId).(arbitrary);;
+      let l := apply P x in
+      i <- gen_public_aexp_sized P 2;;
+      a <- match l with
+        | true => gen_arr_with_label PA public
+        | false => (a <- arbitrary;; ret (Some a))
+        end;;
+      match a with
+      | None => ret <{ skip }>
+      | Some a => ret <{ x <- a[[i]] }>
+      end
+    )
   ] in
 
   match size with
   | O => oneOf_ skip base_ctors
   | S size' =>
       let recursive_ctors := [
-        (
+        thunkGen (fun _ =>
           c1 <- gen_ct_well_typed_sized P PA size';;
           c2 <- gen_ct_well_typed_sized P PA size';;
           ret <{ c1; c2 }>
         );
 
-        (
+        thunkGen (fun _ =>
           b <- gen_public_bexp_sized P 2;;
           c1 <- gen_ct_well_typed_sized P PA size';;
           c2 <- gen_ct_well_typed_sized P PA size';;
           ret <{ if b then c1 else c2 end }>
         );
 
-        (
+        thunkGen (fun _ =>
           b <- gen_public_bexp_sized P 2;;
           c <- gen_ct_well_typed_sized P PA size';;
           ret <{ while b do c end }>
@@ -1799,8 +1888,6 @@ Fixpoint shrink_ct_well_typed (P : pub_vars) (PA : pub_arrs) (c : com) : list co
 
 (** ** Final theorems: noninterference and constant-time security *)
 
-(* TODO: quite slow *)
-Extract Constant defNumTests => "500".
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
@@ -1817,7 +1904,6 @@ QuickChick (forAll gen_pub_vars (fun P =>
           implication false false
       end
   )))))))).
-Extract Constant defNumTests => "10000".
 
 Theorem ct_well_typed_noninterferent :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
@@ -1884,7 +1970,6 @@ Qed.*)
 (* /FOLD *)
 
 (* TODO: quite slow *)
-Extract Constant defNumTests => "500".
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
@@ -1901,7 +1986,6 @@ QuickChick (forAll gen_pub_vars (fun P =>
           implication false false
       end
   )))))))).
-Extract Constant defNumTests => "10000".
 
 Theorem ct_well_typed_ct_secure :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
@@ -2532,8 +2616,6 @@ Definition astate_eqb := total_map_beq (list nat) (fun l1 l2 =>
       end % string)
    }.
 
-Extract Constant defNumTests => "500".
-(* TODO: a bit slow. *)
 QuickChick (forAll (arbitrarySized 2) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
@@ -2549,7 +2631,6 @@ QuickChick (forAll (arbitrarySized 2) (fun c =>
       | None => false
       end)
   )))))).
-Extract Constant defNumTests => "10000".
 
 (* HIDE: This semantics already lost one property of Imp, which is only
    nonterminating executions don't produce a final state. Now if the input
@@ -2733,15 +2814,12 @@ Lemma speculation_bit_monotonic : forall c s a b ds s' a' b' os,
   b' = true.
 Proof. intros c s a b ds s' a' b' os Heval Hb. induction Heval; eauto. Qed.
 
-(* 500 tests, ~18 discards, ~20 seconds*)
-Extract Constant defNumTests => "500".
 QuickChick (forAll (arbitrarySized 3) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
     forAllMaybe (gen_spec_eval_sized c st ast true 100) (fun '(ds, st', ast', b', os) =>
       b'
   ))))).
-Extract Constant defNumTests => "10000".
 
 (* HIDE: This one is weaker for big-step semantics, but it's still helpful below *)
 Lemma speculation_needs_force : forall c s a b ds s' a' b' os,
@@ -3672,10 +3750,7 @@ Proof.
   eapply ideal_spec_ct_secure; eauto.
 Qed.
 
-(* Test that spec_ct holds for sel_slh
-
-   500 tests: 15s, 33% discards *)
-Extract Constant defNumTests => "500".
+(* Test that spec_ct holds for sel_slh *)
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
 
@@ -3698,7 +3773,6 @@ QuickChick (forAll gen_pub_vars (fun P =>
       | None => checker tt (* If the second execution crashes, this isn't a counterexample *)
       end
     ))))))))).
-Extract Constant defNumTests => "10000".
 
 (* HIDE: The less useful for security direction of the idealized semantics being
    equivalent to [sel_slh]; easier to prove even for while (forwards compiler
@@ -3971,7 +4045,6 @@ Fixpoint gen_ideal_eval_sized (P : pub_vars) (c : com) (st : state) (ast : astat
    rules and into equality premises could make this proof script less
    verbose. Maybe just define "smart constructors" for that? *)
 
-(* 10000 tests: 32 minutes, 15% discards *)
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll arbitrary (fun c =>
 
