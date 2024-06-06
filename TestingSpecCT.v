@@ -1069,8 +1069,8 @@ Definition can_flow (l1 l2 : label) : bool := l1 || negb l2.
 Definition gen_can_flow (P : pub_vars) (l1 : label) : G (option var_id) :=
   if l1 then
     (* Public source. Can flow anywhere. *)
-    (X <- arbitrary;;
-    ret (Some X))
+    X <- arbitrary;;
+    ret (Some X)
   else
     (* Secret source. Can only flow in secret variables. *)
     gen_var_with_label P secret.
@@ -1338,15 +1338,6 @@ Definition gen_secret_bexp_sized (P : pub_vars) (size : nat) : G (option bexp) :
       b <- gen_secret_bexp_sized_nofail dummy secret_variables size;;
       ret (Some b)
   end.
-
-Definition forAllMaybeShrink {A prop : Type} {_ : Checkable prop} `{Show A}
-           (gen : G (option A)) (shrinker : A -> list A) (pf : A -> prop) : Checker :=
-  bindGen gen (fun mx =>
-                 match mx with
-                 | Some x => shrinking shrinker x (fun x' => printTestCase (show x' ++ newline) (pf x'))
-                 | None => checker tt
-                 end
-              ).
 
 QuickChick (forAll gen_pub_vars (fun P => 
     forAll gen_state (fun s1 =>
@@ -2842,15 +2833,15 @@ Definition direction_eqb (d1 : direction) (d2 : direction) : bool :=
   | _, _ => false
   end.
 
-(* Way too many discards to be able to test this. *)
-(*QuickChick (forAll (arbitrarySized 3) (fun c =>
+(* TODO: Way too many discards to be able to test this. *)
+QuickChick (forAll (arbitrarySized 3) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
     forAllMaybe (gen_spec_eval_sized c st ast false 100) (fun '(ds, st', ast', b', os) =>
       implication b' (
         existsb (fun dir => direction_eqb dir DForce) ds
       )
-  ))))).*)
+  ))))).
 
 (* HIDE: Also this one is weaker for big-step semantics *)
 Lemma unsafe_access_needs_speculation : forall c s a b ds s' a' b' os ax i,
@@ -2881,7 +2872,7 @@ Proof.
         { right. apply in_or_app. tauto. }
 Qed.
 
-(* Way too many discards to test this. *)
+(* TODO: Way too many discards to test this. *)
 (*QuickChick (forAll arbitrary (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
