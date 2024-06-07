@@ -2083,8 +2083,6 @@ Qed.
    rules and into equality premises could make this proof script less
    verbose. Maybe just define "smart constructors" for that? *)
 
-(* /HIDE *)
-
 (* Not currently true, but could be made true by extending the final
    configurations with errors for wrong directions or out of bounds accesses. *)
 Axiom ideal_terminates : forall P c st ast b ds, exists stt astt bb os,
@@ -2122,3 +2120,5 @@ Proof.
   (* eapply G''' in G''. -- but need more foralls in G''' *)
   assert(G4: stt''' = st') by admit. rewrite G4 in G''.
 Admitted.
+
+(* /HIDE *)
