@@ -906,7 +906,6 @@ Definition pub_equivb_astate (P : total_map label) (a1 a2 : astate) : bool :=
 (* #[export] Instance decPubEquiv P (s1 s2 : state) : Dec (pub_equiv P s1 s2). *)
 (* Proof. dec_eq. Defined. *)
 
-(* TODO: can we automatically derive this? *)
 Definition gen_pub_equiv (P : total_map label) {X: Type} `{Gen X} (s: total_map X) : G (total_map X) :=
   let '(d, m) := s in
   new_m <- List.fold_left (fun (acc : G (Map X)) (c : string * X) => let '(k, v) := c in
@@ -1316,6 +1315,7 @@ with gen_secret_bexp_sized_nofail (dummy : var_id) (secret_variables : list var_
           )
         ]
   end.
+(* CH: This is not really needed *)
 Definition gen_secret_aexp_sized (P : pub_vars) (size : nat) : G (option aexp) :=
   let all_variables := union (map_dom (snd P)) ["X0"; "X1"; "X2"; "X3"; "X4"] % string in
   let secret_variables := List.filter (fun v => negb (apply P v)) all_variables in
@@ -1666,6 +1666,7 @@ Definition gen_pub_equiv_and_same_length (PA : pub_arrs) (a : astate) : G astate
   ) m (ret []);;
   ret (d, new_m).
 
+(* TODO: shrinking *)
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (sized (gen_pc_well_typed_sized P PA)) (fun c =>
@@ -1679,9 +1680,9 @@ QuickChick (forAll gen_pub_vars (fun P =>
     let r2 := cteval_engine 1000 c s2 a2 in
     match (r1, r2) with
     | (Some (s1', a1', os1'), Some (s2', a2', os2')) =>
-        implication true (obs_eqb os1' os2')
+        checker (obs_eqb os1' os2')
     | _ => (* discard *)
-        implication false false
+        checker tt
     end
   )))))))).
 
@@ -1960,7 +1961,6 @@ Proof.
 Qed.*)
 (* /FOLD *)
 
-(* TODO: quite slow *)
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
@@ -2786,6 +2786,27 @@ QuickChick (forAll gen_pub_vars (fun P =>
     )
   )))))))).
 
+(* CH: This one works on my machine
+QuickChick (forAllShrinkNonDet 200 gen_pub_vars shrink (fun P =>
+    forAllShrinkNonDet 200 gen_pub_arrs shrink (fun PA =>
+    forAllShrinkNonDet 200 (gen_ct_well_typed_sized P PA 3) (shrink_ct_well_typed P PA) (fun c =>
+
+    forAllShrinkNonDet 200 gen_state shrink (fun s1 =>
+    forAllShrinkNonDet 200 (gen_pub_equiv P s1) (shrink_pub_equiv_state P s1) (fun s2 =>
+    forAllShrinkNonDet 200 gen_astate shrink (fun a1 =>
+    forAllShrinkNonDet 200 (gen_pub_equiv PA a1) (shrink_pub_equiv_astate P a1) (fun a2 =>
+
+    let b := false in (* <---- changed ! *)
+
+    forAllMaybe (gen_spec_eval_sized c s1 a1 b 3) (fun '(ds, s1', a1', b1', os1) =>
+      match spec_eval_engine c s2 a2 b ds with
+      | Some (s2', a2', b2', os2') =>
+          (pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
+      | _ => true
+      end
+  ))))))))).
+*)
+
 (* Now, it finds counterexamples such as:
     c = A2[2] <- X1
     st1 = (X1 !-> 0) ; ast1 (A0 !-> [0])
@@ -2873,16 +2894,16 @@ Proof.
 Qed.
 
 (* TODO: Way too many discards to test this. *)
-(*QuickChick (forAll arbitrary (fun c =>
+QuickChick (forAll arbitrary (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
     forAll arbitrary (fun b =>
-    forAllMaybe (gen_spec_eval c st ast b) (fun '(ds, st', ast', b', os) =>
+    forAllMaybe (gen_spec_eval_sized c st ast b 5) (fun '(ds, st', ast', b', os) =>
       implication
         ((existsb (fun dir => match dir with DLoad _ _ => true | _ => false end) ds) ||
          (existsb (fun dir => match dir with DStore _ _ => true | _ => false end) ds))
         ((existsb (fun dir => direction_eqb dir DForce) ds) || b)
-  )))))).*)
+  )))))).
 
 (** We can recover sequential execution from [spec_eval] if there is no
     speculation, so all directives are [DStep] and speculation flag starts [false]. *)
@@ -2893,13 +2914,13 @@ Definition seq_spec_eval (c:com) (s:state) (a:astate)
     <(s, a, false, ds)> =[ c ]=> <(s', a', false, os)>.
 
 (* Way too many discards to test this *)
-(*QuickChick (forAll (arbitrarySized 3) (fun c =>
+QuickChick (forAll (arbitrarySized 3) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
     forAllMaybe (gen_spec_eval_sized c st ast false 100) (fun '(ds, st', ast', b', os) =>
       let contains_only_steps := List.forallb (fun x => direction_eqb x DStep) ds in
       implication contains_only_steps (negb b')
-  ))))).*)
+  ))))).
 
 (* LATER: We should be able to prove that [cteval] and [seq_spec_eval] coincide, so
    by [ct_well_typed_ct_secure] also directly get their Lemma 2. *)
