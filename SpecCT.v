@@ -2085,7 +2085,7 @@ Qed.
 
 (* Not currently true, but could be made true by extending the final
    configurations with errors for wrong directions or out of bounds accesses. *)
-Axiom ideal_terminates : forall P c st ast b ds, exists stt astt bb os,
+Axiom ideal_total : forall P c st ast b ds, exists stt astt bb os,
   P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>.
 
 Axiom spec_determinism : forall c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
@@ -2093,32 +2093,50 @@ Axiom spec_determinism : forall c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 
   <( st , ast , b , ds )> =[ c ]=> <( stt2 , astt2 , bb2 , os2 )> ->
   stt1 = stt2 /\ astt1 = astt2 /\ bb1 = bb2 /\ os1 = os2.
 
-Require Import Classical.
+(* already proven for all cases except the while case *)
+Axiom sel_slh_flag' : forall P c st ast (b:bool) ds stt astt (bb :bool) os,
+  unused "b" c ->
+  <( "b"!-> (if b then 1 else 0); st , ast , b , ds )> =[ sel_slh P c ]=> <( stt , astt , bb , os )> ->
+  stt "b" = (if bb then 1 else 0).
 
 Lemma sel_slh_ideal' : forall c P st ast (b:bool) ds st' ast' (b':bool) os,
   unused "b" c ->
-  st "b" = (if b then 1 else 0) ->
-  <(st, ast, b, ds)> =[ sel_slh P c ]=> <(st', ast', b', os)> ->
-  P |- <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
+  <("b"!-> (if b then 1 else 0); st, ast, b, ds)> =[ sel_slh P c ]=> <(st', ast', b', os)> ->
+  P |- <("b"!-> (if b then 1 else 0); st, ast, b, ds)> =[ c ]=> 
+    <("b" !-> (if b then 1 else 0); st', ast', b', os)>.
 Proof.
-  intros.
-  assert(G : forall st'', st'' <> st' -> ~
-    <( st, ast, b, ds )> =[ (sel_slh P c) ]=> <( st'', ast', b', os )>).
-    { intros. intro Hc.
-      pose proof (spec_determinism _ _ _ _ _ _ _ _ _ _ _ _ _ H1 Hc). firstorder. }
-  assert(G' : forall st'', st'' <> st' -> ~
-    P |- <( st, ast, b, ds )> =[ c ]=> <( st'', ast', b', os )>).
-    { intros. intro Hc. apply ideal_sel_slh in Hc; try assumption.
-      rewrite <- H0 in Hc. rewrite t_update_same in Hc.
-      replace ("b" !-> (if b' then 1 else 0); st'') with st'' in Hc by admit. (* wrong! *)
-      apply G in Hc; assumption. }
-  pose proof (ideal_terminates P c st ast b ds) as G''.
-  destruct G'' as [stt''' [astt''' [bb''' [os''' G''] ] ] ].
-  assert(G''' : forall st'',
-    P |- <( st, ast, b, ds )> =[ c ]=> <( st'', ast', b', os )> -> st'' = st').
-    { intros. apply NNPP. intro Hc. firstorder. }
-  (* eapply G''' in G''. -- but need more foralls in G''' *)
-  assert(G4: stt''' = st') by admit. rewrite G4 in G''.
+  intros c P st ast b ds st' ast' b' os Hunused Heval.
+  assert(Ldet : forall st1 ast1 (b1 :bool) os1, 
+     st1 <> st' /\ ast1 <> ast' /\ b1 <> b' /\ os1 <> os   ->
+     ~ <("b" !-> (if b then 1 else 0); st, ast, b, ds )> =[ (sel_slh P c) ]=> 
+          <(st1, ast1, b1, os1 )>).
+    { intros st1 ast1 b1 os2. intros [ Hnst [ Hnast [ Hnb Hnos ] ] ] Hev.
+      eapply spec_determinism in Hev; [| eapply Heval].
+      destruct Hev as [Contra _ ]. eauto. }
+  assert (Lflag : forall st1 ast1 b1 os1, 
+    st1 <> st'  /\ ast1 <> ast' /\ b1 <> b' /\ os1 <> os   ->
+    ~ <("b" !-> (if b then 1 else 0); st, ast, b, ds )> =[ (sel_slh P c) ]=> 
+          <("b"!-> (if b1 then 1 else 0); st1, ast1, b1, os1 )> ).
+    { intros st1 ast1 b1 os2 Hneq Hev. eapply Ldet in Hneq. 
+      apply (sel_slh_flag' P c st ast b ds st1 ast1 b1 os) in Hunused.
+      - rewrite <- Hunused in Hev. rewrite t_update_same in Hev.
+      apply Hneq. apply Hev. }
+  assert(LFcc : forall st1 ast1 b1 os1, 
+    st1 <> st'  /\ ast1 <> ast' /\ b1 <> b' /\ os1 <> os   ->
+    ~ P |- <( st, ast, b, ds )> =[ c ]=> <(st1, ast1, b1, os1 )>).
+    { intros st1 ast1 b1 os2 Hneq Hev.
+      eapply Lflag; [apply Hneq |].
+      apply ideal_sel_slh; auto. }
+  assert(Ltot: exists st1 ast1 b1 os1,
+    P |- <("b"!-> (if b then 1 else 0); st, ast, b, ds )> =[ c ]=> <(st1, ast1, b1, os1 )> ).
+    { eapply ideal_total. }
+  destruct Ltot as [ st1 [ ast1 [ b1 [ os1 Hev1 ] ] ] ].
+  assert (Leq : st1 = st'  /\ ast1 = ast' /\ b1 = b' /\ os1 = os ).
+    { admit. (* Follows from Hev1 and LFcc *) }
+  destruct Leq as [ Hst1 [ Hast [ Hb1 Hos1 ] ] ]. subst.
+  eapply ideal_unused_same in Hev1 as Hunchanged; eauto.
+  rewrite <- (t_update_same _ st' "b") in Hev1. rewrite Hunchanged in Hev1. 
+  apply Hev1.
 Admitted.
 
 (* /HIDE *)
