@@ -2086,12 +2086,28 @@ Qed.
 (* Not currently true, but could be made true by extending the final
    configurations with errors for wrong directions or out of bounds accesses. *)
 Axiom ideal_total : forall P c st ast b ds, exists stt astt bb os,
-  P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>.
+  P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>.  	  
 
-Axiom spec_determinism : forall c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
+Lemma spec_determinism : forall c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
   <( st , ast , b , ds )> =[ c ]=> <( stt1 , astt1 , bb1 , os1 )> ->
   <( st , ast , b , ds )> =[ c ]=> <( stt2 , astt2 , bb2 , os2 )> ->
   stt1 = stt2 /\ astt1 = astt2 /\ bb1 = bb2 /\ os1 = os2.
+Proof.
+  intros c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2 Heval1.
+  generalize dependent stt2; generalize dependent astt2;
+  generalize dependent bb2; generalize dependent os2.
+  induction Heval1; intros stt2 astt2 bb2 ost2 Heval2; 
+  try (inversion Heval2; subst; eauto).
+  - (* Spec_Seq *) admit.
+  - (* Spe_If *)
+    apply IHHeval1 in H10.
+    destruct H10 as [Hst [Hast [Hb Hos] ] ]; subst.
+    auto.
+  - (* Spec_If_F *)  
+    apply IHHeval1 in H10.
+    destruct H10 as [Hst [Hast [Hb Hos] ] ]; subst.
+    auto.
+Admitted.
 
 (* decidability *)
 Axiom decidability_state : forall (st st' :state), 
@@ -2109,6 +2125,7 @@ Proof.
   - apply decidability_state.
 Qed.
 
+(* SOONER: This proof is done, if the proof of spec_determinism is finished. *)
 Lemma sel_slh_ideal' : forall c P st ast (b:bool) ds st' ast' (b':bool) os,
   unused "b" c ->
   <("b"!-> (if b then 1 else 0); st, ast, b, ds)> =[ sel_slh P c ]=> <(st', ast', b', os)> ->
@@ -2134,12 +2151,11 @@ Proof.
     { eapply ideal_total. }
   destruct Ltot as [ st1 [ ast1 [ b1 [ os1 Hev1 ] ] ] ].
   assert (Leq : ("b" !-> (if b1 then 1 else 0); st1, ast1, b1, os1) = (st', ast', b', os) ).
-    { (* Follows from Hev1 and LFcc with decidabilty for state and astate *)
-      destruct (decidability_ouput_tuple ("b" !-> (if b1 then 1 else 0); st1) st' ast1 ast' b1 b' os1 os ) as [Heq | Hneq].
+    { destruct (decidability_ouput_tuple ("b" !-> (if b1 then 1 else 0); st1) st' ast1 ast' b1 b' os1 os ) as [Heq | Hneq].
       - apply Heq.
       - apply LFcc in Hneq. apply Hneq in Hev1. destruct Hev1. }
   inversion Leq. subst. rewrite t_update_shadow.
   eapply ideal_unused_update_rev_gen in Hev1; eauto.
-Qed.
+Admitted.
 
 (* /HIDE *)
