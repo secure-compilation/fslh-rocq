@@ -1,4 +1,4 @@
-COQMFFLAGS := -Q . SECF
+# COQMFFLAGS := -Q . SECF
 
 ALLVFILES := $(wildcard *.v)
 
