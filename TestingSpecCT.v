@@ -1891,9 +1891,9 @@ QuickChick (forAll gen_pub_vars (fun P =>
       let r2 := cteval_engine 1000 c s2 a2 in
       match (r1, r2) with
       | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
-          implication true ((pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2'))
+          checker ((pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2'))
       | _ => (* discard *)
-          implication false false
+          checker tt
       end
   )))))))).
 
@@ -1972,9 +1972,9 @@ QuickChick (forAll gen_pub_vars (fun P =>
       let r2 := cteval_engine 1000 c s2 a2 in
       match (r1, r2) with
       | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
-          implication true (obs_eqb os1 os2)
+          checker (obs_eqb os1 os2)
       | _ => (* discard *)
-          implication false false
+          checker tt
       end
   )))))))).
 
