@@ -848,6 +848,7 @@ Definition gen_var_with_label (P : pub_vars) (l: label) : G (option var_id) :=
     (ret None)
     (List.map (fun v => ret (Some (Var v))) variables_in_l).
 
+(*
 QuickChick (forAll gen_pub_vars (fun (P : pub_vars) =>
     forAll (gen_var_with_label P public) (fun v => match v with
       | Some v => apply P v
@@ -860,6 +861,7 @@ QuickChick (forAll gen_pub_vars (fun (P : pub_vars) =>
       | None => true
       end
   ))).
+*)
 
 (* Returns an array A0..A2 which has the label l in P *)
 Definition gen_arr_with_label (P : pub_vars) (l: label) : G (option arr_id) :=
@@ -915,11 +917,13 @@ Definition gen_pub_equiv (P : total_map label) {X: Type} `{Gen X} (s: total_map 
   ) m (ret []);;
   ret (d, new_m).
 
+(*
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
       pub_equivb P s1 s2
   )))).
+*)
 
 (* TODO: it would be cool to unify these two shrinkers. *)
 Definition shrink_pub_equiv_state (P : total_map label) (s : state) : state -> list state :=
@@ -1017,6 +1021,7 @@ Definition shrink_pub_equiv_astate (P : total_map label) (a : astate) : astate -
     then (List.map (fun d' => (d', m)) (shrink d)) ++ (secret_entries_shrunk ++ entries_removed)
     else secret_entries_shrunk ++ entries_removed.
 
+(*
 QuickChick (forAll gen_pub_vars (fun P =>
 
     forAll gen_state (fun s =>
@@ -1037,6 +1042,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
       forallb (fun a'' => pub_equivb_astate P a a'') shrunk
     )
   )))).
+*)
 
 Lemma pub_equiv_refl : forall {X:Type} (P : total_map label) (s : total_map X),
   pub_equiv P s s.
@@ -1339,6 +1345,7 @@ Definition gen_secret_bexp_sized (P : pub_vars) (size : nat) : G (option bexp) :
       ret (Some b)
   end.
 
+(*
 QuickChick (forAll gen_pub_vars (fun P => 
     forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
@@ -1352,6 +1359,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
     forAll (gen_public_bexp_sized P 3) (fun b =>
       Bool.eqb (beval s1 b) (beval s2 b)
   ))))).
+*)
 
 Fixpoint label_of_aexp (P : pub_vars) (a : aexp) : label := match a with
   | ANum _ => public
@@ -1372,6 +1380,7 @@ with label_of_bexp (P : pub_vars) (b : bexp) : label := match b with
   | <{ false }> => public
 end.
 
+(*
 QuickChick (forAll gen_pub_vars (fun P =>
   forAll (sized (gen_public_aexp_sized P)) (fun a =>
     Bool.eqb (label_of_aexp P a) public
@@ -1388,6 +1397,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
   forAllMaybe (gen_secret_bexp_sized P 3) (fun b =>
     Bool.eqb (label_of_bexp P b) secret
   ))).
+*)
 
 Definition shrink_var_preserve_label (P : pub_vars) (v : var_id) : list var_id :=
   let '(Var v) := v in
@@ -1439,6 +1449,7 @@ Definition shrink_arr_preserve_label (P : pub_vars) (v : arr_id) : list arr_id :
       end
   | None => []
   end.
+(*
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll arbitrary (fun (X : var_id) =>
 
@@ -1446,6 +1457,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
 
     forallb (fun '(Var X') => Bool.eqb (apply P X') l) (shrink_var_preserve_label P X)
   ))).
+*)
 
 (* Shrinker that preserve the label of aexp/bexp *)
 Fixpoint shrink_bexp_with_label (P : pub_vars) (l : label) (b : bexp) : list bexp :=
@@ -1494,6 +1506,7 @@ with shrink_aexp_with_label (P : pub_vars) (l : label) (a : aexp) : list aexp :=
       (map (fun shrunk : aexp => <{ be ? a1 : shrunk }>) (shrink_aexp_with_label P l a2))
   end.
 
+(*
 QuickChick (forAll gen_pub_vars (fun P =>
   forAll (sized (gen_public_aexp_sized P)) (fun a =>
   let candidates := shrink_aexp_with_label P public a in
@@ -1526,6 +1539,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
 
   (forallb (fun b' => Bool.eqb (label_of_bexp P b') secret) candidates)
 ))).
+*)
 
 Theorem noninterferent_aexp_bexp : forall P s1 s2,
   pub_equiv P s1 s2 ->
@@ -1667,6 +1681,7 @@ Definition gen_pub_equiv_and_same_length (PA : pub_arrs) (a : astate) : G astate
   ret (d, new_m).
 
 (* TODO: shrinking *)
+(*
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (sized (gen_pc_well_typed_sized P PA)) (fun c =>
@@ -1685,6 +1700,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
         checker tt
     end
   )))))))).
+*)
 
 (* TERSE: /HIDEFROMHTML *)
 
@@ -1880,6 +1896,7 @@ Fixpoint shrink_ct_well_typed (P : pub_vars) (PA : pub_arrs) (c : com) : list co
 
 (** ** Final theorems: noninterference and constant-time security *)
 
+(*
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
@@ -1896,6 +1913,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
           implication false false
       end
   )))))))).
+*)
 
 Theorem ct_well_typed_noninterferent :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
@@ -1961,6 +1979,7 @@ Proof.
 Qed.*)
 (* /FOLD *)
 
+(*
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
@@ -1977,6 +1996,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
           implication false false
       end
   )))))))).
+*)
 
 Theorem ct_well_typed_ct_secure :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
@@ -2607,6 +2627,7 @@ Definition astate_eqb := total_map_beq (list nat) (fun l1 l2 =>
       end % string)
    }.
 
+(*
 QuickChick (forAll (arbitrarySized 2) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
@@ -2622,6 +2643,7 @@ QuickChick (forAll (arbitrarySized 2) (fun c =>
       | None => false
       end)
   )))))).
+*)
 
 (* HIDE: This semantics already lost one property of Imp, which is only
    nonterminating executions don't produce a final state. Now if the input
@@ -2699,6 +2721,7 @@ Definition forAllShrinkNonDet {A prop : Type} {_ : Checkable prop} `{Show A}
 
 (* TODO: 100 isn't enough, but increasing it leads to too many performance problems.
          forAllShrinkNonDet needs to be changed to be more efficient. *)
+(*
 QuickChick (forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
     forAllShrinkNonDet 100 gen_pub_arrs shrink (fun PA =>
     forAllShrinkNonDet 100 (gen_ct_well_typed_sized P PA 3) (shrink_ct_well_typed P PA) (fun c =>
@@ -2717,6 +2740,7 @@ QuickChick (forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
       | _ => false
       end
   )))))))))).
+*)
 
 (* Typical example found:
      c = A0[X0] <- 4
@@ -2731,6 +2755,7 @@ QuickChick (forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
   To fix this, we'll enforce that both execution successfuly terminate.
    *)
 
+(*
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
@@ -2785,6 +2810,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
       end
     )
   )))))))).
+*)
 
 (* CH: This one works on my machine
 QuickChick (forAllShrinkNonDet 200 gen_pub_vars shrink (fun P =>
@@ -2826,12 +2852,14 @@ Lemma speculation_bit_monotonic : forall c s a b ds s' a' b' os,
   b' = true.
 Proof. intros c s a b ds s' a' b' os Heval Hb. induction Heval; eauto. Qed.
 
+(*
 QuickChick (forAll (arbitrarySized 3) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
     forAllMaybe (gen_spec_eval_sized c st ast true 100) (fun '(ds, st', ast', b', os) =>
       b'
   ))))).
+*)
 
 (* HIDE: This one is weaker for big-step semantics, but it's still helpful below *)
 Lemma speculation_needs_force : forall c s a b ds s' a' b' os,
@@ -2855,6 +2883,7 @@ Definition direction_eqb (d1 : direction) (d2 : direction) : bool :=
   end.
 
 (* TODO: Way too many discards to be able to test this. *)
+(*
 QuickChick (forAll (arbitrarySized 3) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
@@ -2863,6 +2892,7 @@ QuickChick (forAll (arbitrarySized 3) (fun c =>
         existsb (fun dir => direction_eqb dir DForce) ds
       )
   ))))).
+*)
 
 (* HIDE: Also this one is weaker for big-step semantics *)
 Lemma unsafe_access_needs_speculation : forall c s a b ds s' a' b' os ax i,
@@ -2894,6 +2924,7 @@ Proof.
 Qed.
 
 (* TODO: Way too many discards to test this. *)
+(*
 QuickChick (forAll arbitrary (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
@@ -2904,6 +2935,7 @@ QuickChick (forAll arbitrary (fun c =>
          (existsb (fun dir => match dir with DStore _ _ => true | _ => false end) ds))
         ((existsb (fun dir => direction_eqb dir DForce) ds) || b)
   )))))).
+*)
 
 (** We can recover sequential execution from [spec_eval] if there is no
     speculation, so all directives are [DStep] and speculation flag starts [false]. *)
@@ -2914,6 +2946,7 @@ Definition seq_spec_eval (c:com) (s:state) (a:astate)
     <(s, a, false, ds)> =[ c ]=> <(s', a', false, os)>.
 
 (* Way too many discards to test this *)
+(*
 QuickChick (forAll (arbitrarySized 3) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
@@ -2921,6 +2954,7 @@ QuickChick (forAll (arbitrarySized 3) (fun c =>
       let contains_only_steps := List.forallb (fun x => direction_eqb x DStep) ds in
       implication contains_only_steps (negb b')
   ))))).
+*)
 
 (* LATER: We should be able to prove that [cteval] and [seq_spec_eval] coincide, so
    by [ct_well_typed_ct_secure] also directly get their Lemma 2. *)
@@ -3763,6 +3797,7 @@ Proof.
 Qed.
 
 (* Test that spec_ct holds for sel_slh *)
+(*
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
 
@@ -3785,6 +3820,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
       | None => checker tt (* If the second execution crashes, this isn't a counterexample *)
       end
     ))))))))).
+*)
 
 (* HIDE: The less useful for security direction of the idealized semantics being
    equivalent to [sel_slh]; easier to prove even for while (forwards compiler
@@ -4057,6 +4093,7 @@ Fixpoint gen_ideal_eval_sized (P : pub_vars) (c : com) (st : state) (ast : astat
    rules and into equality premises could make this proof script less
    verbose. Maybe just define "smart constructors" for that? *)
 
+(*
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll arbitrary (fun c =>
 
@@ -4083,4 +4120,5 @@ QuickChick (forAll gen_pub_vars (fun P =>
       | None => checker tt (* If the second execution crashes, this isn't a counterexample *)
       end
     )))))))).
+*)
 

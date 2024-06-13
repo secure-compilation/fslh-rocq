@@ -1,17 +1,20 @@
-# COQMFFLAGS := -Q . SECF
+%: Makefile.coq phony
+	+make -f Makefile.coq $@
 
-ALLVFILES := $(wildcard *.v)
+all: Makefile.coq
+	+make -f Makefile.coq all
 
-build: Makefile.coq
-	$(MAKE) -f Makefile.coq
+clean: Makefile.coq
+	+make -f Makefile.coq clean
+	rm -f Makefile.coq
 
-clean::
-	if [ -e Makefile.coq ]; then $(MAKE) -f Makefile.coq cleanall; fi
-	$(RM) $(wildcard Makefile.coq Makefile.coq.conf)
+Makefile.coq: _CoqProject Makefile
+	coq_makefile -f _CoqProject | sed 's/$$(COQCHK) $$(COQCHKFLAGS) $$(COQLIBS)/$$(COQCHK) $$(COQCHKFLAGS) $$(subst -Q,-R,$$(COQLIBS))/' > Makefile.coq
 
-Makefile.coq: $(ALLVFILES)
-	coq_makefile $(COQMFFLAGS) -o Makefile.coq $(ALLVFILES)
+_CoqProject: ;
 
--include Makefile.coq
+Makefile: ;
 
-.PHONY: build clean
+phony: ;
+
+.PHONY: all clean phony  
