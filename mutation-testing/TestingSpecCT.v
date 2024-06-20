@@ -3,7 +3,6 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
-(* From SECF *) Require Import Maps.
 From Coq Require Import Bool.Bool.
 From Coq Require Import Arith.Arith.
 From Coq Require Import Arith.EqNat.
@@ -771,7 +770,7 @@ Fixpoint cteval_engine_aux (f : nat) (c : com) : interpreter :=
       i <- eval_aexp ie;;
       l <- get_arr a;;
 
-      if (i <? List.length l) then
+      if i <? List.length l then
         observe (OARead a i);;
         set_var x (nth i l 0)
       else
@@ -842,26 +841,28 @@ Definition gen_pub_arrs : G pub_vars :=
 Definition gen_var_with_label (P : pub_vars) (l: label) : G (option var_id) :=
   let '(d, m) := P in
   let all_variables := union (map_dom m) ["X0"; "X1"; "X2"; "X3"; "X4"] % string in
+  (*!*)
   let variables_in_l := List.filter (fun v => Bool.eqb (apply P v) l) all_variables in
+  (*! let variables_in_l := List.filter (fun v => Bool.eqb (apply P v) (negb l)) all_variables in *)
 
   oneOf_
     (ret None)
     (List.map (fun v => ret (Some (Var v))) variables_in_l).
 
-(*
-QuickChick (forAll gen_pub_vars (fun (P : pub_vars) =>
+Definition genVarWithLabel_correctness := forAll gen_pub_vars (fun (P : pub_vars) =>
     forAll (gen_var_with_label P public) (fun v => match v with
       | Some v => apply P v
       | None => true
       end
-  ))).
-QuickChick (forAll gen_pub_vars (fun (P : pub_vars) =>
+  )).
+(*! QuickChick genVarWithLabel_correctness. *)
+Definition genArrWithLabel_correctness := forAll gen_pub_vars (fun (P : pub_vars) =>
     forAll (gen_var_with_label P secret) (fun v => match v with
       | Some v => negb (apply P v)
       | None => true
       end
-  ))).
-*)
+  )).
+(*! QuickChick genArrWithLabel_correctness. *)
 
 (* Returns an array A0..A2 which has the label l in P *)
 Definition gen_arr_with_label (P : pub_vars) (l: label) : G (option arr_id) :=
@@ -917,13 +918,12 @@ Definition gen_pub_equiv (P : total_map label) {X: Type} `{Gen X} (s: total_map 
   ) m (ret []);;
   ret (d, new_m).
 
-(*
-QuickChick (forAll gen_pub_vars (fun P =>
+Definition genPubEquiv_correctness := forAll gen_pub_vars (fun P =>
     forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
       pub_equivb P s1 s2
-  )))).
-*)
+  ))).
+(*! QuickChick genPubEquiv_correctness. *)
 
 (* TODO: it would be cool to unify these two shrinkers. *)
 Definition shrink_pub_equiv_state (P : total_map label) (s : state) : state -> list state :=
@@ -935,7 +935,10 @@ Definition shrink_pub_equiv_state (P : total_map label) (s : state) : state -> l
       let '(default_visiblity, visiblities) := P in
 
       if default_visiblity
-      then false
+      then
+        (*!*)
+        false
+        (*! true *)
       else
         let public_variables := List.filter (fun x =>
           apply P x
@@ -1021,9 +1024,7 @@ Definition shrink_pub_equiv_astate (P : total_map label) (a : astate) : astate -
     then (List.map (fun d' => (d', m)) (shrink d)) ++ (secret_entries_shrunk ++ entries_removed)
     else secret_entries_shrunk ++ entries_removed.
 
-(*
-QuickChick (forAll gen_pub_vars (fun P =>
-
+Definition shrinkPubEquivState_correctness := forAll gen_pub_vars (fun P =>
     forAll gen_state (fun s =>
     forAll (gen_pub_equiv P s) (fun s' =>
 
@@ -1031,9 +1032,10 @@ QuickChick (forAll gen_pub_vars (fun P =>
     printTestCase ((show shrunk) ++ nl) (
       forallb (fun s'' => pub_equivb P s s'') shrunk
     )
-  )))).
-QuickChick (forAll gen_pub_vars (fun P =>
+  ))).
+(*! QuickChick shrinkPubEquivState_correctness. *)
 
+Definition shrinkPubEquivAstate_correctness := forAll gen_pub_vars (fun P =>
     forAll gen_astate (fun a =>
     forAll (gen_pub_equiv P a) (fun a' =>
 
@@ -1041,8 +1043,8 @@ QuickChick (forAll gen_pub_vars (fun P =>
     printTestCase ((show shrunk) ++ nl) (
       forallb (fun a'' => pub_equivb_astate P a a'') shrunk
     )
-  )))).
-*)
+  ))).
+(*! QuickChick shrinkPubEquivAstate_correctness. *)
 
 Lemma pub_equiv_refl : forall {X:Type} (P : total_map label) (s : total_map X),
   pub_equiv P s s.
@@ -1345,21 +1347,21 @@ Definition gen_secret_bexp_sized (P : pub_vars) (size : nat) : G (option bexp) :
       ret (Some b)
   end.
 
-(*
-QuickChick (forAll gen_pub_vars (fun P => 
+Definition aexp_noninterference := forAll gen_pub_vars (fun P => 
     forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
     forAll (gen_public_aexp_sized P 3) (fun a =>
       (aeval s1 a) =? (aeval s2 a)
-  ))))).
+  )))).
+(*! QuickChick aexp_noninterference. *)
 
-QuickChick (forAll gen_pub_vars (fun P => 
+Definition bexp_noninterference := forAll gen_pub_vars (fun P => 
     forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
     forAll (gen_public_bexp_sized P 3) (fun b =>
       Bool.eqb (beval s1 b) (beval s2 b)
-  ))))).
-*)
+  )))).
+(*! QuickChick bexp_noninterference. *)
 
 Fixpoint label_of_aexp (P : pub_vars) (a : aexp) : label := match a with
   | ANum _ => public
@@ -1380,24 +1382,29 @@ with label_of_bexp (P : pub_vars) (b : bexp) : label := match b with
   | <{ false }> => public
 end.
 
-(*
-QuickChick (forAll gen_pub_vars (fun P =>
+Definition genPublicAexp_correctness := forAll gen_pub_vars (fun P =>
   forAll (sized (gen_public_aexp_sized P)) (fun a =>
     Bool.eqb (label_of_aexp P a) public
-  ))).
-QuickChick (forAll gen_pub_vars (fun P =>
+  )).
+(*! QuickChick genPublicAexp_correctness. *)
+
+Definition genSecretAexp_correctness := forAll gen_pub_vars (fun P =>
   forAllMaybe (gen_secret_aexp_sized P 3) (fun a =>
     Bool.eqb (label_of_aexp P a) secret
-  ))).
-QuickChick (forAll gen_pub_vars (fun P =>
+  )).
+(*! QuickChick genSecretAexp_correctness. *)
+
+Definition genPubBexp_correctness := forAll gen_pub_vars (fun P =>
   forAll (gen_public_bexp_sized P 3) (fun b =>
     Bool.eqb (label_of_bexp P b) public
-  ))).
-QuickChick (forAll gen_pub_vars (fun P =>
+  )).
+(*! QuickChick genPubBexp_correctness. *)
+
+Definition genSecretBexp_correctness := forAll gen_pub_vars (fun P =>
   forAllMaybe (gen_secret_bexp_sized P 3) (fun b =>
     Bool.eqb (label_of_bexp P b) secret
-  ))).
-*)
+  )).
+(*! QuickChick genSecretBexp_correctness. *)
 
 Definition shrink_var_preserve_label (P : pub_vars) (v : var_id) : list var_id :=
   let '(Var v) := v in
@@ -1449,15 +1456,14 @@ Definition shrink_arr_preserve_label (P : pub_vars) (v : arr_id) : list arr_id :
       end
   | None => []
   end.
-(*
-QuickChick (forAll gen_pub_vars (fun P =>
+Definition shrinkVarPreserveLabel_correctness := forAll gen_pub_vars (fun P =>
     forAll arbitrary (fun (X : var_id) =>
 
     let l := apply P X in
 
     forallb (fun '(Var X') => Bool.eqb (apply P X') l) (shrink_var_preserve_label P X)
-  ))).
-*)
+  )).
+(*! QuickChick shrinkVarPreserveLabel_correctness. *)
 
 (* Shrinker that preserve the label of aexp/bexp *)
 Fixpoint shrink_bexp_with_label (P : pub_vars) (l : label) (b : bexp) : list bexp :=
@@ -1506,40 +1512,45 @@ with shrink_aexp_with_label (P : pub_vars) (l : label) (a : aexp) : list aexp :=
       (map (fun shrunk : aexp => <{ be ? a1 : shrunk }>) (shrink_aexp_with_label P l a2))
   end.
 
-(*
-QuickChick (forAll gen_pub_vars (fun P =>
-  forAll (sized (gen_public_aexp_sized P)) (fun a =>
-  let candidates := shrink_aexp_with_label P public a in
+Definition shrinkAexpWithLabel_correctness_public := forAll gen_pub_vars (fun P =>
+    forAll (sized (gen_public_aexp_sized P)) (fun a =>
+    let candidates := shrink_aexp_with_label P public a in
 
-  printTestCase ((show candidates) ++ nl)
+    printTestCase ((show candidates) ++ nl)
 
-  (forallb (fun a' => Bool.eqb (label_of_aexp P a') public) candidates)
-))).
-QuickChick (forAll gen_pub_vars (fun P =>
-  forAll (sized (gen_public_bexp_sized P)) (fun b =>
-  let candidates := shrink_bexp_with_label P public b in
+    (forallb (fun a' => Bool.eqb (label_of_aexp P a') public) candidates)
+  )).
+(*! QuickChick shrinkAexpWithLabel_correctness_public. *)
 
-  printTestCase ((show candidates) ++ nl)
+Definition shrinkBexpWithLabel_correctness_public := forAll gen_pub_vars (fun P =>
+    forAll (sized (gen_public_bexp_sized P)) (fun b =>
+    let candidates := shrink_bexp_with_label P public b in
 
-  (forallb (fun b' => Bool.eqb (label_of_bexp P b') public) candidates)
-))).
-QuickChick (forAll gen_pub_vars (fun P =>
-  forAllMaybe (gen_secret_aexp_sized P 3) (fun a =>
-  let candidates := shrink_aexp_with_label P secret a in
+    printTestCase ((show candidates) ++ nl)
 
-  printTestCase ((show candidates) ++ nl)
+    (forallb (fun b' => Bool.eqb (label_of_bexp P b') public) candidates)
+  )).
+(*! QuickChick shrinkBexpWithLabel_correctness_public. *)
 
-  (forallb (fun a' => Bool.eqb (label_of_aexp P a') secret) candidates)
-))).
-QuickChick (forAll gen_pub_vars (fun P =>
-  forAllMaybe (gen_secret_bexp_sized P 3) (fun b =>
-  let candidates := shrink_bexp_with_label P secret b in
+Definition shrinkAexpWithLabel_correctness_secret := forAll gen_pub_vars (fun P =>
+    forAllMaybe (gen_secret_aexp_sized P 3) (fun a =>
+    let candidates := shrink_aexp_with_label P secret a in
 
-  printTestCase ((show candidates) ++ nl)
+    printTestCase ((show candidates) ++ nl)
 
-  (forallb (fun b' => Bool.eqb (label_of_bexp P b') secret) candidates)
-))).
-*)
+    (forallb (fun a' => Bool.eqb (label_of_aexp P a') secret) candidates)
+  )).
+(*! QuickChick shrinkAexpWithLabel_correctness_secret. *)
+
+Definition shrinkBexpWithLabel_correctness_secret := forAll gen_pub_vars (fun P =>
+    forAllMaybe (gen_secret_bexp_sized P 3) (fun b =>
+    let candidates := shrink_bexp_with_label P secret b in
+
+    printTestCase ((show candidates) ++ nl)
+
+    (forallb (fun b' => Bool.eqb (label_of_bexp P b') secret) candidates)
+  )).
+(*! QuickChick shrinkBexpWithLabel_correctness_secret. *)
 
 Theorem noninterferent_aexp_bexp : forall P s1 s2,
   pub_equiv P s1 s2 ->
@@ -1681,8 +1692,7 @@ Definition gen_pub_equiv_and_same_length (PA : pub_arrs) (a : astate) : G astate
   ret (d, new_m).
 
 (* TODO: shrinking *)
-(*
-QuickChick (forAll gen_pub_vars (fun P =>
+Definition pcWellTypedness_implies_noninterference := forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (sized (gen_pc_well_typed_sized P PA)) (fun c =>
 
@@ -1699,8 +1709,9 @@ QuickChick (forAll gen_pub_vars (fun P =>
     | _ => (* discard *)
         checker tt
     end
-  )))))))).
-*)
+  ))))))).
+(* TODO: cannot find counterexamples when testing mutants? *)
+(* QuickChick pcWellTypedness_implies_noninterference. *)
 
 (* TERSE: /HIDEFROMHTML *)
 
@@ -1896,8 +1907,7 @@ Fixpoint shrink_ct_well_typed (P : pub_vars) (PA : pub_arrs) (c : com) : list co
 
 (** ** Final theorems: noninterference and constant-time security *)
 
-(*
-QuickChick (forAll gen_pub_vars (fun P =>
+Definition ctWellTypedness_implies_nonintereference := forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
     forAll gen_state (fun s1 =>
@@ -1908,12 +1918,12 @@ QuickChick (forAll gen_pub_vars (fun P =>
       let r2 := cteval_engine 1000 c s2 a2 in
       match (r1, r2) with
       | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
-          implication true ((pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2'))
+          checker ((pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2'))
       | _ => (* discard *)
-          implication false false
+          checker tt
       end
-  )))))))).
-*)
+  ))))))).
+(*! QuickChick ctWellTypedness_implies_nonintereference. *)
 
 Theorem ct_well_typed_noninterferent :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
@@ -1979,8 +1989,7 @@ Proof.
 Qed.*)
 (* /FOLD *)
 
-(*
-QuickChick (forAll gen_pub_vars (fun P =>
+Definition ctWellTypedness_implies_security := forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
     forAll gen_state (fun s1 =>
@@ -1991,12 +2000,12 @@ QuickChick (forAll gen_pub_vars (fun P =>
       let r2 := cteval_engine 1000 c s2 a2 in
       match (r1, r2) with
       | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
-          implication true (obs_eqb os1 os2)
+          checker (obs_eqb os1 os2)
       | _ => (* discard *)
-          implication false false
+          checker tt
       end
-  )))))))).
-*)
+  ))))))).
+(*! QuickChick ctWellTypedness_implies_security. *)
 
 Theorem ct_well_typed_ct_secure :
   forall P PA c s1 s2 a1 a2 s1' s2' a1' a2' os1 os2,
@@ -2627,8 +2636,7 @@ Definition astate_eqb := total_map_beq (list nat) (fun l1 l2 =>
       end % string)
    }.
 
-(*
-QuickChick (forAll (arbitrarySized 2) (fun c =>
+Definition interpreter_correctness := forAll (arbitrarySized 2) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
     forAll arbitrary (fun b =>
@@ -2642,8 +2650,8 @@ QuickChick (forAll (arbitrarySized 2) (fun c =>
           obs_eqb os os_
       | None => false
       end)
-  )))))).
-*)
+  ))))).
+(*! QuickChick interpreter_correctness. *)
 
 (* HIDE: This semantics already lost one property of Imp, which is only
    nonterminating executions don't produce a final state. Now if the input
@@ -2721,26 +2729,27 @@ Definition forAllShrinkNonDet {A prop : Type} {_ : Checkable prop} `{Show A}
 
 (* TODO: 100 isn't enough, but increasing it leads to too many performance problems.
          forAllShrinkNonDet needs to be changed to be more efficient. *)
-(*
-QuickChick (forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
-    forAllShrinkNonDet 100 gen_pub_arrs shrink (fun PA =>
-    forAllShrinkNonDet 100 (gen_ct_well_typed_sized P PA 3) (shrink_ct_well_typed P PA) (fun c =>
+Definition ctWellTypedness_implies_speculative_noninterference_1 :=
+  forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
+  forAllShrinkNonDet 100 gen_pub_arrs shrink (fun PA =>
+  forAllShrinkNonDet 100 (gen_ct_well_typed_sized P PA 3) (shrink_ct_well_typed P PA) (fun c =>
 
-    forAll arbitrary (fun b =>
+  forAll arbitrary (fun b =>
 
-    forAllShrinkNonDet 100 gen_state shrink (fun s1 =>
-    forAllShrinkNonDet 100 (gen_pub_equiv P s1) (shrink_pub_equiv_state P s1) (fun s2 =>
-    forAllShrinkNonDet 100 gen_astate shrink (fun a1 =>
-    forAllShrinkNonDet 100 (gen_pub_equiv PA a1) (shrink_pub_equiv_astate P a1) (fun a2 =>
+  forAllShrinkNonDet 100 gen_state shrink (fun s1 =>
+  forAllShrinkNonDet 100 (gen_pub_equiv P s1) (shrink_pub_equiv_state P s1) (fun s2 =>
+  forAllShrinkNonDet 100 gen_astate shrink (fun a1 =>
+  forAllShrinkNonDet 100 (gen_pub_equiv PA a1) (shrink_pub_equiv_astate P a1) (fun a2 =>
 
-    forAllMaybe (gen_spec_eval_sized c s1 a1 b 3) (fun '(ds, s1', a1', b1', os1) =>
-      match spec_eval_engine c s2 a2 b ds with
-      | Some (s2', a2', b2', os2') =>
-          (pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
-      | _ => false
-      end
-  )))))))))).
-*)
+  forAllMaybe (gen_spec_eval_sized c s1 a1 b 3) (fun '(ds, s1', a1', b1', os1) =>
+    match spec_eval_engine c s2 a2 b ds with
+    | Some (s2', a2', b2', os2') =>
+	(pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
+    | _ => false
+    end
+  ))))))))).
+(* TODO: we can't find counterexamples when mutation testing *)
+(* QuickChick ctWellTypedness_implies_speculative_noninterference. *)
 
 (* Typical example found:
      c = A0[X0] <- 4
@@ -2755,25 +2764,27 @@ QuickChick (forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
   To fix this, we'll enforce that both execution successfuly terminate.
    *)
 
-(*
-QuickChick (forAll gen_pub_vars (fun P =>
-    forAll gen_pub_arrs (fun PA =>
-    forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
+Definition ctWellTypedness_implies_speculative_noninterference_2 :=
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
 
-    forAll arbitrary (fun b =>
+  forAll arbitrary (fun b =>
 
-    forAll gen_state (fun s1 =>
-    forAll (gen_pub_equiv P s1) (fun s2 =>
-    forAll gen_astate (fun a1 =>
-    forAll (gen_pub_equiv PA a1) (fun a2 =>
+  forAll gen_state (fun s1 =>
+  forAll (gen_pub_equiv P s1) (fun s2 =>
+  forAll gen_astate (fun a1 =>
+  forAll (gen_pub_equiv PA a1) (fun a2 =>
 
-    forAllMaybe (gen_spec_eval_sized c s1 a1 b 3) (fun '(ds, s1', a1', b1', os1) =>
-      match spec_eval_engine c s2 a2 b ds with
-      | Some (s2', a2', b2', os2') =>
-          (pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
-      | _ => true (* <---- changed! *)
-      end
-  )))))))))).
+  forAllMaybe (gen_spec_eval_sized c s1 a1 b 3) (fun '(ds, s1', a1', b1', os1) =>
+    match spec_eval_engine c s2 a2 b ds with
+    | Some (s2', a2', b2', os2') =>
+	(pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
+    | _ => true (* <---- changed! *)
+    end
+  ))))))))).
+(* TODO: cannot find counterexamples when mutation testing *)
+(* QuickChick ctWellTypedness_implies_speculative_noninterference_2. *)
 
 (* Second type of counterexamples found:
       c = A2[2] <- X1
@@ -2790,48 +2801,29 @@ QuickChick (forAll gen_pub_vars (fun P =>
     Let's try to force it to find something that's initially not speculating.
   *)
 
-QuickChick (forAll gen_pub_vars (fun P =>
-    forAll gen_pub_arrs (fun PA =>
+Definition ctWellTypedness_implies_speculative_noninterference_3 :=
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
 
-    forAll (gen_ct_well_typed_sized P PA 2) (fun c =>
+  forAll (gen_ct_well_typed_sized P PA 2) (fun c =>
 
-    forAll gen_state (fun s1 =>
-    forAll (gen_pub_equiv P s1) (fun s2 =>
-    forAll gen_astate (fun a1 =>
-    forAll (gen_pub_equiv PA a1) (fun a2 =>
+  forAll gen_state (fun s1 =>
+  forAll (gen_pub_equiv P s1) (fun s2 =>
+  forAll gen_astate (fun a1 =>
+  forAll (gen_pub_equiv PA a1) (fun a2 =>
 
-    let b := false in (* <---- changed ! *)
+  let b := false in (* <---- changed! *)
 
-    forAllMaybe (gen_spec_eval_sized c s1 a1 b 1000) (fun '(ds, s1', a1', b1', os1) =>
-      match spec_eval_engine c s2 a2 b ds with
-      | Some (s2', a2', b2', os2') =>
-          (pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
-      | _ => true (* <---- changed! *)
-      end
-    )
-  )))))))).
-*)
-
-(* CH: This one works on my machine
-QuickChick (forAllShrinkNonDet 200 gen_pub_vars shrink (fun P =>
-    forAllShrinkNonDet 200 gen_pub_arrs shrink (fun PA =>
-    forAllShrinkNonDet 200 (gen_ct_well_typed_sized P PA 3) (shrink_ct_well_typed P PA) (fun c =>
-
-    forAllShrinkNonDet 200 gen_state shrink (fun s1 =>
-    forAllShrinkNonDet 200 (gen_pub_equiv P s1) (shrink_pub_equiv_state P s1) (fun s2 =>
-    forAllShrinkNonDet 200 gen_astate shrink (fun a1 =>
-    forAllShrinkNonDet 200 (gen_pub_equiv PA a1) (shrink_pub_equiv_astate P a1) (fun a2 =>
-
-    let b := false in (* <---- changed ! *)
-
-    forAllMaybe (gen_spec_eval_sized c s1 a1 b 3) (fun '(ds, s1', a1', b1', os1) =>
-      match spec_eval_engine c s2 a2 b ds with
-      | Some (s2', a2', b2', os2') =>
-          (pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
-      | _ => true
-      end
-  ))))))))).
-*)
+  forAllMaybe (gen_spec_eval_sized c s1 a1 b 1000) (fun '(ds, s1', a1', b1', os1) =>
+    match spec_eval_engine c s2 a2 b ds with
+    | Some (s2', a2', b2', os2') =>
+	(pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2')
+    | _ => true (* <---- changed! *)
+    end
+  )
+  ))))))).
+(* TODO: cannot find counterexamples when mutation testing *)
+(* QuickChick  ctWellTypedness_implies_speculative_noninterference_3. *)
 
 (* Now, it finds counterexamples such as:
     c = A2[2] <- X1
@@ -2852,14 +2844,13 @@ Lemma speculation_bit_monotonic : forall c s a b ds s' a' b' os,
   b' = true.
 Proof. intros c s a b ds s' a' b' os Heval Hb. induction Heval; eauto. Qed.
 
-(*
-QuickChick (forAll (arbitrarySized 3) (fun c =>
+Definition speculationBit_monotonicity := forAll (arbitrarySized 3) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
     forAllMaybe (gen_spec_eval_sized c st ast true 100) (fun '(ds, st', ast', b', os) =>
       b'
-  ))))).
-*)
+  )))).
+(*! QuickChick speculationBit_monotonicity. *)
 
 (* HIDE: This one is weaker for big-step semantics, but it's still helpful below *)
 Lemma speculation_needs_force : forall c s a b ds s' a' b' os,
@@ -2883,16 +2874,15 @@ Definition direction_eqb (d1 : direction) (d2 : direction) : bool :=
   end.
 
 (* TODO: Way too many discards to be able to test this. *)
-(*
-QuickChick (forAll (arbitrarySized 3) (fun c =>
+Definition speculationNeedsForce := forAll (arbitrarySized 3) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
     forAllMaybe (gen_spec_eval_sized c st ast false 100) (fun '(ds, st', ast', b', os) =>
       implication b' (
         existsb (fun dir => direction_eqb dir DForce) ds
       )
-  ))))).
-*)
+  )))).
+(*! QuickChick speculationNeedsForce. *)
 
 (* HIDE: Also this one is weaker for big-step semantics *)
 Lemma unsafe_access_needs_speculation : forall c s a b ds s' a' b' os ax i,
@@ -2924,8 +2914,7 @@ Proof.
 Qed.
 
 (* TODO: Way too many discards to test this. *)
-(*
-QuickChick (forAll arbitrary (fun c =>
+Definition unsafeAccessNeedsSpeculation := forAll arbitrary (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
     forAll arbitrary (fun b =>
@@ -2934,8 +2923,8 @@ QuickChick (forAll arbitrary (fun c =>
         ((existsb (fun dir => match dir with DLoad _ _ => true | _ => false end) ds) ||
          (existsb (fun dir => match dir with DStore _ _ => true | _ => false end) ds))
         ((existsb (fun dir => direction_eqb dir DForce) ds) || b)
-  )))))).
-*)
+  ))))).
+(*! QuickChick unsafeAccessNeedsSpeculation. *)
 
 (** We can recover sequential execution from [spec_eval] if there is no
     speculation, so all directives are [DStep] and speculation flag starts [false]. *)
@@ -2946,15 +2935,14 @@ Definition seq_spec_eval (c:com) (s:state) (a:astate)
     <(s, a, false, ds)> =[ c ]=> <(s', a', false, os)>.
 
 (* Way too many discards to test this *)
-(*
-QuickChick (forAll (arbitrarySized 3) (fun c =>
+Definition nonSpeculationOnlyRequiresSteps := forAll (arbitrarySized 3) (fun c =>
     forAll gen_state (fun st =>
     forAll gen_astate (fun ast =>
     forAllMaybe (gen_spec_eval_sized c st ast false 100) (fun '(ds, st', ast', b', os) =>
       let contains_only_steps := List.forallb (fun x => direction_eqb x DStep) ds in
       implication contains_only_steps (negb b')
-  ))))).
-*)
+  )))).
+(*! QuickChick nonSpeculationOnlyRequiresSteps. *)
 
 (* LATER: We should be able to prove that [cteval] and [seq_spec_eval] coincide, so
    by [ct_well_typed_ct_secure] also directly get their Lemma 2. *)
@@ -3797,8 +3785,7 @@ Proof.
 Qed.
 
 (* Test that spec_ct holds for sel_slh *)
-(*
-QuickChick (forAll gen_pub_vars (fun P =>
+Definition slh_implies_speculative_security := forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
 
     forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
@@ -3819,8 +3806,8 @@ QuickChick (forAll gen_pub_vars (fun P =>
         )
       | None => checker tt (* If the second execution crashes, this isn't a counterexample *)
       end
-    ))))))))).
-*)
+    )))))))).
+(*! QuickChick slh_implies_speculative_security. *)
 
 (* HIDE: The less useful for security direction of the idealized semantics being
    equivalent to [sel_slh]; easier to prove even for while (forwards compiler
@@ -4093,8 +4080,7 @@ Fixpoint gen_ideal_eval_sized (P : pub_vars) (c : com) (st : state) (ast : astat
    rules and into equality premises could make this proof script less
    verbose. Maybe just define "smart constructors" for that? *)
 
-(*
-QuickChick (forAll gen_pub_vars (fun P =>
+Definition slhExecution_implies_idealSemantics := forAll gen_pub_vars (fun P =>
     forAll arbitrary (fun c =>
 
     forAll gen_state (fun st =>
@@ -4119,6 +4105,6 @@ QuickChick (forAll gen_pub_vars (fun P =>
           ))
       | None => checker tt (* If the second execution crashes, this isn't a counterexample *)
       end
-    )))))))).
-*)
+    ))))))).
+(*! QuickChick slhExecution_implies_idealSemantics. *)
 
