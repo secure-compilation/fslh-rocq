@@ -9,3 +9,4 @@ Makefile.coq
 Makefile.coq.conf
 .lia.cache
 .vscode
+_qc_mutation-testing.tmp/
