@@ -2083,22 +2083,39 @@ Qed.
    rules and into equality premises could make this proof script less
    verbose. Maybe just define "smart constructors" for that? *)
 
+(* BCC by flipping the direction and using FCC. *)
+
 (* Not currently true, but could be made true by extending the final
    configurations with errors for wrong directions or out of bounds accesses. *)
 Axiom ideal_total : forall P c st ast b ds, exists stt astt bb os,
-  P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>.  	  
+  P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>. 
 
-Lemma spec_determinism : forall c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
+Lemma spec_eval_add_dirs : forall c st ast b ds ds' st' ast' b' os st'' ast'' b'' os'',
+  <( st , ast , b , ds )> =[ c ]=> <( st' , ast' , b' , os )> ->
+  <( st , ast , b , (ds ++ ds')%list )> =[ c ]=> <( st'' , ast'' , b'' , os'' )> ->
+  <( st' , ast' , b' , ds' )> =[ c ]=> <( st'' , ast'' , b'' , os'' )> .
+Admitted.
+
+(* SOONER: Finish the Seq case.*)
+Lemma spec_eval_deterministic : forall c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
   <( st , ast , b , ds )> =[ c ]=> <( stt1 , astt1 , bb1 , os1 )> ->
   <( st , ast , b , ds )> =[ c ]=> <( stt2 , astt2 , bb2 , os2 )> ->
   stt1 = stt2 /\ astt1 = astt2 /\ bb1 = bb2 /\ os1 = os2.
 Proof.
   intros c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2 Heval1.
-  generalize dependent stt2; generalize dependent astt2;
-  generalize dependent bb2; generalize dependent os2.
-  induction Heval1; intros stt2 astt2 bb2 ost2 Heval2; 
+  generalize dependent os2; generalize dependent bb2; 
+  generalize dependent astt2; generalize dependent stt2.
+  induction Heval1; intros stt2 astt2 bb2 os2' Heval2; 
   try (inversion Heval2; subst; eauto).
-  - (* Spec_Seq *) admit.
+  - (* Spec_Seq *)
+    apply app_eq_app in H1. 
+    destruct H1 as [ds_diff [ [Hds0 Hds2] | [Hds1 Hds3] ] ]; subst.
+    + eapply spec_eval_add_dirs in Heval1_1 as Hdiff; [| eapply H5].
+      assert(L: <( st', ast', b', (ds_diff ++ ds3)%list )> =[ c1;c2 ]=> 
+      <( stt2, astt2, bb2, (os0 ++ os3)%list )>).
+      { eapply Spec_Seq; eauto. }
+      admit.
+    + admit.
   - (* Spe_If *)
     apply IHHeval1 in H10.
     destruct H10 as [Hst [Hast [Hb Hos] ] ]; subst.
@@ -2138,7 +2155,7 @@ Proof.
     ~ <("b" !-> (if b then 1 else 0); st, ast, b, ds )> =[ (sel_slh P c) ]=> 
           <("b"!-> (if b1 then 1 else 0); st1, ast1, b1, os1 )> ).
     { intros st1 ast1 b1 os2 Hneq Hev.
-          eapply spec_determinism in Hev; [| eapply Heval].
+          eapply spec_eval_deterministic in Hev; [| eapply Heval].
           destruct Hev as [ Hst [ Hast [ Hb Hos ] ] ]. subst. eauto. }
   assert(LFcc : forall st1 ast1 (b1 : bool) os1, 
     ("b" !-> (if b1 then 1 else 0); st1, ast1, b1, os1) <> (st', ast', b', os)   ->
