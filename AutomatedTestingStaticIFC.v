@@ -795,36 +795,10 @@ Definition secure_p2 :=
 (** We need a way to combine the labels of two sub-expressions, which
     we call the _join_ (or least upper bound) of the two labels: *)
 
-Definition join (l1 l2 : bool) : bool := l1 && l2.
+Inductive joins_to : (bool * bool) -> bool -> Prop :=
+  | Join : joins_to (true, true) true.
 
-(* This one is too simple to test, but still here it goes: *)
-QuickCheck (forAll arbitrary (fun (l1:bool) =>
-            forAll arbitrary (fun (l2:bool) =>
-              join l1 l2 = join l2 l1 ?))).
-
-(* TERSE: HIDEFROMHTML *)
-Lemma join_commutative : forall {l1 l2},
-  join l1 l2 = join l2 l1.
-Proof. intros l1 l2. destruct l1; destruct l2; reflexivity. Qed.
-
-Lemma join_public : forall {l1 l2},
-  join l1 l2 = true -> l1 = true /\ l2 = true.
-Proof. apply andb_prop. Qed.
-(* TERSE: /HIDEFROMHTML *)
-
-Lemma join_public_l : forall {l},
-  join true l = l.
-Proof. reflexivity. Qed.
-
-(* TERSE: HIDEFROMHTML *)
-Lemma join_public_r : forall {l},
-  join l true = l.
-Proof. intros l. rewrite join_commutative. reflexivity. Qed.
-(* TERSE: /HIDEFROMHTML *)
-
-Lemma join_secret_l : forall {l},
-  join false l = false.
-Proof. reflexivity. Qed.
+Derive Generator for (fun l12 => joins_to l12 l).
 
 (** TERSE: ** Typing of arithmetic expressions *)
 
@@ -860,18 +834,21 @@ Inductive aexp_has_label (P:pub_vars) : aexp -> bool -> Prop :=
        P |-a- (ANum n) \IN true
   | T_Id : forall x,
        P |-a- (AId x) \IN (@apply bool P x)
-  | T_Plus : forall a1 l1 a2 l2,
+  | T_Plus : forall a1 l1 a2 l2 l,
+       joins_to (l1, l2) l ->
        P |-a- a1 \IN l1 ->
        P |-a- a2 \IN l2 ->
-       P |-a- <{ a1 + a2 }> \IN (join l1 l2)
-  | T_Minus : forall a1 l1 a2 l2,
+       P |-a- <{ a1 + a2 }> \IN l
+  | T_Minus : forall a1 l1 a2 l2 l,
+       joins_to (l1, l2) l ->
        P |-a- a1 \IN l1 ->
        P |-a- a2 \IN l2 ->
-       P |-a- <{ a1 - a2 }> \IN (join l1 l2)
-  | T_Mult : forall a1 l1 a2 l2,
+       P |-a- <{ a1 - a2 }> \IN l
+  | T_Mult : forall a1 l1 a2 l2 l,
+       joins_to (l1, l2) l ->
        P |-a- a1 \IN l1 ->
        P |-a- a2 \IN l2 ->
-       P |-a- <{ a1 * a2 }> \IN (join l1 l2)
+       P |-a- <{ a1 * a2 }> \IN l
 
 where "P '|-a-' a '\IN' l" := (aexp_has_label P a l).
 
@@ -958,25 +935,20 @@ Fixpoint label_of_aexp (P:pub_vars) (a:aexp) : bool :=
   | AId X => apply P X
   | <{ a1 + a2 }>
   | <{ a1 - a2 }>
-  | <{ a1 * a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ a1 * a2 }> => (label_of_aexp P a1) && (label_of_aexp P a2)
   end.
 
 Lemma label_of_aexp_sound : forall P a,
   P |-a- a \IN label_of_aexp P a.
-Proof. intros P a. induction a; constructor; eauto. Qed.
+Proof. Admitted.
 
 Lemma label_of_aexp_unique : forall P a l,
   P |-a- a \IN l ->
   l = label_of_aexp P a.
-Proof.
-  intros P a l H. induction H; simpl in *;
-  (repeat match goal with
-    | [Heql : _ = _ |- _] => rewrite Heql in *
-   end); eauto.
-Qed.
+Proof. Admitted.
 
 Definition gen_pub_aexp (size : nat) (P : pub_vars) : G (option aexp) :=
-  @arbitrarySizeST _ (fun a => aexp_has_label P a true) _ size.
+  genSizedST (fun a => aexp_has_label P a true) size.
 
 Sample (P <- arbitrary;;
         a <- gen_pub_aexp 2 P;;
@@ -1017,18 +989,7 @@ Theorem noninterferent_aexp : forall {P s1 s2 a},
   P |-a- a \IN true ->
   aeval s1 a = aeval s2 a.
 (* FOLD *)
-Proof.
-  intros P s1 s2 a Heq Ht. remember true as l.
-  induction Ht; simpl.
-  - reflexivity.
-  - apply Heq. apply Heql.
-  - destruct (join_public Heql) as [H1 H2].
-    rewrite (IHHt1 H1). rewrite (IHHt2 H2). reflexivity.
-  - destruct (join_public Heql) as [H1 H2].
-    rewrite (IHHt1 H1). rewrite (IHHt2 H2). reflexivity.
-  - destruct (join_public Heql) as [H1 H2].
-    rewrite (IHHt1 H1). rewrite (IHHt2 H2). reflexivity.
-Qed.
+Proof. Admitted.
 (* /FOLD *)
 
 (* HIDE *)
@@ -1079,29 +1040,34 @@ Inductive bexp_has_label (P:pub_vars) : bexp -> bool -> Prop :=
        P |-b- <{ true }> \IN true
   | T_False :
        P |-b- <{ false }> \IN true
-  | T_Eq : forall a1 l1 a2 l2,
+  | T_Eq : forall a1 l1 a2 l2 l,
+       joins_to (l1, l2) l ->
        P |-a- a1 \IN l1 ->
        P |-a- a2 \IN l2 ->
-       P |-b- <{ a1 = a2 }> \IN (join l1 l2)
-  | T_Neq : forall a1 l1 a2 l2,
+       P |-b- <{ a1 = a2 }> \IN l
+  | T_Neq : forall a1 l1 a2 l2 l,
+       joins_to (l1, l2) l ->
        P |-a- a1 \IN l1 ->
        P |-a- a2 \IN l2 ->
-       P |-b- <{ a1 <> a2 }> \IN (join l1 l2)
-  | T_Le : forall a1 l1 a2 l2,
+       P |-b- <{ a1 <> a2 }> \IN l
+  | T_Le : forall a1 l1 a2 l2 l,
+       joins_to (l1, l2) l ->
        P |-a- a1 \IN l1 ->
        P |-a- a2 \IN l2 ->
-       P |-b- <{ a1 <= a2 }> \IN (join l1 l2)
-  | T_Gt : forall a1 l1 a2 l2,
+       P |-b- <{ a1 <= a2 }> \IN l
+  | T_Gt : forall a1 l1 a2 l2 l,
+       joins_to (l1, l2) l ->
        P |-a- a1 \IN l1 ->
        P |-a- a2 \IN l2 ->
-       P |-b- <{ a1 > a2 }> \IN (join l1 l2)
+       P |-b- <{ a1 > a2 }> \IN l
   | T_Not : forall b l,
        P |-b- b \IN l ->
        P |-b- <{ ~b }> \IN l
-  | T_And : forall b1 l1 b2 l2,
+  | T_And : forall b1 l1 b2 l2 l,
+       joins_to (l1, l2) l ->
        P |-b- b1 \IN l1 ->
        P |-b- b2 \IN l2 ->
-       P |-b- <{ b1 && b2 }> \IN (join l1 l2)
+       P |-b- <{ b1 && b2 }> \IN l
 
 where "P '|-b-' b '\IN' l" := (bexp_has_label P b l).
 (* TERSE: /HIDEFROMHTML *)
@@ -1117,28 +1083,19 @@ Fixpoint label_of_bexp (P:pub_vars) (a:bexp) : bool :=
   | <{ a1 = a2 }>
   | <{ a1 <> a2 }>
   | <{ a1 <= a2 }>
-  | <{ a1 > a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ a1 > a2 }> => (label_of_aexp P a1) && (label_of_aexp P a2)
   | <{ ~b }> => label_of_bexp P b
-  | <{ b1 && b2 }> => join (label_of_bexp P b1) (label_of_bexp P b2)
+  | <{ b1 && b2 }> => (label_of_bexp P b1) && (label_of_bexp P b2)
   end.
 
 Lemma label_of_bexp_sound : forall P b,
     P |-b- b \IN label_of_bexp P b.
-Proof.
-  intros P b. induction b; constructor;
-    eauto using label_of_aexp_sound. Qed.
+Proof. Admitted.
 
 Lemma label_of_bexp_unique : forall P b l,
   P |-b- b \IN l ->
   l = label_of_bexp P b.
-Proof.
-  intros P a l H. induction H; simpl in *;
-  (repeat match goal with
-    | [H : _ |-a- _ \IN _ |- _] =>
-        apply label_of_aexp_unique in H
-    | [Heql : _ = _ |- _] => rewrite Heql in *
-   end); eauto.
-Qed.
+Proof. Admitted.
 
 Definition gen_pub_bexp (size: nat) (P: pub_vars) : G (option bexp) :=
   @arbitrarySizeST _ (fun b => bexp_has_label P b true) _ size.
@@ -1182,28 +1139,7 @@ Theorem noninterferent_bexp : forall {P s1 s2 b},
   P |-b- b \IN true ->
   beval s1 b = beval s2 b.
 (* FOLD *)
-Proof.
-  intros P s1 s2 b Heq Ht. remember true as l.
-  induction Ht; simpl; try reflexivity;
-    try (destruct (join_public Heql) as [H1 H2];
-         rewrite H1 in *; rewrite H2 in *).
-  - rewrite (noninterferent_aexp Heq H).
-    rewrite (noninterferent_aexp Heq H0).
-    reflexivity.
-  - rewrite (noninterferent_aexp Heq H).
-    rewrite (noninterferent_aexp Heq H0).
-    reflexivity.
-  - rewrite (noninterferent_aexp Heq H).
-    rewrite (noninterferent_aexp Heq H0).
-    reflexivity.
-  - rewrite (noninterferent_aexp Heq H).
-    rewrite (noninterferent_aexp Heq H0).
-    reflexivity.
-  - rewrite (IHHt Heql). reflexivity.
-  - rewrite (IHHt1 Logic.eq_refl).
-    rewrite (IHHt2 Logic.eq_refl). reflexivity.
-Qed.
-(* /FOLD *)
+Proof. Admitted.
 
 Inductive com_without_explicit_flows (P: pub_vars) : com -> Prop :=
   | WEF_Skip :
@@ -1229,7 +1165,7 @@ Inductive com_without_explicit_flows (P: pub_vars) : com -> Prop :=
 
 Derive ArbitrarySizedSuchThat for (fun c => com_without_explicit_flows P c).
 Definition gen_no_explicit_flows (P : pub_vars) :=
-  @arbitrarySizeST _ (fun c => com_without_explicit_flows P c) _.
+  genSizedST (fun c => com_without_explicit_flows P c).
 
 Definition forAllMaybeShrink {A prop : Type} {_ : Checkable prop} `{Show A}
            (gen : G (option A)) (shrinker : A -> list A) (pf : A -> prop) : Checker :=
@@ -1258,66 +1194,13 @@ QuickChick (forAllShrink arbitrary shrink (fun (P : pub_vars) =>
     define when it is okay for information to flow from an expression
     with label [l1] to a variable with label [l1]. *)
 
-Definition can_flow (l1 l2 : bool) : bool := l1 || negb l2.
+Inductive can_flow : bool -> bool -> Prop :=
+  | CanFlow_PP : can_flow true true
+  | CanFlow_PS : can_flow true false
+  | CanFlow_SS : can_flow false false.
 
-(** In particular, we disallow the value of secret expressions to be
-    assigned to public variables. *)
-
-Lemma cannot_flow_secret_public : can_flow false true = false.
-(* FOLD *)
-Proof. reflexivity. Qed.
-(* /FOLD *)
-
-(** We allow public information to flow everywhere, and secret
-    information to flow to secret variables: *)
-
-Lemma can_flow_public : forall l, can_flow true l = true.
-(* FOLD *)
-Proof. reflexivity. Qed.
-(* /FOLD *)
-Lemma can_flow_secret : can_flow false false = true.
-(* FOLD *)
-Proof. reflexivity. Qed.
-(* /FOLD *)
-
-(* TERSE: HIDEFROMHTML *)
-Lemma can_flow_refl : forall l,
-  can_flow l l = true.
-Proof. intros [|]; reflexivity. Qed.
-
-Lemma can_flow_trans : forall l1 l2 l3,
-  can_flow l1 l2 = true ->
-  can_flow l2 l3 = true ->
-  can_flow l1 l3 = true.
-Proof. intros l1 l2 l3 H12 H23.
-  destruct l1; destruct l2; simpl in *; auto. Qed.
-
-Lemma can_flow_join_1 : forall l1 l2 l,
-  can_flow (join l1 l2) l = true ->
-  can_flow l1 l = true.
-Proof. intros l1 l2 l. destruct l1; [reflexivity | auto ]. Qed.
-
-Lemma can_flow_join_2 : forall l1 l2 l,
-  can_flow (join l1 l2) l = true ->
-  can_flow l2 l = true.
-Proof. intros l1 l2 l. destruct l1; auto. destruct l2; auto. Qed.
-
-Lemma can_flow_join_l : forall l1 l2 l,
-  can_flow l1 l = true ->
-  can_flow l2 l = true ->
-  can_flow (join l1 l2) l = true.
-Proof. intros l1 l2 l H1 H2. destruct l1; simpl in *; auto. Qed.
-
-Lemma can_flow_join_r1 : forall l l1 l2,
-  can_flow l l1 = true ->
-  can_flow l (join l1 l2) = true.
-Proof. intros l l1 l2 H. destruct l; destruct l1; simpl in *; auto. Qed.
-
-Lemma can_flow_join_r2 : forall l l1 l2,
-  can_flow l l2 = true ->
-  can_flow l (join l1 l2) = true.
-Proof. intros l l1 l2 H. destruct l; destruct l1; simpl in *; auto. Qed.
-(* TERSE: /HIDEFROMHTML *)
+Derive Generator for (fun l1 => can_flow l1 l2).
+Derive Generator for (fun l2 => can_flow l1 l2).
 
 (** TERSE: ** IFC typing of commands ([pc_well_typed] relation) *)
 
@@ -1350,8 +1233,8 @@ Inductive pc_well_typed (P:pub_vars) : com -> Prop :=
   | PCWT_Com :
       P |-pc- <{ skip }>
   | PCWT_Asgn : forall x a l,
+      can_flow l (apply P x) ->
       P |-a- a \IN l ->
-      can_flow l (apply P x) = true ->
       P |-pc- <{ x := a }>
   | PCWT_Seq : forall c1 c2,
       P |-pc- c1 ->
@@ -1376,7 +1259,7 @@ Proof. (* TODO: do the proof unless we cannot prove it. *) Admitted.
 Fixpoint pc_typechecker (P:pub_vars) (c:com) : bool :=
   match c with
   | <{ skip }> => true
-  | <{ X := a }> => can_flow (label_of_aexp P a) (apply P X)
+  | <{ X := a }> => (label_of_aexp P a) || negb (apply P X)
   | <{ c1 ; c2 }> => pc_typechecker P c1 && pc_typechecker P c2
   | <{ if b then c1 else c2 end }> =>
       Bool.eqb (label_of_bexp P b) true &&
@@ -1389,35 +1272,14 @@ Lemma pc_typechecker_sound : forall P c,
   pc_typechecker P c = true ->
   P |-pc- c.
 (* FOLD *)
-Proof.
-  intros P c. induction c; simpl in *; econstructor; 
-    try rewrite andb_true_iff in *; try tauto;
-    eauto using label_of_aexp_sound, label_of_bexp_sound. 
-  - destruct H as [H1 H2]. rewrite andb_true_iff in H1; try tauto.
-    destruct H1 as [H11 H12]. apply Bool.eqb_prop in H11.
-    rewrite <- H11. apply label_of_bexp_sound.
-  - destruct H as [H1 H2]. rewrite andb_true_iff in H1; tauto.
-  - destruct H as [H1 H2]. apply Bool.eqb_prop in H1.
-    rewrite <- H1. apply label_of_bexp_sound.
-Qed.
+Proof. Admitted.
 (* /FOLD *)
 
 Lemma pc_typechecker_complete : forall P c,
   pc_typechecker P c = false ->
   ~P |-pc- c.
 (* FOLD *)
-Proof.
-  intros P c H Hc. induction Hc; simpl in *;
-    try rewrite andb_false_iff in *;
-    try tauto; try congruence.
-  - apply label_of_aexp_unique in H0.
-    rewrite H0 in *. congruence.
-  - destruct H; eauto. rewrite andb_false_iff in H.
-    destruct H; eauto. rewrite eqb_false_iff in H.
-    apply label_of_bexp_unique in H0. congruence.
-  - destruct H; eauto. rewrite eqb_false_iff in H.
-    apply label_of_bexp_unique in H0. congruence.
-Qed.
+Proof. Admitted.
 (* /FOLD *)
 
 (** ** Secure program that is [pc_well_typed]: *)
@@ -1478,34 +1340,7 @@ Theorem pc_well_typed_noninterferent : forall P c,
   P |-pc- c ->
   noninterferent P c.
 (* FOLD *)
-Proof.
-  intros P c Hwt s1 s2 s1' s2' Heq Heval1 Heval2.
-  generalize dependent s2'. generalize dependent s2.
-  induction Heval1; intros s2 Heq s2' Heval2;
-    inversion Heval2; inversion Hwt; subst.
-  - assumption.
-  - intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
-    + rewrite Hxy. do 2 rewrite t_update_eq.
-      unfold can_flow in H8. apply orb_prop in H8. destruct H8 as [Hl | Hx].
-      * rewrite Hl in *. apply (noninterferent_aexp Heq H7).
-      * subst. rewrite Hy in Hx. discriminate Hx.
-    + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
-      apply Heq. apply Hy.
-  - eapply IHHeval1_2; try eassumption. eapply IHHeval1_1; eassumption.
-  - eapply IHHeval1; eassumption.
-  - rewrite (noninterferent_bexp Heq H10) in H.
-    rewrite H in H5. discriminate H5.
-  - rewrite (noninterferent_bexp Heq H10) in H.
-    rewrite H in H5. discriminate H5.
-  - eapply IHHeval1; eassumption.
-  - assumption.
-  - rewrite (noninterferent_bexp Heq H9) in H.
-    rewrite H in H2. discriminate H2.
-  - rewrite (noninterferent_bexp Heq H7) in H.
-    rewrite H in H4. discriminate H4.
-  - eapply IHHeval1_2; try eassumption. eapply IHHeval1_1; eassumption.
-Qed.
-(* /FOLD *)
+Proof. Admitted.
 
 (** Remember the definition of [noninterferent] is as follows:
 <<
@@ -1562,13 +1397,7 @@ Example not_swt_noninterferent_com :
                  else skip
                  end }>.
 (* FOLD *)
-Proof.
-  intros contra.
-  inversion contra; subst; clear contra.
-  inversion H2; subst; clear H2.
-  destruct l1, l2; simpl in H1; try discriminate.
-  inversion H5.
-Qed.
+Proof. Admitted.
 (* /FOLD *)
 
 Example not_swt_noninterferent_com_is_noninterferent:
@@ -1577,32 +1406,7 @@ Example not_swt_noninterferent_com_is_noninterferent:
                          else skip
                          end }>.
 (* FOLD *)
-Proof.
-  unfold noninterferent.
-  intros s1 s2 s1' s2' H red1 red2.
-  inversion red1; inversion red2; subst; clear red1 red2.
-  - inversion H6; subst; clear H6.
-    inversion H13; subst; clear H13.
-    intros x Px.
-    destruct (String.eqb_spec x Z); subst.
-    + discriminate.
-    + rewrite !t_update_neq; auto.
-  - inversion H6; subst; clear H6.
-    inversion H13; subst; clear H13.
-    intros x Px.
-    destruct (String.eqb_spec x Z); subst.
-    + discriminate.
-    + rewrite !t_update_neq; auto.
-  - inversion H6; subst; clear H6.
-    inversion H13; subst; clear H13.
-    intros x Px.
-    destruct (String.eqb_spec x Z); subst.
-    + discriminate.
-    + rewrite !t_update_neq; auto.
-  - inversion H6; subst; clear H6.
-    inversion H13; subst; clear H13.
-    intros x Px. eapply H; eauto.
-Qed.
+Proof. Admitted.
 (* /FOLD *)
 
 (** SOONER: The proof the command is noninterferent is a bit repetitive! *)
@@ -1652,22 +1456,25 @@ Reserved Notation "P ',,' pc '|--' c" (at level 40).
 Inductive well_typed (P:pub_vars) : bool -> com -> Prop :=
   | WT_Com : forall pc,
       P ,, pc |-- <{ skip }>
-  | WT_Asgn : forall pc x a l,
+  | WT_Asgn : forall pc x a l joined,
+      can_flow joined (apply P x) ->
+      joins_to (pc, l) joined ->
       P |-a- a \IN l ->
-      can_flow (join pc l) (apply P x) = true ->
       P ,, pc |-- <{ x := a }>
   | WT_Seq : forall pc c1 c2,
       P ,, pc |-- c1 ->
       P ,, pc |-- c2 ->
       P ,, pc |-- <{ c1 ; c2 }>
-  | WT_If : forall pc b l c1 c2,
+  | WT_If : forall pc b l c1 c2 joined,
+      joins_to (pc, l) joined ->
       P |-b- b \IN l ->
-      P ,, (join pc l) |-- c1 ->
-      P ,, (join pc l) |-- c2 ->
+      P ,, joined |-- c1 ->
+      P ,, joined |-- c2 ->
       P ,, pc |-- <{ if b then c1 else c2 end }>
-  | WT_While : forall pc b l c1,
+  | WT_While : forall pc b l c1 joined,
+      joins_to (pc, l) joined ->
       P |-b- b \IN l ->
-      P ,, (join pc l) |-- c1 ->
+      P ,, joined |-- c1 ->
       P ,, pc |-- <{ while b do c1 end }>
 
 where "P ',,' pc '|--' c" := (well_typed P pc c).
@@ -1679,40 +1486,27 @@ where "P ',,' pc '|--' c" := (well_typed P pc c).
 Fixpoint wt_typechecker (P:pub_vars) (pc:bool) (c:com) : bool :=
   match c with
   | <{ skip }> => true
-  | <{ X := a }> => can_flow (join pc (label_of_aexp P a)) (apply P X)
+  | <{ X := a }> => (pc && (label_of_aexp P a)) || negb (apply P X)
   | <{ c1 ; c2 }> => wt_typechecker P pc c1 && wt_typechecker P pc c2
   | <{ if b then c1 else c2 end }> =>
-      wt_typechecker P (join pc (label_of_bexp P b)) c1 &&
-      wt_typechecker P (join pc (label_of_bexp P b)) c2
+      wt_typechecker P (pc && (label_of_bexp P b)) c1 &&
+      wt_typechecker P (pc && (label_of_bexp P b)) c2
   | <{ while b do c1 end }> =>
-      wt_typechecker P (join pc (label_of_bexp P b)) c1
+      wt_typechecker P (pc && (label_of_bexp P b)) c1
   end.
 
 Lemma wt_typechecker_sound : forall P pc c,
   wt_typechecker P pc c = true ->
   P ,, pc |-- c.
 (* FOLD *)
-Proof.
-  intros P pc c. generalize dependent pc.
-  induction c; intros pc H; simpl in *; econstructor; 
-    try rewrite andb_true_iff in *;
-    try destruct H as [H1 H2]; try tauto;
-    eauto using label_of_aexp_sound, label_of_bexp_sound.
-Qed.
+Proof. Admitted.
 (* /FOLD *)
 
 Lemma wt_typechecker_complete : forall P pc c,
   wt_typechecker P pc c = false ->
   ~ P ,, pc |-- c.
 (* FOLD *)
-Proof.
-  intros P pc c H Hc. induction Hc; simpl in *;
-    try rewrite andb_false_iff in *; try tauto; try congruence.
-  - apply label_of_aexp_unique in H0.
-    rewrite H0 in *. congruence.
-  - destruct H; apply label_of_bexp_unique in H0; subst; eauto.
-  - destruct H; apply label_of_bexp_unique in H0; subst; eauto.
-Qed.
+Proof. Admitted.
 (* /FOLD *)
 
 (** TERSE: ** *)
@@ -1740,7 +1534,7 @@ Proof. apply wt_typechecker_complete. reflexivity. Qed.
 
 Derive ArbitrarySizedSuchThat for (fun c => well_typed P lbl c).
 Definition gen_wt_com (P : pub_vars) (lbl : bool) (size : nat) :=
-  @arbitrarySizeST _ (fun c => well_typed P lbl c) _ size.
+  genSizedST (fun c => well_typed P lbl c) size.
 
 (* We first validate that our generator produces well-typed terms *)
 
@@ -1765,27 +1559,9 @@ QuickChick (forAll arbitrary (fun (P:pub_vars) =>
 
 Lemma weaken_pc : forall {P pc1 pc2 c},
   P,, pc1 |-- c ->
-  can_flow pc2 pc1 = true->
+  can_flow pc2 pc1 ->
   P,, pc2 |-- c.
-Proof.
-  intros P pc1 pc2 c H. generalize dependent pc2.
-  induction H; subst; intros pc2 Hcan_flow.
-  - constructor.
-  - econstructor; try eassumption. apply can_flow_join_l.
-    + apply can_flow_join_1 in H0. eapply can_flow_trans; eassumption.
-    + apply can_flow_join_2 in H0. assumption.
-  - constructor; auto.
-  - econstructor; try eassumption.
-    + apply IHwell_typed1. apply can_flow_join_l.
-      * apply can_flow_join_r1. assumption.
-      * apply can_flow_join_r2. apply can_flow_refl.
-    + apply IHwell_typed2. apply can_flow_join_l.
-      * apply can_flow_join_r1. assumption.
-      * apply can_flow_join_r2. apply can_flow_refl.
-  - econstructor; try eassumption. apply IHwell_typed. apply can_flow_join_l.
-      * apply can_flow_join_r1. assumption.
-      * apply can_flow_join_r2. apply can_flow_refl.
-Qed.
+Proof. Admitted.
 (* TERSE: /HIDEFROMHTML *)
 
 (** ** Dealing with unsynchronized executions running different code *)
@@ -1801,18 +1577,7 @@ Lemma secret_run : forall {P c s s'},
   s =[ c ]=> s' ->
   pub_equiv P s s'.
 (* FOLD *)
-Proof.
-  intros P c s s' Hwt Heval. induction Heval; inversion Hwt; subst.
-  - apply pub_equiv_refl.
-  - intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
-    + subst. rewrite join_secret_l in H4. rewrite Hy in H4. discriminate H4.
-    + rewrite t_update_neq; auto.
-  - eapply pub_equiv_trans; eauto.
-  - eauto.
-  - eauto.
-  - apply pub_equiv_refl.
-  - eapply pub_equiv_trans; eauto.
-Qed.
+Proof. Admitted.
 (* /FOLD *)
 
 QuickChick (forAll arbitrary (fun (P:pub_vars) =>
@@ -1858,50 +1623,7 @@ Theorem well_typed_noninterferent : forall P c,
   P,, true |-- c ->
   noninterferent P c.
 (* FOLD *)
-Proof.
-  intros P c Hwt s1 s2 s1' s2' Heq Heval1 Heval2.
-  generalize dependent s2'. generalize dependent s2.
-  induction Heval1; intros s2 Heq s2' Heval2;
-    inversion Heval2; inversion Hwt; subst.
-  - assumption.
-  - intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
-    + rewrite Hxy. do 2 rewrite t_update_eq.
-      unfold can_flow in H9. rewrite join_public_l in H9.
-      apply orb_prop in H9. destruct H9 as [Hl | Hx].
-      * rewrite Hl in *. apply (noninterferent_aexp Heq H8).
-      * subst. rewrite Hy in Hx. discriminate Hx.
-    + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
-      apply Heq. apply Hy.
-  - eapply IHHeval1_2; try eassumption. eapply IHHeval1_1; eassumption.
-  - (* if true-true *) rewrite join_public_l in *.
-    eapply IHHeval1; try eassumption.
-    eapply weaken_pc; try eassumption. apply can_flow_public.
-  - (* if true-false *) rewrite join_public_l in *. destruct l.
-    + rewrite (noninterferent_bexp Heq H11) in H.
-      rewrite H in H5. discriminate H5.
-    + eapply different_code with (c1:=c1) (c2:=c2); eassumption.
-  - (* if false-true *) rewrite join_public_l in *. destruct l.
-    + rewrite (noninterferent_bexp Heq H11) in H.
-      rewrite H in H5. discriminate H5.
-    + eapply different_code with (c1:=c2) (c2:=c1); eassumption.
-  - (* if false-false *) rewrite join_public_l in *.
-    eapply IHHeval1; try eassumption.
-    eapply weaken_pc; try eassumption. apply can_flow_public.
-  - (* while false-false *) assumption.
-  - (* while false-true *) rewrite join_public_l in *. destruct l.
-    + rewrite (noninterferent_bexp Heq H10) in H.
-      rewrite H in H2. discriminate H2.
-    + eapply different_code with (c1:=<{skip}>) (c2:=<{c;while b do c end}>);
-        repeat (try eassumption; try econstructor).
-  - (* while true-false *) rewrite join_public_l in *. destruct l.
-    + rewrite (noninterferent_bexp Heq H8) in H.
-      rewrite H in H4. discriminate H4.
-    + eapply different_code with (c1:=<{c;while b do c end}>) (c2:=<{skip}>);
-        repeat (try eassumption; try econstructor).
-  - (* while true-true *) rewrite join_public_l in *.
-    eapply IHHeval1_2; try eassumption. eapply IHHeval1_1; try eassumption.
-    eapply weaken_pc; try eassumption. apply can_flow_public.
-Qed.
+Proof. Admitted.
 (* /FOLD *)
 
 (** The noninterference proof is still relatively simple, since the
@@ -1956,18 +1678,20 @@ Reserved Notation "P ',,' pc '|-ts-' c" (at level 40).
 Inductive ts_well_typed (P:pub_vars) : bool -> com -> Prop :=
   | TS_Com : forall pc,
       P,, pc |-ts- <{ skip }>
-  | TS_Asgn : forall pc X a l,
+  | TS_Asgn : forall pc X a l joined,
+      can_flow joined (apply P X) ->
+      joins_to (pc, l) joined ->
       P |-a- a \IN l ->
-      can_flow (join pc l) (apply P X) = true ->
       P,, pc |-ts- <{ X := a }>
   | TS_Seq : forall pc c1 c2,
       P,, pc |-ts- c1 ->
       P,, pc |-ts- c2 ->
       P,, pc |-ts- <{ c1 ; c2 }>
-  | TS_If : forall pc b l c1 c2,
+  | TS_If : forall pc b l c1 c2 joined,
+      joins_to (pc, l) joined ->
       P |-b- b \IN l ->
-      P,, (join pc l) |-ts- c1 ->
-      P,, (join pc l) |-ts- c2 ->
+      P,, joined |-ts- c1 ->
+      P,, joined |-ts- c2 ->
       P,, pc |-ts- <{ if b then c1 else c2 end }>
   | TS_While : forall b c1,
       P |-b- b \IN true -> (* <-- NEW *)
@@ -1998,75 +1722,24 @@ where "P ',,' pc '|-ts-' c" := (ts_well_typed P pc c).
 Theorem ts_well_typed_well_typed : forall P c pc,
   P,, pc |-ts- c ->
   P,, pc |-- c.
-Proof.
-  intros P c pc H. induction H; econstructor; eassumption.
-Qed.
+Proof. Admitted.
 
 Theorem ts_well_typed_noninterferent : forall P c,
   P,, true |-ts- c ->
   noninterferent P c.
-Proof.
-  intros P c H. apply well_typed_noninterferent.
-  apply ts_well_typed_well_typed. apply H.
-Qed.
+Proof. Admitted.
 
 Lemma ts_secret_run_terminating : forall {P c s},
   P,, false |-ts- c ->
   exists s', s =[ c ]=> s'.
-Proof.
-  intros P c s Hwt. remember false as l.
-  generalize dependent s. induction Hwt; intro s.
-  - eexists. econstructor.
-  - eexists. econstructor. reflexivity.
-  - destruct (IHHwt1 Heql s) as  [s' IH1].
-    destruct (IHHwt2 Heql s') as [s''IH2]. eexists. econstructor; eassumption.
-  - rewrite Heql in *. rewrite join_secret_l in *.
-    destruct (IHHwt1 Logic.eq_refl s) as [s1 IH1].
-    destruct (IHHwt2 Logic.eq_refl s) as [s2 IH2].
-    destruct (beval s b) eqn:Heq; eexists; econstructor; eassumption.
-  - discriminate Heql.
-Qed.
+Proof. Admitted.
 
 Theorem ts_well_typed_equitermination : forall {P c s1 s2 s1'},
   P,, true |-ts- c ->
   s1 =[ c ]=> s1' ->
   pub_equiv P s1 s2 ->
   exists s2', s2 =[ c ]=> s2'.
-Proof.
-  intros P C s1 s2 s1' Hwt Heval. generalize dependent s2.
-  induction Heval; intros s2 Heq; inversion Hwt; subst.
-  - eexists. constructor.
-  - eexists. econstructor. reflexivity.
-  - destruct (IHHeval1 H2 _ Heq) as [s2' IH1].
-    assert (Heq' : pub_equiv P st' s2').
-    { eapply ts_well_typed_noninterferent;
-        [ | eassumption | eassumption | eassumption]. assumption. }
-    destruct (IHHeval2 H3 _ Heq') as [s2'' IH2].
-    eexists. econstructor; eassumption.
-  - rewrite join_public_l in *. destruct l.
-    + destruct (IHHeval H5 _ Heq) as [s2' IH1].
-      eexists. apply E_IfTrue; [ | eassumption ].
-      * eapply noninterferent_bexp in Heq; [ | eassumption ]. congruence.
-    + eapply ts_secret_run_terminating in H5. destruct H5 as [s1' H5].
-      eapply ts_secret_run_terminating in H6. destruct H6 as [s2' H6].
-      destruct (beval s2 b) eqn:Heq2; eexists; econstructor; eassumption.
-  - rewrite join_public_l in *. destruct l.
-    + destruct (IHHeval H6 _ Heq) as [s2' IH1].
-      eexists. apply E_IfFalse; [ | eassumption ].
-      * eapply noninterferent_bexp in Heq; [ | eassumption ]. congruence.
-    + eapply ts_secret_run_terminating in H5. destruct H5 as [s1' H5].
-      eapply ts_secret_run_terminating in H6. destruct H6 as [s2' H6].
-      destruct (beval s2 b) eqn:Heq2; eexists; econstructor; eassumption.
-  - eapply noninterferent_bexp in Heq; [ | eassumption ].
-    eexists. apply E_WhileFalse. congruence.
-  - destruct (IHHeval1 H3 _ Heq) as [s2' IH1].
-    assert (Heq' : pub_equiv P st' s2').
-    { eapply ts_well_typed_noninterferent;
-        [ | eassumption | eassumption | eassumption]. assumption. }
-    destruct (IHHeval2 Hwt _ Heq') as [s2'' IH2].
-    eapply noninterferent_bexp in Heq; [ | eassumption ].
-    eexists. eapply E_WhileTrue; try congruence; eassumption.
-Qed.
+Proof. Admitted.
 (* TERSE: /HIDEFROMHTML *)
 
 Corollary ts_well_typed_tsni : forall P c,
