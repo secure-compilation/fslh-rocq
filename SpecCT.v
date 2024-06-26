@@ -1552,25 +1552,14 @@ Fixpoint unused (x:string) (c:com) : Prop :=
 
 Open Scope string_scope.
 
-(** To simplify some proofs we also restrict to while-free programs for now. *)
-
-Fixpoint no_while (c:com) : Prop :=
-  match c with
-  | <{{while _ do _ end}}> => False
-  | <{{if _ then c1 else c2 end}}>
-  | <{{c1; c2}}> => no_while c1 /\ no_while c2
-  | _ => True
-  end.
-
-(** As a warm-up we prove that [sel_slh] properly updates the variable "b". *)
-
-(* SOONER: Even something as simple as [sel_slh_flag] below turns out to be hard
-   for while loops, since it has the flavour of backwards compiler correctness
-   (BCC). For backwards compiler correctness with while we probably need to use
-   a small-step semantics and a simulation direction flipping trick? Any chance
-   that trick can be made to work for a big-step semantics? *)
-
 (* HIDE *)
+
+(* Even something as simple as [sel_slh_flag] below turns out to be hard
+   to prove by induction on [com] or [spec_eval], in the [While] or [Spec_While] case,
+   since it has the flavour of backwards compiler correctness (BCC).
+   Therefore we use the induction principal [max_exec_steps_ind], which 
+   is statet further below. *)
+
 (* CH: Here are a couple of failed attempts at generalizing to while loops. *)
 
 (** We start with a failed syntactic generalization *)
@@ -1583,12 +1572,13 @@ Lemma sel_slh_flag_gen : forall cc P s a (b:bool) ds s' a' (b':bool) os,
     s "b" = (if b then 1 else 0) ->
     s' "b" = (if b' then 1 else 0).
 Proof.
-  intros cc P s a b ds s' a' b' os H. induction H; intros sc Heq Hunused Hsb. Focus 6.
-  - (* No chance to prove the following to instantiate the IH:
-       <{{ if be then c; while be do c end else skip end }}> = sel_slh P sc *)
+  intros cc P s a b ds s' a' b' os H. induction H; intros sc Heq Hunused Hsb.
+  6:{ (* No chance to prove the following to instantiate the IH:
+      <{{ if be then c; while be do c end else skip end }}> = sel_slh P sc *)
+      admit. }
 Abort.
 
-(** Maybe a more semantic generalization? *)
+(** Failed generalization by equivalence *)
 
 Definition cequiv (c1 c2 : com) : Prop :=
   forall s a b ds s' a' b' os,
@@ -1619,11 +1609,10 @@ Lemma sel_slh_flag_gen : forall cc P s a (b:bool) ds s' a' (b':bool) os,
     s' "b" = (if b' then 1 else 0).
 Proof.
   intros cc P s a b ds s' a' b' os H. induction H; intros sc Hequiv Hunused Hsb. 
-  (* While case now provable *)
-  Focus 6.
-  eapply IHspec_eval; eauto. eapply cequiv_trans; eauto. apply cequiv_while_step.
-  (* But the Seq case is now problematic *)
-  Focus 3.
+  6:{ (* While case now provable *)
+  eapply IHspec_eval; eauto. eapply cequiv_trans; eauto.
+  apply cequiv_while_step. }
+  3:{ (* But the Seq case is now problematic *) admit. }
 Admitted.
 
 Lemma sel_slh_flag : forall sc P st ast (b:bool) ds st' ast' (b':bool) os,
@@ -1637,35 +1626,171 @@ Proof.
 Abort.
 (* /HIDE *)
 
-Lemma sel_slh_flag : forall c P s a (b:bool) ds s' a' (b':bool) os,
+(** As a warm-up we prove that [sel_slh] properly updates the variable "b". *)
+
+(** Proving this by induction on [com] or [spec_eval] leads to induction
+    hypotheses, that are not strong enough to prove the [While] or [Spec_While]
+    case. Therefore we will prove it by induction on the maximum execution steps
+    ([max_exec_steps]) that a tupel [(c :com)] and [(ds :dirs)] can take. *)
+
+    Fixpoint com_size (c :com) :nat :=
+      match c with
+      | <{{ c1; c2 }}> => (com_size c1) + (com_size c2)
+      | <{{ if be then ct else cf end }}> => 1 + max (com_size ct) (com_size cf)
+      | <{{ while be do cw end }}> => 1 + (com_size cw)
+      | _  => 1
+      end.
+    
+    Definition max_exec_steps (c :com) (ds :dirs) :nat := com_size c + length ds.
+    
+    (** The induction prinicipal on [max_exec_steps] *)
+    
+    Axiom max_exec_steps_ind : 
+      forall P : com -> dirs -> Prop,
+      (forall c ds, 
+        ( forall c' ds', 
+          max_exec_steps c' ds' < max_exec_steps c ds -> 
+          P c' ds') -> P c ds  ) -> 
+      (forall c ds, P c ds).
+    
+    (** The proof of [sel_slh_flag] *)
+    
+    Lemma com_size_pos : forall c,
+      0 < com_size c.
+    Proof. induction c; simpl; lia. Qed.
+    
+    Lemma max_exec_steps_monotonic: forall c1 ds1 c2 ds2,
+      (com_size c1 < com_size c2 /\ length ds1 <= length ds2 ) \/ 
+      (com_size c1 <= com_size c2 /\ length ds1 < length ds2) ->
+      max_exec_steps c1 ds1 < max_exec_steps c2 ds2.
+    Proof.
+      intros c1 ds1 c2 ds2 [ [Hcom Hdir] | [Hcom Hdir] ]; 
+      unfold max_exec_steps; lia.
+    Qed.
+    
+    (** To properly apply [max_exec_steps_ind], we need to state [sel_slh_flag]
+        as a proposition of type [com -> dirs -> Prop]. Therefore we define the
+        following: *)
+
+Definition sel_slh_flag_update (c :com) (ds :dirs) :Prop :=
+  forall P st ast (b:bool) st' ast' (b':bool) os,
   unused "b" c ->
-  no_while c ->
-  s "b" = (if b then 1 else 0) ->
-  <(s, a, b, ds)> =[ sel_slh P c ]=> <(s', a', b', os)> ->
-  s' "b" = (if b' then 1 else 0).
+  st "b" = (if b then 1 else 0) ->
+  <(st, ast, b, ds)> =[ sel_slh P c ]=> <(st', ast', b', os)> ->
+  st' "b" = (if b' then 1 else 0).
+
+Lemma sel_slh_flag : forall c ds,
+  sel_slh_flag_update c ds.
 Proof.
-  induction c; intros P s aa bb ds s' a' b' os Hunused Hnowhile Hsb Heval;
-    simpl in *; try (inversion Heval; subst; now eauto).
-  - (* Asgn *) inversion Heval; subst. rewrite t_update_neq; tauto.
-  - (* Seq *) inversion Heval; subst.
-    eapply IHc2; try tauto; [|eassumption].
-    eapply IHc1; try tauto; eassumption.
-  - (* If *) inversion Heval; subst; eauto.
-    { destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst.
-      + eapply IHc1; try tauto; [|eassumption].
-        simpl. rewrite Eqbe. rewrite t_update_eq. assumption.
-      + eapply IHc2; try tauto; [|eassumption].
-        simpl. rewrite Eqbe. rewrite t_update_eq. assumption. }
-    { destruct (beval s be) eqn:Eqbe; inversion H10; inversion H1; subst.
-      + eapply IHc2; try tauto; [|eassumption].
-        simpl. rewrite Eqbe. rewrite t_update_eq. reflexivity.
-      + eapply IHc1; try tauto; [|eassumption].
-        simpl. rewrite Eqbe. rewrite t_update_eq. reflexivity. }
-  - (* ARead *) destruct (P x) eqn:Heq.
-    + inversion Heval; inversion H10; subst.
-      rewrite t_update_neq; try tauto.
-      inversion H1; subst; rewrite t_update_neq; tauto.
-    + inversion Heval; subst; rewrite t_update_neq; try tauto.
+  eapply max_exec_steps_ind. unfold sel_slh_flag_update.
+  intros c ds IH P st ast b st' ast' b' os Hunused Hstb Heval.
+  destruct c; simpl in *; try (now inversion Heval; subst; eauto).
+  - (* Asgn *)
+    inversion Heval; subst. rewrite t_update_neq; tauto.
+  - (* Seq *)
+    inversion Heval; subst; clear Heval. 
+    apply IH in H1; try tauto.
+    + apply IH in H10; try tauto.
+      apply max_exec_steps_monotonic. 
+      left; split; simpl.
+      * apply lt_add_pos_l.
+        apply com_size_pos.
+      * rewrite app_length. lia.
+    + apply max_exec_steps_monotonic.
+      left; split; simpl.
+      * apply lt_add_pos_r.
+        apply com_size_pos.
+      * rewrite app_length. lia.
+  - (* IF *)
+    inversion Heval; subst; clear Heval.
+    + (* Spec_If *)
+      destruct (beval st be) eqn:Eqnbe.
+      * inversion H10; subst; clear H10.
+        inversion H1; subst; clear H1.
+        apply IH in H11; try tauto.
+        { apply max_exec_steps_monotonic.
+          left; split; simpl; lia. }
+        { rewrite t_update_eq. simpl. rewrite Eqnbe. assumption. }
+      * (* analog to true case *)
+        inversion H10; subst; clear H10.
+        inversion H1; subst; clear H1.
+        apply IH in H11; try tauto.
+        { apply max_exec_steps_monotonic.
+          left; split; simpl; lia. }
+        { rewrite t_update_eq. simpl. rewrite Eqnbe. assumption. }
+    + (* Spec_If_F; analog to Spec_If case *)
+      destruct (beval st be) eqn:Eqnbe.
+      * inversion H10; subst; clear H10.
+        inversion H1; subst; clear H1.
+        apply IH in H11; try tauto.
+        { apply max_exec_steps_monotonic.
+          left; split; simpl; lia. }
+        { rewrite t_update_eq. simpl. rewrite Eqnbe. reflexivity. }
+      * inversion H10; subst; clear H10.
+        inversion H1; subst; clear H1.
+        apply IH in H11; try tauto.
+        { apply max_exec_steps_monotonic.
+          left; split; simpl; lia. }
+        { rewrite t_update_eq. simpl. rewrite Eqnbe. reflexivity. } 
+  - (* While *)
+      inversion Heval; subst; clear Heval.
+      inversion H1; subst; clear H1.
+      inversion H11; subst; clear H11.
+      + (* non-speculative *)
+        destruct (beval st be) eqn:Eqnbe.
+        * inversion H12; subst; clear H12.
+          assert(Hwhile:
+            <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
+                =[sel_slh P <{{while be do c end}}>]=>
+                    <(st', ast', b', (os3++os2)%list)> ).
+          { simpl. eapply Spec_Seq; eassumption. }
+          apply IH in Hwhile; eauto.
+          { apply max_exec_steps_monotonic.
+            right; split; simpl; auto.
+            repeat rewrite app_length. lia. }
+          { clear Hwhile; clear H11.
+            inversion H1; subst; clear H1.
+            inversion H2; subst; clear H2. simpl in H12.
+            apply IH in H12; try tauto.
+            - apply max_exec_steps_monotonic.
+              right; split; simpl; auto.
+              repeat rewrite app_length. lia.
+            - rewrite t_update_eq, Eqnbe; simpl. assumption. }
+        * inversion H12; subst; clear H12.
+          inversion H10; subst; simpl.
+          rewrite t_update_eq, Eqnbe; simpl. assumption.
+      + (* speculative; analog to non_speculative case *)
+        destruct (beval st be) eqn:Eqnbe.
+        * inversion H12; subst; clear H12.
+          inversion H10; subst; simpl.
+          rewrite t_update_eq, Eqnbe; simpl. reflexivity.
+        * inversion H12; subst; clear H12.
+          assert(Hwhile: 
+            <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
+                =[sel_slh P <{{while be do c end}}>]=>
+                    <(st', ast', b', (os3++os2)%list )>).
+          { simpl. eapply Spec_Seq; eassumption. }
+          apply IH in Hwhile; eauto.
+          {  apply max_exec_steps_monotonic.
+            right; split; simpl; auto.
+            repeat rewrite app_length. lia. }
+          { clear Hwhile; clear H11.
+            inversion H1; subst; clear H1.
+            inversion H2; subst; clear H2. simpl in H12.
+            apply IH in H12; try tauto.
+            - apply max_exec_steps_monotonic.
+              right; split; simpl; auto.
+              repeat rewrite app_length. lia.
+            - rewrite t_update_eq, Eqnbe; simpl. reflexivity. }
+  - (* ARead *)
+    destruct (P x) eqn:Eqnbe.
+    + inversion Heval; subst; clear Heval.
+      inversion H10; subst; clear H10. 
+      rewrite t_update_neq; [| tauto].
+      inversion H1; subst;
+      try (rewrite t_update_neq; [assumption| tauto]).
+    + inversion Heval; subst;
+      try (rewrite t_update_neq; [assumption| tauto]).   
 Qed.
 
 (** We now prove that [sel_slh] implies the ideal semantics. *)
@@ -1782,12 +1907,11 @@ Qed.
 
 Lemma sel_slh_ideal : forall c P st ast (b:bool) ds st' ast' (b':bool) os,
   unused "b" c ->
-  no_while c ->
   st "b" = (if b then 1 else 0) ->
   <(st, ast, b, ds)> =[ sel_slh P c ]=> <(st', ast', b', os)> ->
   P |- <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
 Proof.
-  induction c; intros P st ast bb ds st' ast' b' os Hunused Hnowhile Hsb Heval;
+  induction c; intros P st ast bb ds st' ast' b' os Hunused Hsb Heval;
     simpl in *; inversion Heval; subst.
   - (* Skip *) rewrite t_update_same. constructor.
   - (* Asgn *) rewrite t_update_permute; [| tauto]. rewrite t_update_same.
@@ -1822,7 +1946,7 @@ Proof.
       eapply Ideal_If_F. rewrite Eqbe.
       eapply IHc1 in H11; try tauto. rewrite t_update_eq in H11.
       eapply ideal_unused_update in H11; tauto.
-  - (* While *) tauto.
+  - (* While *) admit.
   (* ARead *)
   - (* Spec_Skip; contra *) destruct (P x) eqn:Heq; discriminate.
   - (* Spec_Asgn; contra *) destruct (P x) eqn:Heq; discriminate.
@@ -1869,7 +1993,7 @@ Proof.
   - (* Spec_Write_U; contra *) destruct (P x) eqn:Heq; discriminate H.
   - (* Spec_Write *) rewrite t_update_same. constructor; tauto.
   - (* Spec_Write_U *) rewrite t_update_same. constructor; tauto.
-Qed.
+Admitted.
 
 (** Finally, we use this to prove spec_ct for sel_slh. *)
 
@@ -1879,7 +2003,6 @@ Theorem sel_slh_spec_ct_secure :
     pub_equiv P st1 st2 ->
     pub_equiv PA ast1 ast2 ->
     unused "b" c ->
-    no_while c ->
     st1 "b" = 0 ->
     st2 "b" = 0 ->
     <(st1, ast1, false, ds)> =[ sel_slh P c ]=> <(st1', ast1', b1', os1)> ->
@@ -1887,11 +2010,11 @@ Theorem sel_slh_spec_ct_secure :
     os1 = os2.
 Proof.
   intros P PA c st1 st2 ast1 ast2 st1' st2' ast1' ast2' b1' b2' os1 os2 ds
-    Hwt Heq Haeq Hunused Hnowhile Hs1b Hs2b Heval1 Heval2.
+    Hwt Heq Haeq Hunused Hs1b Hs2b Heval1 Heval2.
   eapply sel_slh_ideal in Heval1; try assumption.
   eapply sel_slh_ideal in Heval2; try assumption.
   eapply ideal_spec_ct_secure; eauto.
-Qed.
+Admitted.
 
 (* HIDE *)
 (* HIDE: The less useful for security direction of the idealized semantics being
