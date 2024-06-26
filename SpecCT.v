@@ -1672,7 +1672,7 @@ Abort.
         as a proposition of type [com -> dirs -> Prop]. Therefore we define the
         following: *)
 
-Definition sel_slh_flag_update (c :com) (ds :dirs) :Prop :=
+Definition sel_slh_flag_prop (c :com) (ds :dirs) :Prop :=
   forall P st ast (b:bool) st' ast' (b':bool) os,
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
@@ -1680,9 +1680,9 @@ Definition sel_slh_flag_update (c :com) (ds :dirs) :Prop :=
   st' "b" = (if b' then 1 else 0).
 
 Lemma sel_slh_flag : forall c ds,
-  sel_slh_flag_update c ds.
+  sel_slh_flag_prop c ds.
 Proof.
-  eapply max_exec_steps_ind. unfold sel_slh_flag_update.
+  eapply max_exec_steps_ind. unfold sel_slh_flag_prop.
   intros c ds IH P st ast b st' ast' b' os Hunused Hstb Heval.
   destruct c; simpl in *; try (now inversion Heval; subst; eauto).
   - (* Asgn *)
@@ -1842,7 +1842,7 @@ Lemma beval_unused_update : forall X st be n,
   beval (X !-> n; st) be = beval st be.
 Proof. intros X st be n. apply aeval_beval_unused_update. Qed.
 
-Lemma ideal_unused_update_rev_gen : forall P st ast b ds c st' ast' b' os X n,
+Lemma ideal_unused_overwrite: forall P st ast b ds c st' ast' b' os X n,
   unused X c ->
   P |- <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> ->
   P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)>.
@@ -1885,95 +1885,214 @@ Proof.
     + rewrite aeval_unused_update; tauto.
 Qed.
 
-Lemma ideal_unused_update_rev : forall P s a b ds c s' a' b' os x X,
-  unused x c ->
-  P |- <(s, a, b, ds)> =[ c ]=> <(x !-> s x; s', a', b', os)> ->
-  P |- <(x !-> X; s, a, b, ds)> =[ c ]=> <(x !-> X; s', a', b', os)>.
-Proof.
-  intros P s a b ds c s' a' b' os x X Hu H.
-  eapply ideal_unused_update_rev_gen in H; [| eassumption].
-  rewrite t_update_shadow in H. eassumption.
-Qed.
-
 Lemma ideal_unused_update : forall P st ast b ds c st' ast' b' os X n,
   unused X c ->
   P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)> ->
   P |- <(st, ast, b, ds)> =[ c ]=> <(X !-> st X; st', ast', b', os)>.
 Proof.
   intros P st ast b ds c st' ast' b' os X n Hu Heval. 
-  eapply ideal_unused_update_rev_gen with (X:=X) (n:=(st X)) in Heval; [| assumption].
+  eapply ideal_unused_overwrite with (X:=X) (n:=(st X)) in Heval; [| assumption].
   do 2 rewrite t_update_shadow in Heval. rewrite t_update_same in Heval. assumption.
 Qed.
 
-Lemma sel_slh_ideal : forall c P st ast (b:bool) ds st' ast' (b':bool) os,
-  unused "b" c ->
-  st "b" = (if b then 1 else 0) ->
-  <(st, ast, b, ds)> =[ sel_slh P c ]=> <(st', ast', b', os)> ->
-  P |- <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
+Lemma ideal_unused_update_rev : forall P st ast b ds c st' ast' b' os X n,
+  unused X c ->
+  P |- <(st, ast, b, ds)> =[ c ]=> <(X!-> st X; st', ast', b', os)> ->
+  P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)>.
 Proof.
-  induction c; intros P st ast bb ds st' ast' b' os Hunused Hsb Heval;
-    simpl in *; inversion Heval; subst.
-  - (* Skip *) rewrite t_update_same. constructor.
-  - (* Asgn *) rewrite t_update_permute; [| tauto]. rewrite t_update_same.
+  intros P st ast b ds c st' ast' b' os X n Hu H.
+  eapply ideal_unused_overwrite in H; [| eassumption].
+  rewrite t_update_shadow in H. eassumption.
+Qed.
+
+Definition sel_slh_ideal_prop (c: com) (ds :dirs) :Prop :=
+  forall P st ast (b: bool) st' ast' b' os,
+    unused "b" c ->
+    st "b" = (if b then 1 else 0) ->
+    <(st, ast, b, ds)> =[ sel_slh P c ]=> <(st', ast', b', os)> ->
+    P |- <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
+
+Lemma sel_slh_ideal : forall c ds,
+  sel_slh_ideal_prop c ds.
+Proof.
+  apply max_exec_steps_ind. unfold sel_slh_ideal_prop.
+  intros c ds IH P st ast b st' ast' b' os Hunused Hstb Heval.
+  destruct c; simpl in *; inversion Heval; subst; clear Heval;
+  try (destruct (P x); discriminate).
+  - (* Skip *)
+    rewrite t_update_same. apply Ideal_Skip.
+  - (* Asgn *) 
+    rewrite t_update_permute; [| tauto].
+    rewrite t_update_same.
     constructor. reflexivity.
-  - (* Seq *) econstructor.
-    + apply IHc1; try tauto; eassumption.
-    + apply ideal_unused_update_rev; try tauto.
-      eapply IHc2; try tauto.
-      apply sel_slh_flag in H1; tauto.
+  - (* Seq *) 
+    eapply Ideal_Seq.
+    + apply IH in H1; try tauto.
+      * eassumption.
+      * apply max_exec_steps_monotonic.
+        left; split; simpl.
+        { apply lt_add_pos_r.
+          apply com_size_pos. }
+        { rewrite app_length. lia. }   
+    + apply sel_slh_flag in H1 as Hstb'0; try tauto.
+      apply IH in H10; try tauto.
+      * eapply ideal_unused_update_rev; try tauto.
+      * apply max_exec_steps_monotonic.
+        left; split; simpl.
+        { apply lt_add_pos_l.
+          apply com_size_pos. }
+        { rewrite app_length. lia. }    
   (* IF *)
-  - (* Spec_If *) destruct (beval st be) eqn:Eqbe; inversion H10; inversion H1; subst.
-    + eapply IHc1 in H11; try tauto.
-      * replace (OBranch true) with (OBranch (beval st be)) by now rewrite <- Eqbe.
-        simpl. eapply Ideal_If. rewrite Eqbe.
-        simpl in H11. rewrite Eqbe in H11. rewrite t_update_same in H11.
+  - (* non-speculative *) 
+    destruct (beval st be) eqn:Eqnbe; inversion H10; 
+    inversion H1; subst; clear H10; clear H1; simpl in *.
+    + apply IH in H11; try tauto.
+      * replace (OBranch true)
+            with (OBranch (beval st be)) 
+              by (rewrite <- Eqnbe; reflexivity).
+        apply Ideal_If. rewrite Eqnbe.
+        rewrite Eqnbe in H11. rewrite t_update_same in H11.
         apply H11.
-      * rewrite t_update_eq. simpl. rewrite Eqbe. assumption.
-    + eapply IHc2 in H11; try tauto.
-      * replace (OBranch false) with (OBranch (beval st be)) by now rewrite <- Eqbe.
-        simpl. eapply Ideal_If. rewrite Eqbe.
-        simpl in H11. rewrite Eqbe in H11. rewrite t_update_same in H11.
-        apply H11.
-      * rewrite t_update_eq. simpl. rewrite Eqbe. assumption.
-  - (* Spec_If_F *)
-    destruct (beval st be) eqn:Eqbe; inversion H10; inversion H1; subst; simpl in *;
-      rewrite Eqbe in H11.
-    + replace (OBranch true) with (OBranch (beval st be)) by now rewrite <- Eqbe.
-      eapply Ideal_If_F. rewrite Eqbe.
-      eapply IHc2 in H11; try tauto. rewrite t_update_eq in H11.
-      eapply ideal_unused_update in H11; tauto.
-    + replace (OBranch false) with (OBranch (beval st be)) by now rewrite <- Eqbe.
-      eapply Ideal_If_F. rewrite Eqbe.
-      eapply IHc1 in H11; try tauto. rewrite t_update_eq in H11.
-      eapply ideal_unused_update in H11; tauto.
-  - (* While *) admit.
+      * apply max_exec_steps_monotonic.
+          left; split; simpl; lia.
+      * rewrite t_update_eq. rewrite Eqnbe. assumption.
+    + (* analog to true case *)
+      apply IH in H11; try tauto.
+      * replace (OBranch false)
+          with (OBranch (beval st be)) 
+            by (rewrite <- Eqnbe; reflexivity).
+        apply Ideal_If. rewrite Eqnbe.
+        rewrite Eqnbe in H11. rewrite t_update_same in H11.
+        assumption.
+      * apply max_exec_steps_monotonic.
+        left; split; simpl; lia.
+      * rewrite t_update_eq. rewrite Eqnbe. assumption.
+  - (* speculative *)
+    destruct (beval st be) eqn:Eqnbe; inversion H10; inversion H1;
+    subst; simpl in *; clear H10; clear H1; rewrite Eqnbe in H11.
+    + replace (OBranch true) 
+        with (OBranch (beval st be)) 
+          by (rewrite <- Eqnbe; reflexivity).
+      apply Ideal_If_F. rewrite Eqnbe.
+      apply IH in H11; try tauto.
+      * rewrite t_update_eq in H11.
+        apply ideal_unused_update in H11; tauto.
+      * apply max_exec_steps_monotonic.
+        right; split; simpl; lia. 
+    + (* analog to true case *)
+      replace (OBranch false) 
+        with (OBranch (beval st be)) 
+          by (rewrite <- Eqnbe; reflexivity).
+      apply Ideal_If_F. rewrite Eqnbe.
+      apply IH in H11; try tauto.
+      * rewrite t_update_eq in H11.
+        apply ideal_unused_update in H11; tauto.
+      * apply max_exec_steps_monotonic.
+        right; split; simpl; lia. 
+  - (* While *)
+    apply Ideal_While.
+    inversion H1; subst; clear H1.
+    inversion H11; subst; clear H11; simpl in *.
+    + (* non-speculative *)
+      apply Ideal_If. 
+      destruct (beval st be) eqn:Eqnbe.
+      * inversion H12; subst; clear H12.
+        inversion H1; subst; clear H1.
+        inversion H2; subst; clear H2; simpl in *.
+        assert(Hwhile:
+        <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
+            =[sel_slh P <{{while be do c end}}>]=>
+                <(st', ast', b', (os3++os2)%list)> ).
+        { simpl. eapply Spec_Seq; eassumption. }
+        replace ((ds4 ++ ds0) ++ ds2)%list 
+          with (ds4 ++ ds0 ++ ds2)%list
+            by (rewrite app_assoc; reflexivity).
+        replace ((os4 ++ os3) ++ os2)%list 
+            with (os4 ++ os3 ++ os2)%list
+              by (rewrite app_assoc; reflexivity).
+        eapply Ideal_Seq.
+        { rewrite Eqnbe in H13. rewrite t_update_same in H13.
+          apply IH in H13; try tauto.
+          - eassumption.
+          - apply max_exec_steps_monotonic.
+            left; split; simpl; auto.
+            repeat rewrite app_length. lia. }
+        { apply IH in Hwhile; auto.
+          - eapply ideal_unused_update_rev; eauto.
+          - apply max_exec_steps_monotonic.
+            right; split; simpl; auto.
+            repeat rewrite app_length. lia.
+          - apply sel_slh_flag in H13; try tauto.
+            rewrite t_update_eq. rewrite Eqnbe. assumption. }
+      * inversion H12; subst; clear H12.
+        inversion H10; subst; clear H10; simpl in *.
+        rewrite Eqnbe. do 2 rewrite t_update_same.
+        apply Ideal_Skip.
+    + (* speculative; analog to non_speculative *)
+      apply Ideal_If_F. 
+      destruct (beval st be) eqn:Eqnbe.
+      * inversion H12; subst; clear H12.
+        inversion H10; subst; clear H10; simpl in *.
+        rewrite Eqnbe. rewrite t_update_shadow. rewrite t_update_same.
+        apply Ideal_Skip.
+      * inversion H12; subst; clear H12.
+        inversion H1; subst; clear H1.
+        inversion H2; subst; clear H2; simpl in *.
+        assert(Hwhile:
+        <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
+            =[sel_slh P <{{while be do c end}}>]=>
+                <(st', ast', b', (os3++os2)%list)> ).
+        { simpl. eapply Spec_Seq; eassumption. }
+        replace ((ds4 ++ ds0) ++ ds2)%list 
+          with (ds4 ++ ds0 ++ ds2)%list
+            by (rewrite app_assoc; reflexivity).
+        replace ((os4 ++ os3) ++ os2)%list 
+            with (os4 ++ os3 ++ os2)%list
+              by (rewrite app_assoc; reflexivity).
+        eapply Ideal_Seq.
+        { rewrite Eqnbe in H13.
+          apply IH in H13; try tauto.
+          - rewrite t_update_eq in H13.
+            apply ideal_unused_update in H13; [| tauto].
+            eassumption. 
+          - apply max_exec_steps_monotonic.
+            left; split; simpl; auto.
+            repeat rewrite app_length. lia. }
+        { apply IH in Hwhile; auto.
+          - rewrite Eqnbe in H13.
+            apply IH in H13; try tauto.
+            + apply ideal_unused_update_rev; eauto.
+            + apply max_exec_steps_monotonic.
+              left; split; simpl; auto.
+              repeat rewrite app_length. lia.  
+          - apply max_exec_steps_monotonic.
+            right; split; simpl; auto.
+            repeat rewrite app_length. lia.
+          - apply sel_slh_flag in H13; try tauto.
+            rewrite Eqnbe. rewrite t_update_eq. reflexivity. }
   (* ARead *)
-  - (* Spec_Skip; contra *) destruct (P x) eqn:Heq; discriminate.
-  - (* Spec_Asgn; contra *) destruct (P x) eqn:Heq; discriminate.
-  - (* Spec_ARead; public*) 
-    destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
+  - (* Spec_ARead; public *) 
+    destruct (P x) eqn:Heq; try discriminate H.
+    injection H; intros; subst; clear H.
     inversion H1; clear H1; subst. repeat rewrite <- app_nil_end in *.
     inversion H0; clear H0; subst; simpl in *.
     * (* Ideal_ARead *)
-      rewrite t_update_neq; [| tauto]. rewrite Hsb.
+      rewrite t_update_neq; [| tauto]. rewrite Hstb.
       rewrite t_update_shadow. rewrite t_update_permute; [| tauto].
       rewrite t_update_eq. simpl.
-      rewrite <- Hsb at 1. rewrite t_update_same.
+      rewrite <- Hstb at 1. rewrite t_update_same.
       replace ((if b' then 1 else 0) =? 1)%nat 
         with (b' && P x)
           by (rewrite Heq; destruct b'; simpl; reflexivity).
        eapply Ideal_ARead; eauto.
     * (* Ideal_ARead_U *)
-      rewrite t_update_neq; [| tauto]. rewrite Hsb.
+      rewrite t_update_neq; [| tauto]. rewrite Hstb.
       rewrite t_update_shadow. rewrite t_update_permute; [| tauto].
-      simpl. rewrite <- Hsb at 1. rewrite t_update_same.
+      simpl. rewrite <- Hstb at 1. rewrite t_update_same.
       replace (x !-> 0; st)
         with (x !-> if P x then 0 else nth i' (ast' a') 0; st)
           by (rewrite Heq; reflexivity).
       eapply Ideal_ARead_U; eauto. 
-  - (* Spec_If; contra*) destruct (P x) eqn:Heq; discriminate H.
-  - (* Spec_If_F; contra*) destruct (P x) eqn:Heq; discriminate H.
-  - (* Spec_While; contra*) destruct (P x) eqn:Heq; discriminate H.
   - (* Spec_ARead; secret*)
     destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
     rewrite t_update_permute; [| tauto]. rewrite t_update_same.
@@ -1989,32 +2108,32 @@ Proof.
         by (rewrite Heq; reflexivity).
     eapply Ideal_ARead_U; eauto.
   (* AWrite *)  
-  - (* Spec_Write; contra *) destruct (P x) eqn:Heq; discriminate H.
-  - (* Spec_Write_U; contra *) destruct (P x) eqn:Heq; discriminate H.
-  - (* Spec_Write *) rewrite t_update_same. constructor; tauto.
-  - (* Spec_Write_U *) rewrite t_update_same. constructor; tauto.
-Admitted.
+  - (* Spec_Write *) 
+    rewrite t_update_same. apply Ideal_Write; tauto.
+  - (* Spec_Write_U *) 
+    rewrite t_update_same. apply Ideal_Write_U; tauto.
+Qed.
 
-(** Finally, we use this to prove spec_ct for sel_slh. *)
+(** Finally, we use this to prove spec_ct_secure for sel_slh. *)
 
 Theorem sel_slh_spec_ct_secure :
   forall P PA c st1 st2 ast1 ast2 st1' st2' ast1' ast2' b1' b2' os1 os2 ds,
     P ;; PA |-ct- c ->
-    pub_equiv P st1 st2 ->
-    pub_equiv PA ast1 ast2 ->
     unused "b" c ->
     st1 "b" = 0 ->
     st2 "b" = 0 ->
+    pub_equiv P st1 st2 ->
+    pub_equiv PA ast1 ast2 ->
     <(st1, ast1, false, ds)> =[ sel_slh P c ]=> <(st1', ast1', b1', os1)> ->
     <(st2, ast2, false, ds)> =[ sel_slh P c ]=> <(st2', ast2', b2', os2)> ->
     os1 = os2.
 Proof.
   intros P PA c st1 st2 ast1 ast2 st1' st2' ast1' ast2' b1' b2' os1 os2 ds
-    Hwt Heq Haeq Hunused Hs1b Hs2b Heval1 Heval2.
+    Hwt Hunused Hs1b Hs2b Hequiv Haequiv Heval1 Heval2.
   eapply sel_slh_ideal in Heval1; try assumption.
   eapply sel_slh_ideal in Heval2; try assumption.
   eapply ideal_spec_ct_secure; eauto.
-Admitted.
+Qed.
 
 (* HIDE *)
 (* HIDE: The less useful for security direction of the idealized semantics being
@@ -2295,7 +2414,7 @@ Proof.
       - apply Heq.
       - apply LFcc in Hneq. apply Hneq in Hev1. destruct Hev1. }
   inversion Leq. subst. rewrite t_update_shadow.
-  eapply ideal_unused_update_rev_gen in Hev1; eauto.
+  eapply ideal_unused_overwrite in Hev1; eauto.
 Admitted.
 
 (* /HIDE *)
