@@ -1633,44 +1633,56 @@ Abort.
     case. Therefore we will prove it by induction on the maximum execution steps
     ([max_exec_steps]) that a tupel [(c :com)] and [(ds :dirs)] can take. *)
 
-    Fixpoint com_size (c :com) :nat :=
-      match c with
-      | <{{ c1; c2 }}> => (com_size c1) + (com_size c2)
-      | <{{ if be then ct else cf end }}> => 1 + max (com_size ct) (com_size cf)
-      | <{{ while be do cw end }}> => 1 + (com_size cw)
-      | _  => 1
-      end.
+Fixpoint com_size (c :com) :nat :=
+  match c with
+  | <{{ c1; c2 }}> => (com_size c1) + (com_size c2)
+  | <{{ if be then ct else cf end }}> => 1 + max (com_size ct) (com_size cf)
+  | <{{ while be do cw end }}> => 1 + (com_size cw)
+  | _  => 1
+  end.
+
+Definition max_exec_steps (c :com) (ds :dirs) :nat := com_size c + length ds.
+
+(** The induction prinicipal on [max_exec_steps] *)
+
+Axiom max_exec_steps_ind : 
+  forall P : com -> dirs -> Prop,
+  (forall c ds, 
+    ( forall c' ds', 
+      max_exec_steps c' ds' < max_exec_steps c ds -> 
+      P c' ds') -> P c ds  ) -> 
+  (forall c ds, P c ds).
+
+(** The proof of [sel_slh_flag] *)
+
+Lemma com_size_pos : forall c,
+  0 < com_size c.
+Proof. induction c; simpl; lia. Qed.
+
+Lemma max_exec_steps_monotonic: forall c1 ds1 c2 ds2,
+  (com_size c1 < com_size c2 /\ length ds1 <= length ds2 ) \/ 
+  (com_size c1 <= com_size c2 /\ length ds1 < length ds2) ->
+  max_exec_steps c1 ds1 < max_exec_steps c2 ds2.
+Proof.
+  intros c1 ds1 c2 ds2 [ [Hcom Hdir] | [Hcom Hdir] ]; 
+  unfold max_exec_steps; lia.
+Qed.
+
+(** Based on the Lemma [max_exec_steps_monotonic] we can build a tactic to solve 
+    the subgoals in the form of [max_exec_steps c' ds' < max_exec_steps c ds],
+    which will be produced by [max_exec_steps_ind].*)
     
-    Definition max_exec_steps (c :com) (ds :dirs) :nat := com_size c + length ds.
+Ltac max_exec_steps_auto :=
+  try ( apply max_exec_steps_monotonic; left; split; simpl;
+        [| repeat rewrite app_length]; lia );
+  try ( apply max_exec_steps_monotonic; right; split; simpl;
+        [| repeat rewrite app_length]; lia);
+  try ( apply max_exec_steps_monotonic; left; split; simpl;
+        [auto | repeat rewrite app_length; lia] ).
     
-    (** The induction prinicipal on [max_exec_steps] *)
-    
-    Axiom max_exec_steps_ind : 
-      forall P : com -> dirs -> Prop,
-      (forall c ds, 
-        ( forall c' ds', 
-          max_exec_steps c' ds' < max_exec_steps c ds -> 
-          P c' ds') -> P c ds  ) -> 
-      (forall c ds, P c ds).
-    
-    (** The proof of [sel_slh_flag] *)
-    
-    Lemma com_size_pos : forall c,
-      0 < com_size c.
-    Proof. induction c; simpl; lia. Qed.
-    
-    Lemma max_exec_steps_monotonic: forall c1 ds1 c2 ds2,
-      (com_size c1 < com_size c2 /\ length ds1 <= length ds2 ) \/ 
-      (com_size c1 <= com_size c2 /\ length ds1 < length ds2) ->
-      max_exec_steps c1 ds1 < max_exec_steps c2 ds2.
-    Proof.
-      intros c1 ds1 c2 ds2 [ [Hcom Hdir] | [Hcom Hdir] ]; 
-      unfold max_exec_steps; lia.
-    Qed.
-    
-    (** To properly apply [max_exec_steps_ind], we need to state [sel_slh_flag]
-        as a proposition of type [com -> dirs -> Prop]. Therefore we define the
-        following: *)
+(** To properly apply [max_exec_steps_ind], we need to state [sel_slh_flag]
+    as a proposition of type [com -> dirs -> Prop]. Therefore we define the
+    following: *)
 
 Definition sel_slh_flag_prop (c :com) (ds :dirs) :Prop :=
   forall P st ast (b:bool) st' ast' (b':bool) os,
@@ -1690,17 +1702,10 @@ Proof.
   - (* Seq *)
     inversion Heval; subst; clear Heval. 
     apply IH in H1; try tauto.
-    + apply IH in H10; try tauto.
-      apply max_exec_steps_monotonic. 
-      left; split; simpl.
-      * apply lt_add_pos_l.
-        apply com_size_pos.
-      * rewrite app_length. lia.
-    + apply max_exec_steps_monotonic.
-      left; split; simpl.
-      * apply lt_add_pos_r.
-        apply com_size_pos.
-      * rewrite app_length. lia.
+    + apply IH in H10; try tauto. max_exec_steps_auto.
+      apply lt_add_pos_l. apply com_size_pos.
+    + max_exec_steps_auto.
+      apply lt_add_pos_r. apply com_size_pos.
   - (* IF *)
     inversion Heval; subst; clear Heval.
     + (* Spec_If *)
@@ -1708,29 +1713,25 @@ Proof.
       * inversion H10; subst; clear H10.
         inversion H1; subst; clear H1.
         apply IH in H11; try tauto.
-        { apply max_exec_steps_monotonic.
-          left; split; simpl; lia. }
+        { max_exec_steps_auto. }
         { rewrite t_update_eq. simpl. rewrite Eqnbe. assumption. }
       * (* analog to true case *)
         inversion H10; subst; clear H10.
         inversion H1; subst; clear H1.
         apply IH in H11; try tauto.
-        { apply max_exec_steps_monotonic.
-          left; split; simpl; lia. }
+        { max_exec_steps_auto. }
         { rewrite t_update_eq. simpl. rewrite Eqnbe. assumption. }
     + (* Spec_If_F; analog to Spec_If case *)
       destruct (beval st be) eqn:Eqnbe.
       * inversion H10; subst; clear H10.
         inversion H1; subst; clear H1.
         apply IH in H11; try tauto.
-        { apply max_exec_steps_monotonic.
-          left; split; simpl; lia. }
+        { max_exec_steps_auto. }
         { rewrite t_update_eq. simpl. rewrite Eqnbe. reflexivity. }
       * inversion H10; subst; clear H10.
         inversion H1; subst; clear H1.
         apply IH in H11; try tauto.
-        { apply max_exec_steps_monotonic.
-          left; split; simpl; lia. }
+        { max_exec_steps_auto. }
         { rewrite t_update_eq. simpl. rewrite Eqnbe. reflexivity. } 
   - (* While *)
       inversion Heval; subst; clear Heval.
@@ -1739,22 +1740,16 @@ Proof.
       + (* non-speculative *)
         destruct (beval st be) eqn:Eqnbe.
         * inversion H12; subst; clear H12.
-          assert(Hwhile:
-            <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
-                =[sel_slh P <{{while be do c end}}>]=>
-                    <(st', ast', b', (os3++os2)%list)> ).
+          assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
+              =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', (os3++os2)%list)> ).
           { simpl. eapply Spec_Seq; eassumption. }
           apply IH in Hwhile; eauto.
-          { apply max_exec_steps_monotonic.
-            right; split; simpl; auto.
-            repeat rewrite app_length. lia. }
+          { max_exec_steps_auto. }
           { clear Hwhile; clear H11.
             inversion H1; subst; clear H1.
             inversion H2; subst; clear H2. simpl in H12.
             apply IH in H12; try tauto.
-            - apply max_exec_steps_monotonic.
-              right; split; simpl; auto.
-              repeat rewrite app_length. lia.
+            - max_exec_steps_auto.
             - rewrite t_update_eq, Eqnbe; simpl. assumption. }
         * inversion H12; subst; clear H12.
           inversion H10; subst; simpl.
@@ -1765,22 +1760,16 @@ Proof.
           inversion H10; subst; simpl.
           rewrite t_update_eq, Eqnbe; simpl. reflexivity.
         * inversion H12; subst; clear H12.
-          assert(Hwhile: 
-            <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
-                =[sel_slh P <{{while be do c end}}>]=>
-                    <(st', ast', b', (os3++os2)%list )>).
+          assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
+              =[sel_slh P <{{while be do c end}}>]=> <(st', ast', b', (os3++os2)%list )>).
           { simpl. eapply Spec_Seq; eassumption. }
           apply IH in Hwhile; eauto.
-          {  apply max_exec_steps_monotonic.
-            right; split; simpl; auto.
-            repeat rewrite app_length. lia. }
+          { max_exec_steps_auto. }
           { clear Hwhile; clear H11.
             inversion H1; subst; clear H1.
             inversion H2; subst; clear H2. simpl in H12.
             apply IH in H12; try tauto.
-            - apply max_exec_steps_monotonic.
-              right; split; simpl; auto.
-              repeat rewrite app_length. lia.
+            - max_exec_steps_auto.
             - rewrite t_update_eq, Eqnbe; simpl. reflexivity. }
   - (* ARead *)
     destruct (P x) eqn:Eqnbe.
@@ -1929,99 +1918,74 @@ Proof.
     eapply Ideal_Seq.
     + apply IH in H1; try tauto.
       * eassumption.
-      * apply max_exec_steps_monotonic.
-        left; split; simpl.
-        { apply lt_add_pos_r.
-          apply com_size_pos. }
-        { rewrite app_length. lia. }   
+      * max_exec_steps_auto.
+        apply lt_add_pos_r. apply com_size_pos.
     + apply sel_slh_flag in H1 as Hstb'0; try tauto.
       apply IH in H10; try tauto.
       * eapply ideal_unused_update_rev; try tauto.
-      * apply max_exec_steps_monotonic.
-        left; split; simpl.
-        { apply lt_add_pos_l.
-          apply com_size_pos. }
-        { rewrite app_length. lia. }    
+      * max_exec_steps_auto.
+        apply lt_add_pos_l. apply com_size_pos.
   (* IF *)
   - (* non-speculative *) 
     destruct (beval st be) eqn:Eqnbe; inversion H10; 
     inversion H1; subst; clear H10; clear H1; simpl in *.
     + apply IH in H11; try tauto.
-      * replace (OBranch true)
-            with (OBranch (beval st be)) 
-              by (rewrite <- Eqnbe; reflexivity).
+      * replace (OBranch true) with (OBranch (beval st be)) 
+          by (rewrite <- Eqnbe; reflexivity).
         apply Ideal_If. rewrite Eqnbe.
         rewrite Eqnbe in H11. rewrite t_update_same in H11.
         apply H11.
-      * apply max_exec_steps_monotonic.
-          left; split; simpl; lia.
+      * max_exec_steps_auto.
       * rewrite t_update_eq. rewrite Eqnbe. assumption.
     + (* analog to true case *)
       apply IH in H11; try tauto.
-      * replace (OBranch false)
-          with (OBranch (beval st be)) 
-            by (rewrite <- Eqnbe; reflexivity).
-        apply Ideal_If. rewrite Eqnbe.
-        rewrite Eqnbe in H11. rewrite t_update_same in H11.
-        assumption.
-      * apply max_exec_steps_monotonic.
-        left; split; simpl; lia.
+      * replace (OBranch false) with (OBranch (beval st be)) 
+          by (rewrite <- Eqnbe; reflexivity).
+        apply Ideal_If. rewrite Eqnbe. rewrite Eqnbe in H11.
+        rewrite t_update_same in H11. assumption.
+      * max_exec_steps_auto.
       * rewrite t_update_eq. rewrite Eqnbe. assumption.
   - (* speculative *)
     destruct (beval st be) eqn:Eqnbe; inversion H10; inversion H1;
     subst; simpl in *; clear H10; clear H1; rewrite Eqnbe in H11.
-    + replace (OBranch true) 
-        with (OBranch (beval st be)) 
-          by (rewrite <- Eqnbe; reflexivity).
-      apply Ideal_If_F. rewrite Eqnbe.
-      apply IH in H11; try tauto.
+    + replace (OBranch true) with (OBranch (beval st be)) 
+         by (rewrite <- Eqnbe; reflexivity).
+      apply Ideal_If_F. rewrite Eqnbe. apply IH in H11; try tauto.
       * rewrite t_update_eq in H11.
         apply ideal_unused_update in H11; tauto.
-      * apply max_exec_steps_monotonic.
-        right; split; simpl; lia. 
+      * max_exec_steps_auto. 
     + (* analog to true case *)
-      replace (OBranch false) 
-        with (OBranch (beval st be)) 
-          by (rewrite <- Eqnbe; reflexivity).
-      apply Ideal_If_F. rewrite Eqnbe.
-      apply IH in H11; try tauto.
+      replace (OBranch false) with (OBranch (beval st be)) 
+        by (rewrite <- Eqnbe; reflexivity).
+      apply Ideal_If_F. rewrite Eqnbe. apply IH in H11; try tauto.
       * rewrite t_update_eq in H11.
         apply ideal_unused_update in H11; tauto.
-      * apply max_exec_steps_monotonic.
-        right; split; simpl; lia. 
+      * max_exec_steps_auto. 
   - (* While *)
     apply Ideal_While.
     inversion H1; subst; clear H1.
     inversion H11; subst; clear H11; simpl in *.
     + (* non-speculative *)
-      apply Ideal_If. 
+      apply Ideal_If.
       destruct (beval st be) eqn:Eqnbe.
       * inversion H12; subst; clear H12.
         inversion H1; subst; clear H1.
         inversion H2; subst; clear H2; simpl in *.
-        assert(Hwhile:
-        <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
-            =[sel_slh P <{{while be do c end}}>]=>
-                <(st', ast', b', (os3++os2)%list)> ).
+        assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
+          =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', (os3++os2)%list)> ).
         { simpl. eapply Spec_Seq; eassumption. }
-        replace ((ds4 ++ ds0) ++ ds2)%list 
-          with (ds4 ++ ds0 ++ ds2)%list
-            by (rewrite app_assoc; reflexivity).
-        replace ((os4 ++ os3) ++ os2)%list 
-            with (os4 ++ os3 ++ os2)%list
-              by (rewrite app_assoc; reflexivity).
+        replace ((ds4 ++ ds0) ++ ds2)%list with (ds4 ++ ds0 ++ ds2)%list
+          by (rewrite app_assoc; reflexivity).
+        replace ((os4 ++ os3) ++ os2)%list with (os4 ++ os3 ++ os2)%list
+          by (rewrite app_assoc; reflexivity).
         eapply Ideal_Seq.
         { rewrite Eqnbe in H13. rewrite t_update_same in H13.
           apply IH in H13; try tauto.
           - eassumption.
-          - apply max_exec_steps_monotonic.
-            left; split; simpl; auto.
-            repeat rewrite app_length. lia. }
+          - max_exec_steps_auto. }
         { apply IH in Hwhile; auto.
           - eapply ideal_unused_update_rev; eauto.
-          - apply max_exec_steps_monotonic.
-            right; split; simpl; auto.
-            repeat rewrite app_length. lia.
+          - max_exec_steps_auto.
           - apply sel_slh_flag in H13; try tauto.
             rewrite t_update_eq. rewrite Eqnbe. assumption. }
       * inversion H12; subst; clear H12.
@@ -2038,36 +2002,26 @@ Proof.
       * inversion H12; subst; clear H12.
         inversion H1; subst; clear H1.
         inversion H2; subst; clear H2; simpl in *.
-        assert(Hwhile:
-        <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
-            =[sel_slh P <{{while be do c end}}>]=>
-                <(st', ast', b', (os3++os2)%list)> ).
+        assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
+            =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', (os3++os2)%list)> ).
         { simpl. eapply Spec_Seq; eassumption. }
-        replace ((ds4 ++ ds0) ++ ds2)%list 
-          with (ds4 ++ ds0 ++ ds2)%list
-            by (rewrite app_assoc; reflexivity).
-        replace ((os4 ++ os3) ++ os2)%list 
-            with (os4 ++ os3 ++ os2)%list
-              by (rewrite app_assoc; reflexivity).
+        replace ((ds4 ++ ds0) ++ ds2)%list with (ds4 ++ ds0 ++ ds2)%list
+          by (rewrite app_assoc; reflexivity).
+        replace ((os4 ++ os3) ++ os2)%list with (os4 ++ os3 ++ os2)%list
+          by (rewrite app_assoc; reflexivity).
         eapply Ideal_Seq.
         { rewrite Eqnbe in H13.
           apply IH in H13; try tauto.
           - rewrite t_update_eq in H13.
             apply ideal_unused_update in H13; [| tauto].
             eassumption. 
-          - apply max_exec_steps_monotonic.
-            left; split; simpl; auto.
-            repeat rewrite app_length. lia. }
+          - max_exec_steps_auto. }
         { apply IH in Hwhile; auto.
           - rewrite Eqnbe in H13.
             apply IH in H13; try tauto.
             + apply ideal_unused_update_rev; eauto.
-            + apply max_exec_steps_monotonic.
-              left; split; simpl; auto.
-              repeat rewrite app_length. lia.  
-          - apply max_exec_steps_monotonic.
-            right; split; simpl; auto.
-            repeat rewrite app_length. lia.
+            + max_exec_steps_auto.  
+          - max_exec_steps_auto.
           - apply sel_slh_flag in H13; try tauto.
             rewrite Eqnbe. rewrite t_update_eq. reflexivity. }
   (* ARead *)
@@ -2081,17 +2035,15 @@ Proof.
       rewrite t_update_shadow. rewrite t_update_permute; [| tauto].
       rewrite t_update_eq. simpl.
       rewrite <- Hstb at 1. rewrite t_update_same.
-      replace ((if b' then 1 else 0) =? 1)%nat 
-        with (b' && P x)
-          by (rewrite Heq; destruct b'; simpl; reflexivity).
+      replace ((if b' then 1 else 0) =? 1)%nat with (b' && P x)
+        by (rewrite Heq; destruct b'; simpl; reflexivity).
        eapply Ideal_ARead; eauto.
     * (* Ideal_ARead_U *)
       rewrite t_update_neq; [| tauto]. rewrite Hstb.
       rewrite t_update_shadow. rewrite t_update_permute; [| tauto].
       simpl. rewrite <- Hstb at 1. rewrite t_update_same.
-      replace (x !-> 0; st)
-        with (x !-> if P x then 0 else nth i' (ast' a') 0; st)
-          by (rewrite Heq; reflexivity).
+      replace (x !-> 0; st) with (x !-> if P x then 0 else nth i' (ast' a') 0; st)
+        by (rewrite Heq; reflexivity).
       eapply Ideal_ARead_U; eauto. 
   - (* Spec_ARead; secret*)
     destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
