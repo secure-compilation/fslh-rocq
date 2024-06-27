@@ -1671,7 +1671,7 @@ Qed.
 (** Based on the Lemma [max_exec_steps_monotonic] we can build a tactic to solve 
     the subgoals in the form of [max_exec_steps c' ds' < max_exec_steps c ds],
     which will be produced by [max_exec_steps_ind].*)
-    
+
 Ltac max_exec_steps_auto :=
   try ( apply max_exec_steps_monotonic; left; split; simpl;
         [| repeat rewrite app_length]; lia );
@@ -2090,8 +2090,8 @@ Qed.
 (* HIDE *)
 (* HIDE: The less useful for security direction of the idealized semantics being
    equivalent to [sel_slh]; easier to prove even for while, since it has the
-   flavor of forwards compiler correctness (FCC). This would only become useful
-   if we find an easy way to apply the FCC to BCC trick even for big-step semantics. *)
+   flavor of forwards compiler correctness (FCC). This becomes useful
+   if we want to proof BCC by using FCC. *)
 
 Lemma spec_seq_assoc3 : forall st ast b ds c1 c2 c3 st' ast' b' os,
   <( st, ast, b, ds )> =[ c1; c2; c3 ]=> <( st', ast', b', os )> ->
@@ -2277,9 +2277,13 @@ Qed.
    rules and into equality premises could make this proof script less
    verbose. Maybe just define "smart constructors" for that? *)
 
-(* BCC by flipping the direction and using FCC. *)
+(** ** BCC by flipping the direction and using FCC. *)
 
-(* Not currently true, but could be made true by extending the final
+(** To proof BCC by contraposition and using FCC, we need two additional properties:
+      1. Totality for [ideal_eval] (see [ideal_total])
+      2. Determinism for [spec_eval] (see [spec_eval_deterministic])  *)
+
+(* The totality is not currently true, but could be made true by extending the final
    configurations with errors for wrong directions or out of bounds accesses. *)
 Axiom ideal_total : forall P c st ast b ds, exists stt astt bb os,
   P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>. 
@@ -2290,7 +2294,7 @@ Lemma spec_eval_add_dirs : forall c st ast b ds ds' st' ast' b' os st'' ast'' b'
   <( st' , ast' , b' , ds' )> =[ c ]=> <( st'' , ast'' , b'' , os'' )> .
 Admitted.
 
-(* SOONER: Finish the Seq case.*)
+(* Later: Prove Seq case *)
 Lemma spec_eval_deterministic : forall c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
   <( st , ast , b , ds )> =[ c ]=> <( stt1 , astt1 , bb1 , os1 )> ->
   <( st , ast , b , ds )> =[ c ]=> <( stt2 , astt2 , bb2 , os2 )> ->
@@ -2305,8 +2309,8 @@ Proof.
     apply app_eq_app in H1. 
     destruct H1 as [ds_diff [ [Hds0 Hds2] | [Hds1 Hds3] ] ]; subst.
     + eapply spec_eval_add_dirs in Heval1_1 as Hdiff; [| eapply H5].
-      assert(L: <( st', ast', b', (ds_diff ++ ds3)%list )> =[ c1;c2 ]=> 
-      <( stt2, astt2, bb2, (os0 ++ os3)%list )>).
+      assert(L: <( st', ast', b', (ds_diff ++ ds3)%list )>
+          =[ c1;c2 ]=> <( stt2, astt2, bb2, (os0 ++ os3)%list )>).
       { eapply Spec_Seq; eauto. }
       admit.
     + admit.
@@ -2320,30 +2324,23 @@ Proof.
     auto.
 Admitted.
 
-(* decidability *)
-Axiom decidability_state : forall (st st' :state), 
-  st = st' \/ st <> st'.
-
-Axiom decidability_astate : forall (ast ast' :astate), 
-  ast = ast' \/ ast <> ast'.
+Require Import ClassicalFacts.
 
 Lemma decidability_ouput_tuple : forall (st st' : state) (ast ast' :astate) 
   (b b' :bool) (os os' :obs),
-(st, ast, b, os) = (st', ast', b', os') \/ (st, ast, b, os) <> (st', ast', b', os').
-Proof.
-  repeat decide equality.
-  - apply decidability_astate.
-  - apply decidability_state.
-Qed.
+  excluded_middle ->
+  (st, ast, b, os) = (st', ast', b', os') \/ ~ ((st, ast, b, os) = (st', ast', b', os')).
+Proof. auto. Qed.
 
-(* SOONER: This proof is done, if the proof of spec_determinism is finished. *)
+(* Later: This proof is done, except that proof of spec_determinism is admitted. *)
 Lemma sel_slh_ideal' : forall c P st ast (b:bool) ds st' ast' (b':bool) os,
+  excluded_middle ->
   unused "b" c ->
   <("b"!-> (if b then 1 else 0); st, ast, b, ds)> =[ sel_slh P c ]=> <(st', ast', b', os)> ->
   P |- <("b"!-> (if b then 1 else 0); st, ast, b, ds)> =[ c ]=> 
     <("b" !-> (if b then 1 else 0); st', ast', b', os)>.
 Proof.
-  intros c P st ast b ds st' ast' b' os Hunused Heval.
+  intros c P st ast b ds st' ast' b' os Hexc Hunused Heval.
   assert (Ldet : forall st1 ast1 (b1 :bool) os1, 
     ("b" !-> (if b1 then 1 else 0); st1, ast1, b1, os1) <> (st', ast', b', os)   ->
     ~ <("b" !-> (if b then 1 else 0); st, ast, b, ds )> =[ (sel_slh P c) ]=> 
@@ -2362,9 +2359,8 @@ Proof.
     { eapply ideal_total. }
   destruct Ltot as [ st1 [ ast1 [ b1 [ os1 Hev1 ] ] ] ].
   assert (Leq : ("b" !-> (if b1 then 1 else 0); st1, ast1, b1, os1) = (st', ast', b', os) ).
-    { destruct (decidability_ouput_tuple ("b" !-> (if b1 then 1 else 0); st1) st' ast1 ast' b1 b' os1 os ) as [Heq | Hneq].
-      - apply Heq.
-      - apply LFcc in Hneq. apply Hneq in Hev1. destruct Hev1. }
+    { destruct (decidability_ouput_tuple ("b" !-> (if b1 then 1 else 0); st1) st' ast1 ast' b1 b' os1 os ); auto.
+      apply LFcc in H. apply H in Hev1. destruct Hev1. }
   inversion Leq. subst. rewrite t_update_shadow.
   eapply ideal_unused_overwrite in Hev1; eauto.
 Admitted.
