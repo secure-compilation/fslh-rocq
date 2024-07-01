@@ -2366,3 +2366,368 @@ Proof.
 Admitted.
 
 (* /HIDE *)
+
+(* TERSE: /HIDEFROMHTML *)
+
+(** * Speculative constant-time interpreter *)
+
+(* TERSE: HIDEFROMHTML *)
+Module SpecCTInterpreter.
+
+(** Since the construction of directions for proofs of examples is very time consuming,
+    we want to have an alternative. This alternative is an interpreter which, if it is sound
+    can be used to easily proof examples. *)
+
+(** ** Computable maps *)
+
+(* For our interpreter, we can't use functions to implement total_map, so we
+   need something more computational for states and variable assignments. *)
+   
+Definition Map A := list (string * A).
+
+Fixpoint map_get {A} (m : Map A) x : option A :=
+  match m with
+  | [] => None
+  | (k, v) :: m' => if x =? k  then Some v else map_get m' x
+  end.
+
+Definition map_set {A} (m:Map A) (x:string) (v:A) : Map A := (x, v) :: m.
+
+Definition total_map (X:Type) : Type := X * Map X.
+
+Definition t_empty {A : Type} (d : A) : total_map A := (d, []).
+
+Notation "'_' '!->' v" := (t_empty v) (at level 100, right associativity).
+
+Definition t_update {A : Type} (m : total_map A) (x : string) (v : A) :=
+  match m with
+  | (d, lm) => (d, map_set lm x v)
+  end.
+
+Notation "x '!->' v ';' m" := (t_update m x v)
+  (at level 100, v at next level, right associativity).
+
+(* We can no longer just use function application for map lookups,
+   instead we need to define a combinator for this: *)
+Definition apply {A:Type} (m : total_map A) (x:string) : A := 
+  match m with
+  | (d, lm) => match map_get lm x with
+               | Some v => v
+               | None => d
+               end
+  end.
+
+Definition state := total_map nat.
+Definition astate := total_map (list nat).
+
+(** ** Input and output states for the interpreter. *)
+
+Definition input_st : Type := state * astate * bool * dirs.
+
+(* HIDE: Is the splitting into 4 cases needed ? Could Finished and CouldNotFinish be enough ? *)
+Inductive output_st (A : Type): Type :=
+| OST_OutOfFuel : output_st A
+| OST_OutOfBounds : output_st A
+| OST_InvalidDirection : output_st A
+| OST_Finished : A -> obs -> input_st -> output_st A.
+
+(** ** Definition of the evaluators and interpreters *)
+
+Definition evaluator (A : Type): Type := input_st -> (output_st A).
+Definition interpreter : Type := evaluator unit.
+
+Definition ret {A : Type} (value : A) : evaluator A :=
+  fun (in_st : input_st) => OST_Finished A value [] in_st.
+    
+Definition bind {A : Type} {B : Type} (e : evaluator A) (f : A -> evaluator B): evaluator B :=
+  fun (in_st : input_st) =>
+    match e in_st with
+    | OST_Finished _ value os1 in_st'  => 
+        match (f value) in_st' with
+        | OST_Finished _ value os2 ist'' => OST_Finished B value (os1 ++ os2)%list ist''
+        | ret => ret
+        end
+    | OST_OutOfBounds _ => OST_OutOfBounds B
+    | OST_InvalidDirection _ => OST_InvalidDirection B
+    | OST_OutOfFuel _ => OST_OutOfFuel B
+    end.
+    
+Notation "e >>= f" := (bind e f) (at level 58, left associativity).
+Notation "e >> f" := (bind e (fun _ => f)) (at level 58, left associativity).
+
+Definition finish : interpreter := ret tt.
+
+(** *** Evaluators for com instructions *)
+
+(** **** Variables *)
+
+Definition get_var (name : string): evaluator nat :=
+  fun (in_st : input_st) =>
+    let 
+      '(st, _, _, _) := in_st 
+    in
+      ret (apply st name) in_st.
+
+Definition set_var (name : string) (value : nat) : interpreter :=
+  fun (in_st : input_st) =>
+    let 
+      '(st, ast, b, ds) := in_st
+    in
+      let
+        new_st := (name !-> value ; st) 
+      in
+        finish (new_st, ast, b, ds).
+
+(** **** Arrays *)
+
+Definition get_arr (name : string): evaluator (list nat) :=
+  fun (in_st : input_st) =>
+    let 
+      '(_, ast, _, _) := in_st
+    in
+      ret (apply ast name) in_st.
+
+Definition set_arr (name : string) (value : list nat) : interpreter :=
+  fun (ist : input_st) =>
+    let '(st, ast, b, ds) := ist in
+    let new_ast := (name !-> value ; ast) in
+    finish (st, new_ast, b, ds).
+
+(** **** Speculating *)
+Definition start_speculating : interpreter :=
+  fun (ist : input_st) =>
+    let '(st, ast, _, ds) := ist in
+    finish (st, ast, true, ds).
+
+Definition is_speculating : evaluator bool :=
+  fun (ist : input_st) =>
+    let '(_, _, b, _) := ist in
+    ret b ist.
+
+(** **** Expressions *)
+
+Fixpoint aeval (st : state) (a : aexp) : nat :=
+  match a with
+  | ANum n => n
+  | AId x => apply st x
+  | <{a1 + a2}> => (aeval st a1) + (aeval st a2)
+  | <{a1 - a2}> => (aeval st a1) - (aeval st a2)
+  | <{a1 * a2}> => (aeval st a1) * (aeval st a2)
+  | <{b ? a1 : a2}> => if beval st b then aeval st a1
+          (* ^- NEW -> *)            else aeval st a2
+  end
+with beval (st : state) (b : bexp) : bool :=
+  match b with
+  | <{true}>      => true
+  | <{false}>     => false
+  | <{a1 = a2}>   => ((aeval st a1) =? (aeval st a2))%nat
+  | <{a1 <> a2}>  => negb ((aeval st a1) =? (aeval st a2))%nat
+  | <{a1 <= a2}>  => ((aeval st a1) <=? (aeval st a2))%nat
+  | <{a1 > a2}>   => negb ((aeval st a1) <=? (aeval st a2))%nat
+  | <{~ b1}>      => negb (beval st b1)
+  | <{b1 && b2}>  => andb (beval st b1) (beval st b2)
+  end.
+
+Definition eval_aexp (a : aexp) : evaluator nat :=
+  fun (in_st : input_st) =>
+    let '(st, _, _, _) := in_st in
+    let v := aeval st a in
+    ret v in_st.
+
+Definition eval_bexp (b : bexp) : evaluator bool :=
+  fun (ist : input_st) =>
+    let '(st, _, _, _) := ist in
+    let v := beval st b in
+    ret v ist.
+
+(** **** Exceptions *)
+
+Definition raise_invalid_direction : interpreter :=
+  fun _ => OST_InvalidDirection unit.
+
+Definition raise_out_of_bounds : interpreter :=
+  fun _ => OST_OutOfBounds unit.
+
+Definition raise_out_of_fuel : interpreter :=
+  fun _ => OST_OutOfFuel unit.
+
+(** **** Observations and directions *)
+    
+Definition observe (o : observation) : interpreter :=
+  fun (ist : input_st) => OST_Finished unit tt [o] ist.
+    
+Definition fetch_direction : evaluator direction :=
+  fun (ist : input_st) =>
+    let '(st, ast, b, ds) := ist in
+    match ds with
+    | dir::ds' =>
+        let new_ist := (st, ast, b, ds') in
+        ret dir new_ist
+    | [] => OST_InvalidDirection direction
+    end.
+
+(** ** The speculative constant-time interpreter *)
+
+Fixpoint spec_eval_engine_aux (fuel : nat) (c : com) : interpreter :=
+  match fuel with
+  | O => raise_out_of_fuel
+  | S fuel => 
+    match c with
+    | <{ skip }> => finish
+    | <{ x := e }> =>
+        eval_aexp e >>= 
+          fun v => set_var x v >> finish
+    | <{ c1 ; c2 }> =>
+        spec_eval_engine_aux fuel c1 >>
+          spec_eval_engine_aux fuel c2
+    | <{ if b then ct else cf end }> =>
+        eval_bexp b >>=
+          fun condition => fetch_direction >>=
+            fun dir => 
+              match dir with
+              | DStep => 
+                  let 
+                    next_c := if condition then ct else cf
+                  in
+                    observe (OBranch condition) >>
+                      spec_eval_engine_aux fuel next_c
+              | DForce =>
+                  let 
+                    next_c := if condition then cf else ct 
+                  in
+                    start_speculating >>
+                      observe (OBranch condition) >> 
+                        spec_eval_engine_aux fuel next_c
+              | _ => raise_invalid_direction
+              end
+    | <{ while be do c end }> =>
+        spec_eval_engine_aux fuel <{if be then c; while be do c end else skip end}>
+    | <{ x <- a[[ie]] }> =>
+        eval_aexp ie >>= 
+          fun i => get_arr a >>=
+            fun l => is_speculating >>=
+              fun b => fetch_direction >>= 
+                fun dir =>
+                  match dir with
+                  | DStep =>
+                      if (i <? List.length l)%nat then
+                        observe (OARead a i) >>
+                        set_var x (nth i l 0)
+                      else
+                      (* DStep is invalid under speculation *)
+                        if b then raise_invalid_direction
+                      else raise_out_of_bounds
+                  | DLoad a' i' =>
+                      get_arr a' >>=
+                        fun l' =>
+                          if negb (i <? List.length l)%nat && (i' <? List.length l')%nat && b then
+                            observe (OARead a i) >>=
+                              fun _ => set_var x (nth i' l' 0) >>=
+                                fun _ => finish
+                          else raise_invalid_direction
+                  | _ => raise_invalid_direction
+                  end
+    | <{ a[ie] <- e }> =>
+      eval_aexp e >>= 
+        fun n => eval_aexp ie >>=
+          fun i => get_arr a >>= 
+            fun l => is_speculating >>=
+              fun b => fetch_direction >>=
+                fun dir =>
+                  match dir with
+                  | DStep =>
+                      if (i <? List.length l)%nat then
+                        observe (OAWrite a i) >>=
+                          fun _ => set_arr a (upd i l n)
+                      else
+                        (* DStep is invalid under speculation *) 
+                        if b then raise_invalid_direction
+                        else raise_out_of_bounds
+                  | DStore a' i' =>
+                      get_arr a' >>=
+                        fun l' => 
+                          if negb (i <? List.length l)%nat && (i' <? List.length l')%nat && b then
+                            observe (OAWrite a i) >>
+                            set_arr a' (upd i' l' n)
+                          else raise_invalid_direction
+                  | _ => raise_invalid_direction
+                  end
+    end
+end.
+
+Fixpoint program_size (c : com) : nat :=
+  match c with
+  | <{ if be then c1 else c2 end }> => S ((program_size c1) + (program_size c2))
+  | <{ c1 ; c2 }> => S ((program_size c1) + (program_size c2))
+  | <{ while be do c end }> => S (program_size c)
+  | _ => 1
+  end.
+
+Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
+  let 
+    in_st := (st, ast, b, ds)
+  in
+    match spec_eval_engine_aux (max_exec_steps c ds) c in_st with
+    | OST_Finished _ _ obs ist => 
+        let
+          '(st, ast, b, _) := ist
+        in
+          Some (st, ast, b, obs)
+    | _ => None
+    end.
+
+(** Finally a helper function to create the directions for the execution *)
+
+Fixpoint stepping_n_times (n :nat) :dirs :=
+  match n with
+  | 0 => []
+  | S n' => DStep :: stepping_n_times (n')
+  end .
+
+Fixpoint replace_direction (index :nat) (d :direction) (ds :dirs) :=
+  match ds with
+  | [] => []
+  | hd :: tl => match index with
+                | 0 => d :: tl
+                | S n => hd :: replace_direction n d tl
+                end
+  end.
+
+Fixpoint replace_dirs (replacements :list (nat * direction)) (ds :dirs) :=
+  match replacements with
+  | [] => ds
+  | (n, d) :: tl => replace_dirs tl (replace_direction n d ds)
+  end. 
+
+Definition create_dirs (speculations :list (nat * direction)) (step_count :nat):=
+  let 
+    steps := stepping_n_times step_count
+  in
+    replace_dirs speculations steps.   
+
+(** ** More speculative constant-time examples *)
+
+(** Assume we have an public array of length 3 and want to compute the sum of its values.
+    Furthermore we have an secret array of length 4. Then the following program is not
+    spec_ct_secure. *)
+
+Definition spec_ct_insecure_prog :=
+  <{{ X := 0;
+      Y := 0;
+      while Y <= 2 do
+        Z <- AP[[Y]]; 
+        X := X + Z;
+        Y := Y + 1
+      end;
+      if X <= 42 then W := 1 else W := 0 end  }}> .
+
+Compute(create_dirs ([(6, DForce); (7, DLoad AS 3)]) 10).
+
+Compute spec_eval_engine 
+  spec_ct_insecure_prog 
+  (_ !-> 0) 
+  (AP!-> [10;11;12]; AS!-> [39;40;41;42]; _!-> [] )
+  (false)
+  (create_dirs ([(6, DForce); (7, DLoad AS 3)]) 10).
+
+End SpecCTInterpreter.
