@@ -2655,6 +2655,15 @@ Fixpoint spec_eval_engine_aux (fuel : nat) (c : com) : interpreter :=
     end
 end.
 
+(* In principle, could also define spec_eval_engine without fuel,
+   but in practice it's quite complicated: *)
+(* Program Fixpoint spec_eval_engine_aux (fuel : nat) (c : com) (ds : dirs) :  *)
+(*   state * astate * bool -> ds':dirs{length ds' <= length ds} * output_st {measure (com_size c + length ds)} *)
+(* ... *)
+(*     | <{ c1 ; c2 }> => *)
+(*         let '(ds', k) := spec_eval_engine_aux ds c1 in *)
+(*         k >> spec_eval_engine_aux ds' c2 *)
+
 Fixpoint program_size (c : com) : nat :=
   match c with
   | <{ if be then c1 else c2 end }> => S ((program_size c1) + (program_size c2))
