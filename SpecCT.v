@@ -1635,7 +1635,7 @@ Abort.
 
 Fixpoint com_size (c :com) :nat :=
   match c with
-  | <{{ c1; c2 }}> => (com_size c1) + (com_size c2)
+  | <{{ c1; c2 }}> => 1 + (com_size c1) + (com_size c2)
   | <{{ if be then ct else cf end }}> => 1 + max (com_size ct) (com_size cf)
   | <{{ while be do cw end }}> => 1 + (com_size cw)
   | _  => 1
@@ -1654,10 +1654,6 @@ Axiom max_exec_steps_ind :
   (forall c ds, P c ds).
 
 (** The proof of [sel_slh_flag] *)
-
-Lemma com_size_pos : forall c,
-  0 < com_size c.
-Proof. induction c; simpl; lia. Qed.
 
 Lemma max_exec_steps_monotonic: forall c1 ds1 c2 ds2,
   (com_size c1 < com_size c2 /\ length ds1 <= length ds2 ) \/ 
@@ -1703,9 +1699,7 @@ Proof.
     inversion Heval; subst; clear Heval. 
     apply IH in H1; try tauto.
     + apply IH in H10; try tauto. max_exec_steps_auto.
-      apply lt_add_pos_l. apply com_size_pos.
     + max_exec_steps_auto.
-      apply lt_add_pos_r. apply com_size_pos.
   - (* IF *)
     inversion Heval; subst; clear Heval.
     + (* Spec_If *)
@@ -1919,12 +1913,10 @@ Proof.
     + apply IH in H1; try tauto.
       * eassumption.
       * max_exec_steps_auto.
-        apply lt_add_pos_r. apply com_size_pos.
     + apply sel_slh_flag in H1 as Hstb'0; try tauto.
       apply IH in H10; try tauto.
       * eapply ideal_unused_update_rev; try tauto.
       * max_exec_steps_auto.
-        apply lt_add_pos_l. apply com_size_pos.
   (* IF *)
   - (* non-speculative *) 
     destruct (beval st be) eqn:Eqnbe; inversion H10; 
