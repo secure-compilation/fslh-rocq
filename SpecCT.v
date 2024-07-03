@@ -2370,48 +2370,6 @@ Module SpecCTInterpreter.
     we want to have an alternative. This alternative is an interpreter which, if it is sound
     can be used to easily proof examples. *)
 
-(** ** Computable maps *)
-
-(* For our interpreter, we can't use functions to implement total_map, so we
-   need something more computational for states and variable assignments. *)
-   
-Definition Map A := list (string * A).
-
-Fixpoint map_get {A} (m : Map A) x : option A :=
-  match m with
-  | [] => None
-  | (k, v) :: m' => if x =? k  then Some v else map_get m' x
-  end.
-
-Definition map_set {A} (m:Map A) (x:string) (v:A) : Map A := (x, v) :: m.
-
-Definition total_map (X:Type) : Type := X * Map X.
-
-Definition t_empty {A : Type} (d : A) : total_map A := (d, []).
-
-Notation "'_' '!->' v" := (t_empty v) (at level 100, right associativity).
-
-Definition t_update {A : Type} (m : total_map A) (x : string) (v : A) :=
-  match m with
-  | (d, lm) => (d, map_set lm x v)
-  end.
-
-Notation "x '!->' v ';' m" := (t_update m x v)
-  (at level 100, v at next level, right associativity).
-
-(* We can no longer just use function application for map lookups,
-   instead we need to define a combinator for this: *)
-Definition apply {A:Type} (m : total_map A) (x:string) : A := 
-  match m with
-  | (d, lm) => match map_get lm x with
-               | Some v => v
-               | None => d
-               end
-  end.
-
-Definition state := total_map nat.
-Definition astate := total_map (list nat).
-
 (** ** Input and output states for the interpreter. *)
 
 Definition input_st : Type := state * astate * bool * dirs.
@@ -2458,7 +2416,7 @@ Definition get_var (name : string): evaluator nat :=
     let 
       '(st, _, _, _) := in_st 
     in
-      ret (apply st name) in_st.
+      ret (st name) in_st.
 
 Definition set_var (name : string) (value : nat) : interpreter :=
   fun (in_st : input_st) =>
@@ -2477,7 +2435,7 @@ Definition get_arr (name : string): evaluator (list nat) :=
     let 
       '(_, ast, _, _) := in_st
     in
-      ret (apply ast name) in_st.
+      ret (ast name) in_st.
 
 Definition set_arr (name : string) (value : list nat) : interpreter :=
   fun (ist : input_st) =>
@@ -2495,30 +2453,6 @@ Definition is_speculating : evaluator bool :=
   fun (ist : input_st) =>
     let '(_, _, b, _) := ist in
     ret b ist.
-
-(** **** Expressions *)
-
-Fixpoint aeval (st : state) (a : aexp) : nat :=
-  match a with
-  | ANum n => n
-  | AId x => apply st x
-  | <{a1 + a2}> => (aeval st a1) + (aeval st a2)
-  | <{a1 - a2}> => (aeval st a1) - (aeval st a2)
-  | <{a1 * a2}> => (aeval st a1) * (aeval st a2)
-  | <{b ? a1 : a2}> => if beval st b then aeval st a1
-          (* ^- NEW -> *)            else aeval st a2
-  end
-with beval (st : state) (b : bexp) : bool :=
-  match b with
-  | <{true}>      => true
-  | <{false}>     => false
-  | <{a1 = a2}>   => ((aeval st a1) =? (aeval st a2))%nat
-  | <{a1 <> a2}>  => negb ((aeval st a1) =? (aeval st a2))%nat
-  | <{a1 <= a2}>  => ((aeval st a1) <=? (aeval st a2))%nat
-  | <{a1 > a2}>   => negb ((aeval st a1) <=? (aeval st a2))%nat
-  | <{~ b1}>      => negb (beval st b1)
-  | <{b1 && b2}>  => andb (beval st b1) (beval st b2)
-  end.
 
 Definition eval_aexp (a : aexp) : evaluator nat :=
   fun (in_st : input_st) =>
@@ -2655,14 +2589,6 @@ end.
 (*     | <{ c1 ; c2 }> => *)
 (*         let '(ds', k) := spec_eval_engine_aux ds c1 in *)
 (*         k >> spec_eval_engine_aux ds' c2 *)
-
-Fixpoint program_size (c : com) : nat :=
-  match c with
-  | <{ if be then c1 else c2 end }> => S ((program_size c1) + (program_size c2))
-  | <{ c1 ; c2 }> => S ((program_size c1) + (program_size c2))
-  | <{ while be do c end }> => S (program_size c)
-  | _ => 1
-  end.
 
 Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
   let 
