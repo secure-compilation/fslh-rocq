@@ -2096,10 +2096,12 @@ Lemma spec_seq_assoc3 : forall st ast b ds c1 c2 c3 st' ast' b' os,
 Proof. 
   intros st ast b ds c1 c2 c3 st' ast' b' os Heval.
   inversion Heval; subst; clear Heval. inversion H10; subst; clear H10.
-  (* do 2 rewrite app_assoc. econstructor; [| eassumption].
-  econstructor; eassumption.
-Qed. *)
-Admitted.
+  replace ((os3++os0)++os1)%list with (os3++os0++os1)%list
+    by (rewrite app_assoc; reflexivity).
+  replace (ds1++ds0++ds3)%list with ((ds1++ds0)++ds3)%list
+    by (rewrite app_assoc; reflexivity).
+  repeat eapply Spec_Seq; eassumption.  
+Qed.
 
 Lemma spec_seq_assoc4 : forall st ast b ds c1 c2 c3 c4 st' ast' b' os,
   <( st, ast, b, ds )> =[ c1; c2; c3; c4 ]=> <( st', ast', b', os )> ->
@@ -2108,23 +2110,23 @@ Proof.
   intros st ast b ds c1 c2 c3 c4 st' ast' b' os Heval.
   inversion Heval; subst; clear Heval. inversion H10; subst; clear H10. 
   inversion H12; subst; clear H12.
-  (* do 4 rewrite app_assoc. econstructor; [| eassumption].
-  do 2 rewrite <- app_assoc. econstructor; [eassumption |].
-  econstructor; eassumption.
-Qed. *) Admitted.
+  replace (ds1++ds0++ds2++ds4)%list with ((ds1++ds0++ds2)++ds4)%list
+    by (do 2 rewrite <- app_assoc; reflexivity).
+  replace (((os4++os2)++os0)++os1)%list with (os4++(os2++os0)++os1)%list
+    by (do 2 rewrite app_assoc; reflexivity). 
+  repeat eapply Spec_Seq; eassumption.
+Qed.
 
 Lemma spec_seq_skip_r : forall st ast b ds c st' ast' b' os,
   <(st, ast, b, ds)> =[ c; skip ]=> <(st', ast', b', os)> ->
   <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)>.
 Proof.
   intros st ast b ds c st' ast' b' os Heval.
-  rewrite <- (app_nil_r ds) in Heval; rewrite <- (app_nil_r os) in Heval.
-  inversion Heval; inversion H10; subst.
-  (*
-  do 2 rewrite app_nil_r in H1; do 2 rewrite app_nil_r in H5; subst.
-  assumption.
-Qed. *)
-Admitted.
+  rewrite <- (app_nil_r ds) in Heval.
+  replace os with ([] ++ os)%list by reflexivity.
+  inversion Heval; inversion H10; subst; simpl.
+  do 2 rewrite app_nil_r in H1; subst. assumption.
+Qed. 
 
 Lemma ideal_sel_slh : forall P st ast b ds c st' ast' b' os,
   unused "b" c ->
