@@ -2150,32 +2150,32 @@ Proof.
     apply Spec_If. rewrite beval_unused_update; [| tauto].
     destruct (beval st be) eqn:Eqbeval.
     + (* true *) 
-      rewrite <- (app_nil_l ds); rewrite <- (app_nil_l os1).
+      rewrite <- (app_nil_l ds); rewrite <- (app_nil_r os1).
       econstructor.
-      * admit. (* apply Spec_Asgn. reflexivity. *)
-      * simpl. admit. (* rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
-        rewrite t_update_same. apply IHHeval. tauto. *)
+      * apply Spec_Asgn. reflexivity.
+      * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
+        rewrite t_update_same. apply IHHeval. tauto. 
     + (* false ; provable in the same way as the true case *)
-      rewrite <- (app_nil_l ds); rewrite <- (app_nil_l os1).
+      rewrite <- (app_nil_l ds); rewrite <- (app_nil_r os1).
       eapply Spec_Seq.
-      * admit. (* apply Spec_Asgn. reflexivity. *)
-      * simpl. (* rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
-        rewrite t_update_same. apply IHHeval. tauto. *) admit.
+      * apply Spec_Asgn. reflexivity.
+      * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
+        rewrite t_update_same. apply IHHeval. tauto.
   - (* If_f ; provable in the same way as the If case *)
     replace (beval st be) with (beval ("b" !-> (if b then 1 else 0); st) be)
       by (apply beval_unused_update; tauto).
     apply Spec_If_F. rewrite beval_unused_update; [| tauto].
     destruct (beval st be) eqn:Eqbeval.
-    + rewrite <- (app_nil_l ds); rewrite <- (app_nil_l os1).
+    + rewrite <- (app_nil_l ds); rewrite <- (app_nil_r os1).
       eapply Spec_Seq.
-      * (* apply Spec_Asgn. reflexivity. *) admit.
-      * simpl. (* rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
-        rewrite t_update_shadow. apply IHHeval. tauto. *) admit.
-    + rewrite <- (app_nil_l ds); rewrite <- (app_nil_l os1).
+      * apply Spec_Asgn. reflexivity.
+      * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
+        rewrite t_update_shadow. apply IHHeval. tauto.
+    + rewrite <- (app_nil_l ds); rewrite <- (app_nil_r os1).
       eapply Spec_Seq.
-      * (* apply Spec_Asgn. reflexivity. *) admit.
-      * simpl. (* rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
-        rewrite t_update_shadow. apply IHHeval. tauto. *) admit.
+      * apply Spec_Asgn. reflexivity.
+      * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
+        rewrite t_update_shadow. apply IHHeval. tauto.
   - (* While (most difficult case) *)
     assert(G : b_unused "b" be /\
       (unused "b" c /\ b_unused "b" be /\ unused "b" c) /\ True) by tauto.
@@ -2187,44 +2187,58 @@ Proof.
       * (* true *)
         apply spec_seq_assoc4 in H10.
         inversion H10; subst.
-        do 2 rewrite app_comm_cons.
-        eapply Spec_Seq; admit. (* [| eassumption].
+        assert (L: ds2 = [] /\ os2 = []).
+        { inversion H11; subst; auto. }
+        destruct L; subst.
+        replace (DStep::ds1++[])%list with ((DStep::ds1)++[])%list
+          by (rewrite app_comm_cons; reflexivity).
+        replace (OBranch(beval ("b" !-> (if b then 1 else 0); st) be)::[]++os0)%list 
+          with ([]++(OBranch(beval ("b" !-> (if b then 1 else 0); st) be)::os0))%list
+            by (rewrite app_comm_cons; reflexivity).
+        eapply Spec_Seq; [| eassumption].
         apply Spec_While. eapply Spec_If.
         rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
-        apply spec_seq_assoc3. assumption. *)
+        apply spec_seq_assoc3. assumption.
       * (* false *)
         eapply spec_seq_skip_r in H10. inversion H10; subst.
-        rewrite <- (app_nil_r [OBranch _ ]). rewrite <- (app_nil_r [DStep]). rewrite H6.
-        eapply Spec_Seq; admit. (* [| eassumption].
+        rewrite <- (app_nil_l [OBranch _ ]). rewrite <- (app_nil_r [DStep]). rewrite H6.
+        eapply Spec_Seq; [| eassumption].
         apply Spec_While. eapply Spec_If.
         rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
-        apply Spec_Skip. *)
+        apply Spec_Skip.
     + (* mispeculation in while execution (Spec_If_f) ; 
          provable analog to the no misspeculation case *)
       rewrite beval_unused_update in H10; [ | tauto].
       destruct (beval st be) eqn:Eqbeval.
       * (* true *)
         eapply spec_seq_skip_r in H10. inversion H10; subst.
-        rewrite <- (app_nil_r [OBranch _ ]). rewrite <- (app_nil_r [DForce]). rewrite H6.
-        eapply Spec_Seq; admit. (* [| eassumption].
+        rewrite <- (app_nil_l [OBranch _ ]). rewrite <- (app_nil_r [DForce]). rewrite H6.
+        eapply Spec_Seq; [| eassumption].
         apply Spec_While. eapply Spec_If_F.
         rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
-        apply Spec_Skip. *) 
+        apply Spec_Skip. 
       * (* false *)
         apply spec_seq_assoc4 in H10.
         inversion H10; subst.
-        do 2 rewrite app_comm_cons.
-        eapply Spec_Seq; admit. (* [| eassumption].
+        assert (L: ds2 = [] /\ os2 = []).
+        { inversion H11; subst; auto. }
+        destruct L; subst.
+        replace (DForce::ds1++[])%list with ((DForce::ds1)++[])%list
+          by (rewrite app_comm_cons; reflexivity).
+        replace (OBranch(beval ("b" !-> (if b then 1 else 0); st) be)::[]++os0)%list 
+          with ([]++(OBranch(beval ("b" !-> (if b then 1 else 0); st) be)::os0))%list
+            by (rewrite app_comm_cons; reflexivity).
+        eapply Spec_Seq; [| eassumption].
         apply Spec_While. eapply Spec_If_F.
         rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
-        apply spec_seq_assoc3. assumption. *) 
+        apply spec_seq_assoc3. assumption. 
   - (* ARead *)
     rewrite t_update_permute; [| tauto].
     destruct (P x) eqn:EqPx.
     + (* public *)
-      rewrite <- (app_nil_r [DStep]); rewrite <- (app_nil_r [OARead _ _]).
+      rewrite <- (app_nil_r [DStep]); rewrite <- (app_nil_l [OARead _ _]).
       eapply Spec_Seq.
-      * (* apply Spec_ARead; [| tauto]. rewrite aeval_unused_update; tauto. *) admit.
+      * apply Spec_ARead; [| tauto]. rewrite aeval_unused_update; tauto.
       * destruct b eqn:Eqb; simpl.
         { (* speculating *)
           replace (x !-> 0; "b" !-> 1; st)
@@ -2232,7 +2246,7 @@ Proof.
                           (x !-> nth i (ast a) 0; "b" !-> 1; st)
                           <{{("b" = 1) ? 0 : x }}> ;
                   x !-> nth i (ast a) 0; "b" !-> 1; st).
-          + (* eapply Spec_Asgn. reflexivity. *) admit.
+          + eapply Spec_Asgn. reflexivity.
           + simpl. rewrite t_update_neq; [| tauto].
             rewrite t_update_eq; simpl.
             rewrite t_update_shadow.
@@ -2244,7 +2258,7 @@ Proof.
                       <{{("b" = 1) ? 0 : x }}> ;
                   x !-> nth i (ast a) 0; "b" !-> 0; st)
               at 2.
-            + (* eapply Spec_Asgn. reflexivity. *) admit.
+            + eapply Spec_Asgn. reflexivity.
             + simpl. rewrite t_update_neq; [| tauto].
               do 2 rewrite t_update_eq; simpl.
               rewrite t_update_shadow.
@@ -2257,15 +2271,15 @@ Proof.
     rewrite t_update_permute; [| tauto].
     destruct (P x) eqn:EqPx.
     + (* public *)
-      rewrite <- (app_nil_r [DLoad _ _]); rewrite <- (app_nil_r [OARead _ _]).
+      rewrite <- (app_nil_r [DLoad _ _]); rewrite <- (app_nil_l [OARead _ _]).
       eapply Spec_Seq.
-      * (* apply Spec_ARead_U;  try tauto. rewrite aeval_unused_update; tauto. *) admit.
+      * apply Spec_ARead_U;  try tauto. rewrite aeval_unused_update; tauto.
       * replace (x !-> 0; "b" !-> 1; st)
           with (x !-> aeval 
                         (x !-> nth i' (ast a') 0; "b" !-> 1; st)
                         <{{("b" = 1) ? 0 : x }}> ;
                 x!-> nth i' (ast a') 0; "b" !-> 1; st).
-        { (* eapply Spec_Asgn. reflexivity. *) admit. }
+        { eapply Spec_Asgn. reflexivity. }
         { simpl. rewrite t_update_neq; [| tauto].
           rewrite t_update_eq; simpl.
           rewrite t_update_shadow.
@@ -2274,7 +2288,7 @@ Proof.
       eapply Spec_ARead_U; try tauto. rewrite aeval_unused_update; tauto.
   - (* AWrite *) constructor; try rewrite aeval_unused_update; tauto.
   - (* AWrite_U *) constructor; try rewrite aeval_unused_update; tauto.
-Admitted.
+Qed.
 
 (* HIDE: Moving syntactic constraints about ds and os out of the conclusions of
    rules and into equality premises could make this proof script less
