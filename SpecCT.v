@@ -868,9 +868,8 @@ Proof.
     remember (AP!-> [1]; AS!-> [1;3]; _ !-> []) as ast1.
     remember (AP!-> [1]; AS!-> [1;7]; _ !-> []) as ast2.
     remember (DForce :: ([DLoad "AS" 1] ++ [DStep])) as ds.
-    (* 
-    remember ((OBranch true) :: ([OARead "AP" 1] ++ [OBranch false])) as os1.
-    remember ((OBranch false) :: ([OARead "AP" 1] ++ [OBranch false])) as os2.
+    remember ((OBranch false) :: ([OBranch true] ++ [OARead "AP" 1])) as os1.
+    remember ((OBranch false) :: ([OBranch false] ++ [OARead "AP" 1])) as os2.
     assert (Heval1: 
     <(st, ast1, false, ds )> =[ spec_insecure_prog ]=> <( Y!-> 1; X!-> 3; st, ast1, true, os1)>).
     { unfold spec_insecure_prog; subst.
@@ -894,8 +893,6 @@ Proof.
         rewrite t_update_eq in Hx. discriminate.
       * do 4 (rewrite t_update_neq; [| assumption]). reflexivity.
 Qed.
-*)
-Admitted.
 
 (* HIDE: Just to warm up formalized the first lemma in the Spectre Declassified
    paper: Lemma 1: structural properties of execution *)
