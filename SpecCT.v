@@ -1735,8 +1735,8 @@ Proof.
         destruct (beval st be) eqn:Eqnbe.
         * inversion H12; subst; clear H12.
           assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
-              =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', (os3++os2)%list)> ).
-          { simpl. admit. }
+              =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', (os2++os3)%list)> ).
+          { simpl. eapply Spec_Seq; eassumption. }
           apply IH in Hwhile; eauto.
           { max_exec_steps_auto. }
           { clear Hwhile; clear H11.
@@ -1755,8 +1755,8 @@ Proof.
           rewrite t_update_eq, Eqnbe; simpl. reflexivity.
         * inversion H12; subst; clear H12.
           assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
-              =[sel_slh P <{{while be do c end}}>]=> <(st', ast', b', (os3++os2)%list )>).
-          { simpl. admit. }
+              =[sel_slh P <{{while be do c end}}>]=> <(st', ast', b', (os2++os3)%list )>).
+          { simpl. eapply Spec_Seq; eassumption. }
           apply IH in Hwhile; eauto.
           { max_exec_steps_auto. }
           { clear Hwhile; clear H11.
@@ -1774,7 +1774,7 @@ Proof.
       try (rewrite t_update_neq; [assumption| tauto]).
     + inversion Heval; subst;
       try (rewrite t_update_neq; [assumption| tauto]).   
-Admitted.
+Qed.
 
 (** We now prove that [sel_slh] implies the ideal semantics. *)
 
