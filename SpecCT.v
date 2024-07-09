@@ -2396,214 +2396,186 @@ Module SpecCTInterpreter.
     we want to have an alternative. This alternative is an interpreter which, if it is sound
     can be used to easily proof examples. *)
 
-(** ** Input and output states for the interpreter. *)
+Definition prog_st : Type :=  state * astate * bool * dirs * obs.
 
-Definition input_st : Type := state * astate * bool * dirs.
-
-(* HIDE: Is the splitting into 4 cases needed ? Could Finished and CouldNotFinish be enough ? *)
 Inductive output_st (A : Type): Type :=
+| OST_Error : output_st A
 | OST_OutOfFuel : output_st A
-| OST_OutOfBounds : output_st A
-| OST_InvalidDirection : output_st A
-| OST_Finished : A -> obs -> input_st -> output_st A.
+| OST_Finished : A -> prog_st -> output_st A.
 
-(** ** Definition of the evaluators and interpreters *)
-
-Definition evaluator (A : Type): Type := input_st -> (output_st A).
+Definition evaluator (A : Type): Type := prog_st -> (output_st A).
 Definition interpreter : Type := evaluator unit.
 
 Definition ret {A : Type} (value : A) : evaluator A :=
-  fun (in_st : input_st) => OST_Finished A value [] in_st.
+  fun (pst: prog_st) => OST_Finished A value pst.
     
 Definition bind {A : Type} {B : Type} (e : evaluator A) (f : A -> evaluator B): evaluator B :=
-  fun (in_st : input_st) =>
-    match e in_st with
-    | OST_Finished _ value os1 in_st'  => 
-        match (f value) in_st' with
-        | OST_Finished _ value os2 ist'' => OST_Finished B value (os1 ++ os2)%list ist''
+  fun (pst: prog_st) =>
+    match e pst with
+    | OST_Finished _ value (st', ast', b', ds', os1)  => 
+        match (f value) (st', ast', b', ds', os1) with
+        | OST_Finished _ value (st'', ast'', b'', ds'', os2) => 
+            OST_Finished B value (st'', ast'', b'', ds'', os2)
         | ret => ret
         end
-    | OST_OutOfBounds _ => OST_OutOfBounds B
-    | OST_InvalidDirection _ => OST_InvalidDirection B
+    | OST_Error _ => OST_Error B
     | OST_OutOfFuel _ => OST_OutOfFuel B
     end.
     
 Notation "e >>= f" := (bind e f) (at level 58, left associativity).
 Notation "e >> f" := (bind e (fun _ => f)) (at level 58, left associativity).
 
+(** ** Funtions for execution of com instructions *)
+
 Definition finish : interpreter := ret tt.
 
-(** *** Evaluators for com instructions *)
-
-(** **** Variables *)
-
 Definition get_var (name : string): evaluator nat :=
-  fun (in_st : input_st) =>
+  fun (pst : prog_st) =>
     let 
-      '(st, _, _, _) := in_st 
+      '(st, _, _, _, _) := pst
     in
-      ret (st name) in_st.
+      ret (st name) pst.
 
 Definition set_var (name : string) (value : nat) : interpreter :=
-  fun (in_st : input_st) =>
+  fun (pst: prog_st) =>
     let 
-      '(st, ast, b, ds) := in_st
+      '(st, ast, b, ds, os) := pst
     in
       let
-        new_st := (name !-> value ; st) 
+        new_st := (name !-> value; st) 
       in
-        finish (new_st, ast, b, ds).
-
-(** **** Arrays *)
+        finish (new_st, ast, b, ds, os).
 
 Definition get_arr (name : string): evaluator (list nat) :=
-  fun (in_st : input_st) =>
+  fun (pst: prog_st) =>
     let 
-      '(_, ast, _, _) := in_st
+      '(_, ast, _, _, _) := pst
     in
-      ret (ast name) in_st.
+      ret (ast name) pst.
 
 Definition set_arr (name : string) (value : list nat) : interpreter :=
-  fun (ist : input_st) =>
-    let '(st, ast, b, ds) := ist in
+  fun (pst : prog_st) =>
+    let '(st, ast, b, ds, os) := pst in
     let new_ast := (name !-> value ; ast) in
-    finish (st, new_ast, b, ds).
+    finish (st, new_ast, b, ds, os).
 
-(** **** Speculating *)
 Definition start_speculating : interpreter :=
-  fun (ist : input_st) =>
-    let '(st, ast, _, ds) := ist in
-    finish (st, ast, true, ds).
+  fun (pst : prog_st) =>
+    let '(st, ast, _, ds, os) := pst in
+    finish (st, ast, true, ds, os).
 
 Definition is_speculating : evaluator bool :=
-  fun (ist : input_st) =>
-    let '(_, _, b, _) := ist in
-    ret b ist.
+  fun (pst : prog_st) =>
+    let '(_, _, b, _, _) := pst in
+    ret b pst.
 
 Definition eval_aexp (a : aexp) : evaluator nat :=
-  fun (in_st : input_st) =>
-    let '(st, _, _, _) := in_st in
+  fun (pst: prog_st) =>
+    let '(st, _, _, _, _) := pst in
     let v := aeval st a in
-    ret v in_st.
+    ret v pst.
 
 Definition eval_bexp (b : bexp) : evaluator bool :=
-  fun (ist : input_st) =>
-    let '(st, _, _, _) := ist in
+  fun (pst : prog_st) =>
+    let '(st, _, _, _, _) := pst in
     let v := beval st b in
-    ret v ist.
+    ret v pst.
 
-(** **** Exceptions *)
+Definition raise_error : interpreter :=
+  fun _ => OST_Error unit.
 
-Definition raise_invalid_direction : interpreter :=
-  fun _ => OST_InvalidDirection unit.
-
-Definition raise_out_of_bounds : interpreter :=
-  fun _ => OST_OutOfBounds unit.
-
-Definition raise_out_of_fuel : interpreter :=
-  fun _ => OST_OutOfFuel unit.
-
-(** **** Observations and directions *)
-    
 Definition observe (o : observation) : interpreter :=
-  fun (ist : input_st) => OST_Finished unit tt [o] ist.
+  fun (pst : prog_st) => 
+    let '(st, ast, b, ds, os) := pst in
+    OST_Finished unit tt (st, ast, b, ds, (os ++ [o])%list).
     
-Definition fetch_direction : evaluator direction :=
-  fun (ist : input_st) =>
-    let '(st, ast, b, ds) := ist in
+Definition fetch_direction : evaluator (option direction) :=
+  fun (pst : prog_st) =>
+    let '(st, ast, b, ds, os) := pst in
     match ds with
-    | dir::ds' =>
-        let new_ist := (st, ast, b, ds') in
-        ret dir new_ist
-    | [] => OST_InvalidDirection direction
+    | d::ds' =>
+        ret (Some d) (st, ast, b, ds', os)
+    | [] => ret None (st, ast, b, [], os)
     end.
 
 (** ** The speculative constant-time interpreter *)
 
 Fixpoint spec_eval_engine_aux (fuel : nat) (c : com) : interpreter :=
   match fuel with
-  | O => raise_out_of_fuel
+  | O => fun _ => OST_OutOfFuel unit
   | S fuel => 
     match c with
-    | <{ skip }> => finish
+    | <{ skip }> => 
+        fetch_direction >>=
+        fun dop => 
+          match dop with 
+          | None => finish 
+          | _ => raise_error 
+          end
     | <{ x := e }> =>
-        eval_aexp e >>= 
-          fun v => set_var x v >> finish
+        fetch_direction >>= 
+        fun dop => 
+          match dop with 
+          | None => eval_aexp e >>= fun v => set_var x v >> finish
+          | _ => raise_error
+          end
     | <{ c1 ; c2 }> =>
         spec_eval_engine_aux fuel c1 >>
-          spec_eval_engine_aux fuel c2
+        spec_eval_engine_aux fuel c2
     | <{ if b then ct else cf end }> =>
-        eval_bexp b >>=
-          fun condition => fetch_direction >>=
-            fun dir => 
-              match dir with
-              | DStep => 
-                  let 
-                    next_c := if condition then ct else cf
-                  in
-                    observe (OBranch condition) >>
-                      spec_eval_engine_aux fuel next_c
-              | DForce =>
-                  let 
-                    next_c := if condition then cf else ct 
-                  in
-                    start_speculating >>
-                      observe (OBranch condition) >> 
-                        spec_eval_engine_aux fuel next_c
-              | _ => raise_invalid_direction
-              end
+        fetch_direction >>= 
+        fun dop => 
+          match dop with
+          | Some DStep =>
+              eval_bexp b >>= 
+              fun condition => 
+                let next_c := if condition then ct else cf in
+                observe (OBranch condition) >> spec_eval_engine_aux fuel next_c
+          | Some DForce =>
+              eval_bexp b >>= 
+              fun condition =>
+                let next_c := if condition then cf else ct in
+                start_speculating >> observe (OBranch condition) >> 
+                spec_eval_engine_aux fuel next_c
+          | _ => raise_error
+          end
     | <{ while be do c end }> =>
         spec_eval_engine_aux fuel <{if be then c; while be do c end else skip end}>
     | <{ x <- a[[ie]] }> =>
-        eval_aexp ie >>= 
-          fun i => get_arr a >>=
-            fun l => is_speculating >>=
-              fun b => fetch_direction >>= 
-                fun dir =>
-                  match dir with
-                  | DStep =>
-                      if (i <? List.length l)%nat then
-                        observe (OARead a i) >>
-                        set_var x (nth i l 0)
-                      else
-                      (* DStep is invalid under speculation *)
-                        if b then raise_invalid_direction
-                      else raise_out_of_bounds
-                  | DLoad a' i' =>
-                      get_arr a' >>=
-                        fun l' =>
-                          if negb (i <? List.length l)%nat && (i' <? List.length l')%nat && b then
-                            observe (OARead a i) >>=
-                              fun _ => set_var x (nth i' l' 0) >>=
-                                fun _ => finish
-                          else raise_invalid_direction
-                  | _ => raise_invalid_direction
-                  end
+        eval_aexp ie >>= fun i => get_arr a >>= fun l => is_speculating >>=
+        fun b => fetch_direction >>= 
+        fun dop =>
+          match dop with
+          | Some DStep =>
+              if (i <? List.length l)%nat then
+                observe (OARead a i) >> set_var x (nth i l 0)
+              else raise_error
+          | Some (DLoad a' i') =>
+              get_arr a' >>=
+              fun l' =>
+                if negb (i <? List.length l)%nat && (i' <? List.length l')%nat && b then
+                  observe (OARead a i) >>= fun _ => set_var x (nth i' l' 0) >>=
+                  fun _ => finish
+                else raise_error
+          | _ => raise_error
+          end
     | <{ a[ie] <- e }> =>
-      eval_aexp e >>= 
-        fun n => eval_aexp ie >>=
-          fun i => get_arr a >>= 
-            fun l => is_speculating >>=
-              fun b => fetch_direction >>=
-                fun dir =>
-                  match dir with
-                  | DStep =>
-                      if (i <? List.length l)%nat then
-                        observe (OAWrite a i) >>=
-                          fun _ => set_arr a (upd i l n)
-                      else
-                        (* DStep is invalid under speculation *) 
-                        if b then raise_invalid_direction
-                        else raise_out_of_bounds
-                  | DStore a' i' =>
-                      get_arr a' >>=
-                        fun l' => 
-                          if negb (i <? List.length l)%nat && (i' <? List.length l')%nat && b then
-                            observe (OAWrite a i) >>
-                            set_arr a' (upd i' l' n)
-                          else raise_invalid_direction
-                  | _ => raise_invalid_direction
-                  end
+        eval_aexp e >>= fun n => eval_aexp ie >>= fun i => get_arr a >>= 
+        fun l => is_speculating >>= fun b => fetch_direction >>=
+        fun dop =>
+          match dop with
+          | Some DStep => 
+              if (i <? List.length l)%nat then
+                observe (OAWrite a i) >>= fun _ => set_arr a (upd i l n)
+              else raise_error
+          | Some (DStore a' i') =>
+              get_arr a' >>=
+              fun l' => 
+                if negb (i <? List.length l)%nat && (i' <? List.length l')%nat && b then
+                  observe (OAWrite a i) >> set_arr a' (upd i' l' n)
+                else raise_error
+          | _ => raise_error
+          end
     end
 end.
 
@@ -2616,20 +2588,64 @@ end.
 (*         let '(ds', k) := spec_eval_engine_aux ds c1 in *)
 (*         k >> spec_eval_engine_aux ds' c2 *)
 
-Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) : option (state * astate * bool * obs) :=
-  let 
-    in_st := (st, ast, b, ds)
-  in
-    match spec_eval_engine_aux (max_exec_steps c ds) c in_st with
-    | OST_Finished _ _ obs ist => 
-        let
-          '(st, ast, b, _) := ist
-        in
-          Some (st, ast, b, obs)
+Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) 
+      : option (state * astate * bool * obs) :=
+    match (spec_eval_engine_aux (max_exec_steps c ds) c) (st, ast, b, ds, []) with
+    | OST_Finished _ _ (st', ast', b', ds', os) =>
+        if eqb (length ds') 0 then Some (st', ast', b', os)
+        else None
     | _ => None
     end.
 
-(** Finally a helper function to create the directions for the execution *)
+(** ** Soundness of the interpreter*)
+
+Lemma spec_eval_engine_aux_sound : forall c st ast b ds os st' ast' b' ds' os' u n,
+  spec_eval_engine_aux n c (st, ast, b, ds, os)
+    = OST_Finished unit u (st', ast', b', ds', os') ->
+  (exists dsn osn, 
+    (osn++os)%list = os' /\ (dsn++ds')%list = ds /\
+      <(st, ast, b, dsn)> =[ c ]=> <(st', ast', b', osn)> ).
+Proof.
+  induction c; intros st ast b ds os st' ast' b' ds' os' u n Haux;
+  destruct n as [| n'] eqn:Eqnn; simpl in Haux; try discriminate Haux;
+  unfold ">>", ">>=" in Haux; simpl in Haux.
+  - (* Skip *)
+    destruct ds as [| d ds_tl] eqn:Eqnds; unfold ">>=" in Haux; simpl in Haux.
+    + inversion Haux; subst. exists []; exists []; split;[| split].
+      * reflexivity.
+      * reflexivity.
+      * apply Spec_Skip.
+    + discriminate Haux.
+  - (* Asgn *) 
+    destruct ds as [| d ds_tl] eqn:Eqnds; unfold ">>=" in Haux; simpl in Haux.
+    + inversion Haux; subst. exists []; exists []; split;[| split].
+      * reflexivity.
+      * reflexivity.
+      * apply Spec_Asgn. reflexivity.
+    + discriminate Haux.
+  - (* Seq *)  
+    destruct (spec_eval_engine_aux n' c1 (st, ast, b, ds, os)) eqn:Hc1; 
+    try discriminate; simpl in Haux.
+    destruct p as [ [ [ [stm astm] bm] dsm] osm]; simpl in Haux.
+    destruct (spec_eval_engine_aux n' c2 (stm, astm, bm, dsm, osm)) eqn:Hc2;
+    try discriminate; simpl in Haux.
+    destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
+    apply IHc1 in Hc1. destruct Hc1 as [ds1 [ os1 [Hds1 [Hos1 Heval1] ] ] ].
+    apply IHc2 in Hc2. destruct Hc2 as [ds2 [ os2 [Hds2 [Hos2 Heval2] ] ] ].
+    inversion Haux; subst. exists (ds1++ds2)%list; exists (os2++os1)%list; 
+    split; [| split].
+    + rewrite <- app_assoc. reflexivity.
+    + rewrite <- app_assoc. reflexivity.
+    + eapply Spec_Seq; eauto.
+  - (* If *) admit.
+  - (* While *) admit.
+Admitted.
+
+
+
+(** ** More speculative constant-time examples *)
+
+(** A helper function to create the directions for the execution *)
 
 Fixpoint stepping_n_times (n :nat) :dirs :=
   match n with
@@ -2658,11 +2674,11 @@ Definition create_dirs (speculations :list (nat * direction)) (step_count :nat):
   in
     replace_dirs speculations steps.   
 
-(** ** More speculative constant-time examples *)
-
 (** Assume we have an public array of length 3 and want to compute the sum of its values.
     Furthermore we have an secret array of length 4. Then the following program is not
     spec_ct_secure. *)
+
+Compute (spec_eval_engine <{{X := 3}}> (_!-> 0) (_!->[]) false []).
 
 Definition spec_ct_insecure_prog :=
   <{{ X := 0;
