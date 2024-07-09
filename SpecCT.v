@@ -1926,7 +1926,7 @@ Proof.
           by (rewrite <- Eqnbe; reflexivity).
         apply Ideal_If. rewrite Eqnbe.
         rewrite Eqnbe in H11. rewrite t_update_same in H11.
-        admit.
+        rewrite app_nil_r. apply H11.
       * max_exec_steps_auto.
       * rewrite t_update_eq. rewrite Eqnbe. assumption.
     + (* analog to true case *)
@@ -1934,7 +1934,8 @@ Proof.
       * replace (OBranch false) with (OBranch (beval st be)) 
           by (rewrite <- Eqnbe; reflexivity).
         apply Ideal_If. rewrite Eqnbe. rewrite Eqnbe in H11.
-        rewrite t_update_same in H11. admit.
+        rewrite t_update_same in H11. rewrite app_nil_r.
+        apply H11.
       * max_exec_steps_auto.
       * rewrite t_update_eq. rewrite Eqnbe. assumption.
   - (* speculative *)
@@ -1945,7 +1946,7 @@ Proof.
       apply Ideal_If_F. rewrite Eqnbe. apply IH in H11; try tauto.
       * rewrite t_update_eq in H11.
         apply ideal_unused_update in H11; try tauto.
-        admit.
+        rewrite app_nil_r. apply H11.
       * max_exec_steps_auto. 
     + (* analog to true case *)
       replace (OBranch false) with (OBranch (beval st be)) 
@@ -1953,28 +1954,27 @@ Proof.
       apply Ideal_If_F. rewrite Eqnbe. apply IH in H11; try tauto.
       * rewrite t_update_eq in H11.
         apply ideal_unused_update in H11; try tauto.
-        admit.
+        rewrite app_nil_r. apply H11.
       * max_exec_steps_auto. 
   - (* While *)
-    apply Ideal_While.
+    eapply Ideal_While.
     inversion H1; subst; clear H1.
     inversion H11; subst; clear H11; simpl in *.
     + (* non-speculative *)
-      admit.
-      (*
+      assert(Lnil: os2 = [] /\ ds2 = []).
+      { inversion H10; subst; eauto. }
+      destruct Lnil; subst; simpl.
       apply Ideal_If.
       destruct (beval st be) eqn:Eqnbe.
       * inversion H12; subst; clear H12.
         inversion H1; subst; clear H1.
         inversion H2; subst; clear H2; simpl in *.
-        assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
-          =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', (os3++os2)%list)> ).
-        { simpl. eapply Spec_Seq; eassumption. }
-        replace ((ds4 ++ ds0) ++ ds2)%list with (ds4 ++ ds0 ++ ds2)%list
-          by (rewrite app_assoc; reflexivity).
-        replace ((os4 ++ os3) ++ os2)%list with (os4 ++ os3 ++ os2)%list
-          by (rewrite app_assoc; reflexivity).
-        eapply Ideal_Seq.
+        assert(Hwhile: <(st'1, ast'1, b'1, ds2)> 
+          =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
+        { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
+          replace os2 with ([] ++ os2)%list by reflexivity.
+          eapply Spec_Seq; eassumption. }
+        do 2 rewrite app_nil_r. eapply Ideal_Seq.
         { rewrite Eqnbe in H13. rewrite t_update_same in H13.
           apply IH in H13; try tauto.
           - eassumption.
@@ -1987,9 +1987,11 @@ Proof.
       * inversion H12; subst; clear H12.
         inversion H10; subst; clear H10; simpl in *.
         rewrite Eqnbe. do 2 rewrite t_update_same.
-        apply Ideal_Skip. *)
+        apply Ideal_Skip.
     + (* speculative; analog to non_speculative *)
-      admit. (*
+      assert(Lnil: os2 = [] /\ ds2 = []).
+      { inversion H10; subst; eauto. }
+      destruct Lnil; subst; simpl.
       apply Ideal_If_F. 
       destruct (beval st be) eqn:Eqnbe.
       * inversion H12; subst; clear H12.
@@ -1999,14 +2001,12 @@ Proof.
       * inversion H12; subst; clear H12.
         inversion H1; subst; clear H1.
         inversion H2; subst; clear H2; simpl in *.
-        assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
-            =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', (os3++os2)%list)> ).
-        { simpl. eapply Spec_Seq; eassumption. }
-        replace ((ds4 ++ ds0) ++ ds2)%list with (ds4 ++ ds0 ++ ds2)%list
-          by (rewrite app_assoc; reflexivity).
-        replace ((os4 ++ os3) ++ os2)%list with (os4 ++ os3 ++ os2)%list
-          by (rewrite app_assoc; reflexivity).
-        eapply Ideal_Seq.
+        assert(Hwhile: <(st'1, ast'1, b'1, ds2)> 
+          =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
+        { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
+          replace os2 with ([] ++ os2)%list by reflexivity.
+          eapply Spec_Seq; eassumption. }
+        do 2 rewrite app_nil_r. eapply Ideal_Seq.
         { rewrite Eqnbe in H13.
           apply IH in H13; try tauto.
           - rewrite t_update_eq in H13.
@@ -2020,7 +2020,7 @@ Proof.
             + max_exec_steps_auto.  
           - max_exec_steps_auto.
           - apply sel_slh_flag in H13; try tauto.
-            rewrite Eqnbe. rewrite t_update_eq. reflexivity. } *)
+            rewrite Eqnbe. rewrite t_update_eq. reflexivity. }
   (* ARead *)
   - (* Spec_ARead; public *) 
     destruct (P x) eqn:Heq; try discriminate H.
@@ -2061,7 +2061,7 @@ Proof.
     rewrite t_update_same. apply Ideal_Write; tauto.
   - (* Spec_Write_U *) 
     rewrite t_update_same. apply Ideal_Write_U; tauto.
-Admitted.
+Qed.
 
 (** Finally, we use this to prove spec_ct_secure for sel_slh. *)
 
