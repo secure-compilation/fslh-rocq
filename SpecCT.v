@@ -2505,20 +2505,8 @@ Fixpoint spec_eval_engine_aux (fuel : nat) (c : com) : interpreter :=
   | O => fun _ => OST_OutOfFuel unit
   | S fuel => 
     match c with
-    | <{ skip }> => 
-        fetch_direction >>=
-        fun dop => 
-          match dop with 
-          | None => finish 
-          | _ => raise_error 
-          end
-    | <{ x := e }> =>
-        fetch_direction >>= 
-        fun dop => 
-          match dop with 
-          | None => eval_aexp e >>= fun v => set_var x v >> finish
-          | _ => raise_error
-          end
+    | <{ skip }> => finish 
+    | <{ x := e }> => eval_aexp e >>= fun v => set_var x v >> finish
     | <{ c1 ; c2 }> =>
         spec_eval_engine_aux fuel c1 >>
         spec_eval_engine_aux fuel c2
@@ -2590,12 +2578,60 @@ end.
 
 Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) 
       : option (state * astate * bool * obs) :=
-    match (spec_eval_engine_aux (max_exec_steps c ds) c) (st, ast, b, ds, []) with
+    match (spec_eval_engine_aux (2 * max_exec_steps c ds) c) (st, ast, b, ds, []) with
     | OST_Finished _ _ (st', ast', b', ds', os) =>
-        if eqb (length ds') 0 then Some (st', ast', b', os)
+        if ((length ds') =? 0)%nat then Some (st', ast', b', os)
         else None
     | _ => None
     end.
+
+(* HIDE *)
+
+(* Testing *)
+
+Definition st_test :state := (X!-> 1; _!-> 0).
+Definition ast_test :astate := (AP!->[1]; AS!-> [1;2]; _!-> []).
+
+Example test_interpreter_1 : (spec_eval_engine <{{skip}}> st_test ast_test false []) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+Example test_interpreter_2 : (spec_eval_engine <{{skip}}> st_test ast_test true []) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+
+Example test_interpreter_3 : (spec_eval_engine <{{Y := 2}}> st_test ast_test false []) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+Example test_interpreter_4 : (spec_eval_engine <{{Y := 2}}> st_test ast_test true []) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+
+Example test_interpreter_5 : (spec_eval_engine <{{Y := 2; Z := 3}}> st_test ast_test false []) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+Example test_interpreter_6 : (spec_eval_engine <{{Y := 2; Z := 3}}> st_test ast_test true []) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+
+Example test_interpreter_7 : (spec_eval_engine <{{if X <= 5 then skip else skip end}}> st_test ast_test false [DStep]) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+Example test_interpreter_8 : (spec_eval_engine <{{if X <= 5 then skip else skip end}}> st_test ast_test true [DForce]) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+
+Example test_interpreter_9 : (spec_eval_engine <{{while X <= 1 do X := X + 1 end}}> st_test ast_test false [DStep; DStep]) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+Example test_interpreter_10 : (spec_eval_engine <{{while X <= 1 do X := X + 1 end}}> st_test ast_test true [DStep; DStep]) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+Example test_interpreter_11 : (spec_eval_engine <{{while X <= 1 do X := X + 1 end}}> st_test ast_test false [DForce]) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+Example test_interpreter_12 : (spec_eval_engine <{{while X <= 1 do X := X + 1 end}}> st_test ast_test true [DForce]) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+
+Example test_interpreter_13 : (spec_eval_engine <{{ Y <- AP[[0]] }}> st_test ast_test false [DStep]) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+Example test_interpreter_14 : (spec_eval_engine <{{Y <- AP[[1]]}}> st_test ast_test true [DLoad AS 1]) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+
+Example test_interpreter_15 : (spec_eval_engine <{{AP[0] <- 1}}> st_test ast_test false [DStep]) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+Example test_interpreter_16 : (spec_eval_engine <{{AP[1] <- 1}}> st_test ast_test true [DStore AS 1]) <> None.
+Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
+
+(* /HIDE *)
 
 (** ** Soundness of the interpreter*)
 
@@ -2603,26 +2639,23 @@ Lemma spec_eval_engine_aux_sound : forall c st ast b ds os st' ast' b' ds' os' u
   spec_eval_engine_aux n c (st, ast, b, ds, os)
     = OST_Finished unit u (st', ast', b', ds', os') ->
   (exists dsn osn, 
-    (osn++os)%list = os' /\ (dsn++ds')%list = ds /\
+  (dsn++ds')%list = ds /\ (osn++os)%list = os' /\ 
       <(st, ast, b, dsn)> =[ c ]=> <(st', ast', b', osn)> ).
 Proof.
   induction c; intros st ast b ds os st' ast' b' ds' os' u n Haux;
   destruct n as [| n'] eqn:Eqnn; simpl in Haux; try discriminate Haux;
   unfold ">>", ">>=" in Haux; simpl in Haux.
   - (* Skip *)
-    destruct ds as [| d ds_tl] eqn:Eqnds; unfold ">>=" in Haux; simpl in Haux.
-    + inversion Haux; subst. exists []; exists []; split;[| split].
-      * reflexivity.
-      * reflexivity.
-      * apply Spec_Skip.
-    + discriminate Haux.
+    unfold finish in Haux. unfold ret in Haux. inversion Haux; subst.
+    exists []; exists []; split;[| split].
+    * reflexivity.
+    * reflexivity.
+    * apply Spec_Skip.
   - (* Asgn *) 
-    destruct ds as [| d ds_tl] eqn:Eqnds; unfold ">>=" in Haux; simpl in Haux.
-    + inversion Haux; subst. exists []; exists []; split;[| split].
+    inversion Haux; subst. exists []; exists []; split;[| split].
       * reflexivity.
       * reflexivity.
       * apply Spec_Asgn. reflexivity.
-    + discriminate Haux.
   - (* Seq *)  
     destruct (spec_eval_engine_aux n' c1 (st, ast, b, ds, os)) eqn:Hc1; 
     try discriminate; simpl in Haux.
@@ -2637,66 +2670,27 @@ Proof.
     + rewrite <- app_assoc. reflexivity.
     + rewrite <- app_assoc. reflexivity.
     + eapply Spec_Seq; eauto.
-  - (* If *) admit.
+  - (* If *) 
+    destruct ds as [| d ds_tl] eqn:Eqnds; simpl in Haux; try discriminate.
+    destruct d eqn:Eqnd; try discriminate; simpl in Haux.
+    + (* DStep *)
+      destruct (beval st be) eqn:Eqnbe.
+      * destruct (spec_eval_engine_aux n' c1 (st, ast, b, ds_tl, (os++[OBranch true])%list)) eqn:Hc1;
+        admit. (* why does it not proceed ??? *)
+      * destruct (spec_eval_engine_aux n' c2 (st, ast, b, ds_tl, (os++[OBranch false])%list)) eqn:Hc2;
+        admit. (* why does it not proceed ??? *)
+    + (* DForce *) admit. 
   - (* While *) admit.
+  - (* ARead *)
+    destruct ds as [| d ds_tl] eqn:Eqnds; simpl in Haux; try discriminate.
+    destruct d eqn:Eqnd; try discriminate; simpl in Haux.
+    + (* DStep *) admit.
+    + (* DForce *) admit. 
+  - (* AWrite *)
+    destruct ds as [| d ds_tl] eqn:Eqnds; simpl in Haux; try discriminate.
+    destruct d eqn:Eqnd; try discriminate; simpl in Haux.
+    + (* DStep *) admit.
+    + (* DForce *) admit.
 Admitted.
-
-
-
-(** ** More speculative constant-time examples *)
-
-(** A helper function to create the directions for the execution *)
-
-Fixpoint stepping_n_times (n :nat) :dirs :=
-  match n with
-  | 0 => []
-  | S n' => DStep :: stepping_n_times (n')
-  end .
-
-Fixpoint replace_direction (index :nat) (d :direction) (ds :dirs) :=
-  match ds with
-  | [] => []
-  | hd :: tl => match index with
-                | 0 => d :: tl
-                | S n => hd :: replace_direction n d tl
-                end
-  end.
-
-Fixpoint replace_dirs (replacements :list (nat * direction)) (ds :dirs) :=
-  match replacements with
-  | [] => ds
-  | (n, d) :: tl => replace_dirs tl (replace_direction n d ds)
-  end. 
-
-Definition create_dirs (speculations :list (nat * direction)) (step_count :nat):=
-  let 
-    steps := stepping_n_times step_count
-  in
-    replace_dirs speculations steps.   
-
-(** Assume we have an public array of length 3 and want to compute the sum of its values.
-    Furthermore we have an secret array of length 4. Then the following program is not
-    spec_ct_secure. *)
-
-Compute (spec_eval_engine <{{X := 3}}> (_!-> 0) (_!->[]) false []).
-
-Definition spec_ct_insecure_prog :=
-  <{{ X := 0;
-      Y := 0;
-      while Y <= 2 do
-        Z <- AP[[Y]]; 
-        X := X + Z;
-        Y := Y + 1
-      end;
-      if X <= 42 then W := 1 else W := 0 end  }}> .
-
-Compute(create_dirs ([(6, DForce); (7, DLoad AS 3)]) 10).
-
-Compute spec_eval_engine 
-  spec_ct_insecure_prog 
-  (_ !-> 0) 
-  (AP!-> [10;11;12]; AS!-> [39;40;41;42]; _!-> [] )
-  (false)
-  (create_dirs ([(6, DForce); (7, DLoad AS 3)]) 10).
 
 End SpecCTInterpreter.
