@@ -2720,6 +2720,20 @@ Proof.
     * admit. 
     * admit.
 Admitted.
+
+Theorem  spec_eval_engine_sound: forall c st ast b ds st' ast' b' os',
+  spec_eval_engine c st ast b ds = Some (st', ast', b', os') -> 
+  <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os')> .
+Proof.
+  intros c st ast b ds st' ast' b' os' Hengine.
+  unfold spec_eval_engine in Hengine.
+  destruct (spec_eval_engine_aux (2 * max_exec_steps c ds) c (st, ast, b, ds, [])) eqn:Eqnaux;
+  try discriminate. destruct p as [ [ [ [stt astt] bt] dst] ost].
+  destruct ((Datatypes.length dst =? 0)%nat) eqn:Eqnds; try discriminate.
+  apply spec_eval_engine_aux_sound in Eqnaux.
+  destruct Eqnaux as [dsn [osn [Hdsn [Hosn Heval] ] ] ].
+  inversion Hengine; subst. rewrite app_nil_r.
+  (* SOONER: use reflection to proof missing parts *)
 Admitted.
 
 End SpecCTInterpreter.
