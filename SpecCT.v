@@ -2487,7 +2487,7 @@ Definition raise_error : interpreter :=
 Definition observe (o : observation) : interpreter :=
   fun (pst : prog_st) => 
     let '(st, ast, b, ds, os) := pst in
-    OST_Finished unit tt (st, ast, b, ds, (os ++ [o])%list).
+    OST_Finished unit tt (st, ast, b, ds, (o :: os)%list).
     
 Definition fetch_direction : evaluator (option direction) :=
   fun (pst : prog_st) =>
@@ -2635,62 +2635,91 @@ Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
 
 (** ** Soundness of the interpreter*)
 
-Lemma spec_eval_engine_aux_sound : forall c st ast b ds os st' ast' b' ds' os' u n,
+(* SOONER: use reflection to proof missing parts *)
+
+Lemma spec_eval_engine_aux_sound : forall n c st ast b ds os st' ast' b' ds' os' u,
   spec_eval_engine_aux n c (st, ast, b, ds, os)
     = OST_Finished unit u (st', ast', b', ds', os') ->
   (exists dsn osn, 
   (dsn++ds')%list = ds /\ (osn++os)%list = os' /\ 
       <(st, ast, b, dsn)> =[ c ]=> <(st', ast', b', osn)> ).
 Proof.
-  induction c; intros st ast b ds os st' ast' b' ds' os' u n Haux;
-  destruct n as [| n'] eqn:Eqnn; simpl in Haux; try discriminate Haux;
-  unfold ">>", ">>=" in Haux; simpl in Haux.
+  induction n as [| n' IH]; intros c st ast b ds os st' ast' b' ds' os' u Haux; 
+  simpl in Haux; [discriminate |].
+  destruct c as [| X e | c1 c2 | be ct cf | be cw | X a ie | a ie e ] eqn:Eqnc;
+  unfold ">>=" in Haux; simpl in Haux.
   - (* Skip *)
-    unfold finish in Haux. unfold ret in Haux. inversion Haux; subst.
-    exists []; exists []; split;[| split].
-    * reflexivity.
-    * reflexivity.
-    * apply Spec_Skip.
-  - (* Asgn *) 
-    inversion Haux; subst. exists []; exists []; split;[| split].
-      * reflexivity.
-      * reflexivity.
-      * apply Spec_Asgn. reflexivity.
-  - (* Seq *)  
-    destruct (spec_eval_engine_aux n' c1 (st, ast, b, ds, os)) eqn:Hc1; 
+    inversion Haux; subst. 
+    exists []; exists []; split;[| split]; try reflexivity.
+    apply Spec_Skip.
+  - (* Asgn *)
+    simpl in Haux. inversion Haux; subst. 
+    exists []; exists []; split;[| split]; try reflexivity.
+    apply Spec_Asgn. reflexivity.
+  - destruct (spec_eval_engine_aux n' c1 (st, ast, b, ds, os)) eqn:Hc1; 
     try discriminate; simpl in Haux.
     destruct p as [ [ [ [stm astm] bm] dsm] osm]; simpl in Haux.
     destruct (spec_eval_engine_aux n' c2 (stm, astm, bm, dsm, osm)) eqn:Hc2;
     try discriminate; simpl in Haux.
     destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
-    apply IHc1 in Hc1. destruct Hc1 as [ds1 [ os1 [Hds1 [Hos1 Heval1] ] ] ].
-    apply IHc2 in Hc2. destruct Hc2 as [ds2 [ os2 [Hds2 [Hos2 Heval2] ] ] ].
+    apply IH in Hc1. destruct Hc1 as [ds1 [ os1 [Hds1 [Hos1 Heval1] ] ] ].
+    apply IH in Hc2. destruct Hc2 as [ds2 [ os2 [Hds2 [Hos2 Heval2] ] ] ].
     inversion Haux; subst. exists (ds1++ds2)%list; exists (os2++os1)%list; 
     split; [| split].
     + rewrite <- app_assoc. reflexivity.
     + rewrite <- app_assoc. reflexivity.
     + eapply Spec_Seq; eauto.
-  - (* If *) 
+  - (* IF *) 
     destruct ds as [| d ds_tl] eqn:Eqnds; simpl in Haux; try discriminate.
     destruct d eqn:Eqnd; try discriminate; simpl in Haux.
     + (* DStep *)
       destruct (beval st be) eqn:Eqnbe.
-      * destruct (spec_eval_engine_aux n' c1 (st, ast, b, ds_tl, (os++[OBranch true])%list)) eqn:Hc1;
-        admit. (* why does it not proceed ??? *)
-      * destruct (spec_eval_engine_aux n' c2 (st, ast, b, ds_tl, (os++[OBranch false])%list)) eqn:Hc2;
-        admit. (* why does it not proceed ??? *)
-    + (* DForce *) admit. 
-  - (* While *) admit.
+      { destruct (spec_eval_engine_aux n' ct (st, ast, b, ds_tl, OBranch true :: os)) eqn:Hct;
+        try discriminate.
+        - (* SOONER: why does it not proceed ??? *) try rewrite Hc1 in Haux. admit.
+        - admit.
+        - admit.  (* SOONER: why does it not proceed ??? *) }
+      { admit. } 
+    + (* DForce *) admit. (* SOONER: analog problem to DStep case *) 
+  - (* While *)
+    apply IH in Haux. destruct Haux as [dst [ ost [Hds [Hos Heval] ] ] ].
+    exists dst; exists ost; split; [| split]; eauto.
+    apply Spec_While. apply Heval.
   - (* ARead *)
     destruct ds as [| d ds_tl] eqn:Eqnds; simpl in Haux; try discriminate.
     destruct d eqn:Eqnd; try discriminate; simpl in Haux.
-    + (* DStep *) admit.
-    + (* DForce *) admit. 
+    + (* DStep *) 
+      destruct (aeval st ie <? Datatypes.length (ast a))%nat eqn:Eqnindex; try discriminate.
+      destruct (observe (OARead a (aeval st ie)) (st, ast, b, ds_tl, os)) eqn:Eqbobs; try discriminate;
+      simpl in Haux. inversion Haux; subst.
+      eexists [DStep]; eexists [OARead a (aeval st ie)]; split;[| split]; try reflexivity.
+      eapply Spec_ARead; eauto. admit. 
+    + (* DForce *) 
+      destruct (negb (aeval st ie <? Datatypes.length (ast a))%nat) eqn:Eqnindex1;
+      destruct ((i <? Datatypes.length (ast a0))%nat) eqn:Eqnindex2; 
+      destruct b eqn:Eqnb; try discriminate; simpl in Haux. inversion Haux; subst.
+      eexists [DLoad a0 i ]; eexists [OARead a (aeval st ie)]; split;[| split]; try reflexivity.
+      eapply Spec_ARead_U; eauto.
+      * admit.
+      * admit.
   - (* AWrite *)
-    destruct ds as [| d ds_tl] eqn:Eqnds; simpl in Haux; try discriminate.
-    destruct d eqn:Eqnd; try discriminate; simpl in Haux.
-    + (* DStep *) admit.
-    + (* DForce *) admit.
+  destruct ds as [| d ds_tl] eqn:Eqnds; simpl in Haux; try discriminate.
+  destruct d eqn:Eqnd; try discriminate; simpl in Haux.
+  + (* DStep *) 
+    destruct ((aeval st ie <? Datatypes.length (ast a))%nat) eqn:Eqnindex; try discriminate.
+    destruct (observe (OAWrite a (aeval st ie)) (st, ast, b, ds_tl, os)) eqn:Eqbobs; try discriminate;
+    simpl in Haux. inversion Haux; subst.
+    eexists [DStep]; eexists [OAWrite a (aeval st' ie)]; split;[| split]; try reflexivity.
+    eapply Spec_Write; eauto. admit.
+  + (* DForce *) 
+    destruct  (negb (aeval st ie <? Datatypes.length (ast a))%nat) eqn:Eqnindex1;
+    destruct (i <? Datatypes.length (ast a0))%nat eqn:Eqnindex2; 
+    destruct b eqn:Eqnb; try discriminate; simpl in Haux. inversion Haux; subst.
+    eexists [DStore a0 i]; eexists [OAWrite a (aeval st' ie)]; split;[| split]; try reflexivity.
+    eapply Spec_Write_U; eauto.
+    * admit. 
+    * admit.
+Admitted.
 Admitted.
 
 End SpecCTInterpreter.
