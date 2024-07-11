@@ -2743,7 +2743,7 @@ Proof.
       { discriminate. }
 Admitted.
 
-Theorem  spec_eval_engine_sound: forall c st ast b ds st' ast' b' os',
+Theorem spec_eval_engine_sound: forall c st ast b ds st' ast' b' os',
   spec_eval_engine c st ast b ds = Some (st', ast', b', os') -> 
   <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os')> .
 Proof.
@@ -2755,7 +2755,9 @@ Proof.
   apply spec_eval_engine_aux_sound in Eqnaux.
   destruct Eqnaux as [dsn [osn [Hdsn [Hosn Heval] ] ] ].
   inversion Hengine; subst. rewrite app_nil_r.
-  (* SOONER: use reflection to proof missing parts *)
+  destruct (eqb_reflect (length dst) 0) as [Heq | Hneq].
+  + apply length_zero_iff_nil in Heq. rewrite Heq. rewrite app_nil_r. apply Heval.
+  + discriminate.  
 Admitted.
 
 End SpecCTInterpreter.
