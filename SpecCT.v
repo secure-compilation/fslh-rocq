@@ -2635,7 +2635,17 @@ Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
 
 (** ** Soundness of the interpreter*)
 
-(* SOONER: use reflection to proof missing parts *)
+Lemma ltb_reflect : forall n m :nat, 
+  reflect (n < m) (n <? m)%nat.
+Proof.
+  intros n m. apply iff_reflect. rewrite ltb_lt. reflexivity.
+Qed.
+
+Lemma eqb_reflect: forall n m :nat,
+  reflect (n = m ) (n =? m)%nat.
+Proof.
+  intros n m. apply iff_reflect. rewrite eqb_eq. reflexivity.
+Qed.
 
 Lemma spec_eval_engine_aux_sound : forall n c st ast b ds os st' ast' b' ds' os' u,
   spec_eval_engine_aux n c (st, ast, b, ds, os)
@@ -2693,15 +2703,21 @@ Proof.
       destruct (observe (OARead a (aeval st ie)) (st, ast, b, ds_tl, os)) eqn:Eqbobs; try discriminate;
       simpl in Haux. inversion Haux; subst.
       eexists [DStep]; eexists [OARead a (aeval st ie)]; split;[| split]; try reflexivity.
-      eapply Spec_ARead; eauto. admit. 
+      eapply Spec_ARead; eauto. destruct (ltb_reflect (aeval st ie) (length (ast' a))) as [Hlt | Hgeq].
+      * apply Hlt.
+      * discriminate. 
     + (* DForce *) 
       destruct (negb (aeval st ie <? Datatypes.length (ast a))%nat) eqn:Eqnindex1;
       destruct ((i <? Datatypes.length (ast a0))%nat) eqn:Eqnindex2; 
       destruct b eqn:Eqnb; try discriminate; simpl in Haux. inversion Haux; subst.
       eexists [DLoad a0 i ]; eexists [OARead a (aeval st ie)]; split;[| split]; try reflexivity.
       eapply Spec_ARead_U; eauto.
-      * admit.
-      * admit.
+      * destruct (ltb_reflect (aeval st ie) (length (ast' a))) as [Hlt | Hgeq].
+        { discriminate. }
+        { apply not_lt in Hgeq. apply Hgeq. }
+      * destruct (ltb_reflect i (length (ast' a0))) as [Hlt | Hgeq]. 
+        { apply Hlt. }
+        { discriminate. }
   - (* AWrite *)
   destruct ds as [| d ds_tl] eqn:Eqnds; simpl in Haux; try discriminate.
   destruct d eqn:Eqnd; try discriminate; simpl in Haux.
@@ -2710,15 +2726,21 @@ Proof.
     destruct (observe (OAWrite a (aeval st ie)) (st, ast, b, ds_tl, os)) eqn:Eqbobs; try discriminate;
     simpl in Haux. inversion Haux; subst.
     eexists [DStep]; eexists [OAWrite a (aeval st' ie)]; split;[| split]; try reflexivity.
-    eapply Spec_Write; eauto. admit.
+    eapply Spec_Write; eauto. destruct (ltb_reflect (aeval st' ie) (length (ast a))) as [Hlt | Hgeq].
+    * apply Hlt.
+    * discriminate.
   + (* DForce *) 
     destruct  (negb (aeval st ie <? Datatypes.length (ast a))%nat) eqn:Eqnindex1;
     destruct (i <? Datatypes.length (ast a0))%nat eqn:Eqnindex2; 
     destruct b eqn:Eqnb; try discriminate; simpl in Haux. inversion Haux; subst.
     eexists [DStore a0 i]; eexists [OAWrite a (aeval st' ie)]; split;[| split]; try reflexivity.
     eapply Spec_Write_U; eauto.
-    * admit. 
-    * admit.
+    * destruct (ltb_reflect (aeval st' ie) (length (ast a))) as [Hlt | Hgeq].
+      { discriminate. }
+      {  apply not_lt in Hgeq. apply Hgeq. } 
+    * destruct (ltb_reflect i (length (ast a0))) as [Hlt | Hgeq].
+      { apply Hlt. }
+      { discriminate. }
 Admitted.
 
 Theorem  spec_eval_engine_sound: forall c st ast b ds st' ast' b' os',
