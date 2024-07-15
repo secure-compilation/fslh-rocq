@@ -1561,7 +1561,7 @@ Open Scope string_scope.
 (* Even something as simple as [sel_slh_flag] below turns out to be hard
    to prove by induction on [com] or [spec_eval], in the [While] or [Spec_While] case,
    since it has the flavour of backwards compiler correctness (BCC).
-   Therefore we use the induction principal [max_exec_steps_ind], which 
+   Therefore we use the induction principal [prog_size_ind], which 
    is statet further below. *)
 
 (* CH: Here are a couple of failed attempts at generalizing to while loops. *)
@@ -1634,53 +1634,53 @@ Abort.
 
 (** Proving this by induction on [com] or [spec_eval] leads to induction
     hypotheses, that are not strong enough to prove the [While] or [Spec_While]
-    case. Therefore we will prove it by induction on the maximum execution steps
-    ([max_exec_steps]) that a tupel [(c :com)] and [(ds :dirs)] can take. *)
+    case. Therefore we will prove it by induction on the program size
+    ([prog_size]) of a tupel [(c :com)] and [(ds :dirs)]. *)
 
 Fixpoint com_size (c :com) :nat :=
   match c with
   | <{{ c1; c2 }}> => 1 + (com_size c1) + (com_size c2)
   | <{{ if be then ct else cf end }}> => 1 + max (com_size ct) (com_size cf)
-  | <{{ while be do cw end }}> => 1 + (com_size cw)
+  | <{{ while be do cw end }}> => 3 + (com_size cw)
   | _  => 1
   end.
 
-Definition max_exec_steps (c :com) (ds :dirs) :nat := com_size c + length ds.
+Definition prog_size (c :com) (ds :dirs) :nat := com_size c + length ds.
 
-(** The induction prinicipal on [max_exec_steps] *)
+(** The induction prinicipal on [prog_size] *)
 
-Axiom max_exec_steps_ind : 
+Axiom prog_size_ind : 
   forall P : com -> dirs -> Prop,
   (forall c ds, 
     ( forall c' ds', 
-      max_exec_steps c' ds' < max_exec_steps c ds -> 
+      prog_size c' ds' < prog_size c ds -> 
       P c' ds') -> P c ds  ) -> 
   (forall c ds, P c ds).
 
 (** The proof of [sel_slh_flag] *)
 
-Lemma max_exec_steps_monotonic: forall c1 ds1 c2 ds2,
+Lemma prog_size_monotonic: forall c1 ds1 c2 ds2,
   (com_size c1 < com_size c2 /\ length ds1 <= length ds2 ) \/ 
   (com_size c1 <= com_size c2 /\ length ds1 < length ds2) ->
-  max_exec_steps c1 ds1 < max_exec_steps c2 ds2.
+  prog_size c1 ds1 < prog_size c2 ds2.
 Proof.
   intros c1 ds1 c2 ds2 [ [Hcom Hdir] | [Hcom Hdir] ]; 
-  unfold max_exec_steps; lia.
+  unfold prog_size; lia.
 Qed.
 
-(** Based on the Lemma [max_exec_steps_monotonic] we can build a tactic to solve 
-    the subgoals in the form of [max_exec_steps c' ds' < max_exec_steps c ds],
-    which will be produced by [max_exec_steps_ind].*)
+(** Based on the Lemma [prog_size_monotonic] we can build a tactic to solve 
+    the subgoals in the form of [prog_size c' ds' < prog_size c ds],
+    which will be produced by [prog_size_ind].*)
 
-Ltac max_exec_steps_auto :=
-  try ( apply max_exec_steps_monotonic; left; split; simpl;
+Ltac prog_size_auto :=
+  try ( apply prog_size_monotonic; left; split; simpl;
         [| repeat rewrite app_length]; lia );
-  try ( apply max_exec_steps_monotonic; right; split; simpl;
+  try ( apply prog_size_monotonic; right; split; simpl;
         [| repeat rewrite app_length]; lia);
-  try ( apply max_exec_steps_monotonic; left; split; simpl;
+  try ( apply prog_size_monotonic; left; split; simpl;
         [auto | repeat rewrite app_length; lia] ).
     
-(** To properly apply [max_exec_steps_ind], we need to state [sel_slh_flag]
+(** To properly apply [prog_size_ind], we need to state [sel_slh_flag]
     as a proposition of type [com -> dirs -> Prop]. Therefore we define the
     following: *)
 
@@ -1694,7 +1694,7 @@ Definition sel_slh_flag_prop (c :com) (ds :dirs) :Prop :=
 Lemma sel_slh_flag : forall c ds,
   sel_slh_flag_prop c ds.
 Proof.
-  eapply max_exec_steps_ind. unfold sel_slh_flag_prop.
+  eapply prog_size_ind. unfold sel_slh_flag_prop.
   intros c ds IH P st ast b st' ast' b' os Hunused Hstb Heval.
   destruct c; simpl in *; try (now inversion Heval; subst; eauto).
   - (* Asgn *)
@@ -1702,8 +1702,8 @@ Proof.
   - (* Seq *)
     inversion Heval; subst; clear Heval. 
     apply IH in H1; try tauto.
-    + apply IH in H10; try tauto. max_exec_steps_auto.
-    + max_exec_steps_auto.
+    + apply IH in H10; try tauto. prog_size_auto.
+    + prog_size_auto.
   - (* IF *)
     inversion Heval; subst; clear Heval.
     + (* Spec_If *)
@@ -1711,25 +1711,25 @@ Proof.
       * inversion H10; subst; clear H10.
         inversion H1; subst; clear H1.
         apply IH in H11; try tauto.
-        { max_exec_steps_auto. }
+        { prog_size_auto. }
         { rewrite t_update_eq. simpl. rewrite Eqnbe. assumption. }
       * (* analog to true case *)
         inversion H10; subst; clear H10.
         inversion H1; subst; clear H1.
         apply IH in H11; try tauto.
-        { max_exec_steps_auto. }
+        { prog_size_auto. }
         { rewrite t_update_eq. simpl. rewrite Eqnbe. assumption. }
     + (* Spec_If_F; analog to Spec_If case *)
       destruct (beval st be) eqn:Eqnbe.
       * inversion H10; subst; clear H10.
         inversion H1; subst; clear H1.
         apply IH in H11; try tauto.
-        { max_exec_steps_auto. }
+        { prog_size_auto. }
         { rewrite t_update_eq. simpl. rewrite Eqnbe. reflexivity. }
       * inversion H10; subst; clear H10.
         inversion H1; subst; clear H1.
         apply IH in H11; try tauto.
-        { max_exec_steps_auto. }
+        { prog_size_auto. }
         { rewrite t_update_eq. simpl. rewrite Eqnbe. reflexivity. } 
   - (* While *)
       inversion Heval; subst; clear Heval.
@@ -1742,12 +1742,12 @@ Proof.
               =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', (os2++os3)%list)> ).
           { simpl. eapply Spec_Seq; eassumption. }
           apply IH in Hwhile; eauto.
-          { max_exec_steps_auto. }
+          { prog_size_auto. }
           { clear Hwhile; clear H11.
             inversion H1; subst; clear H1.
             inversion H2; subst; clear H2. simpl in H12.
             apply IH in H12; try tauto.
-            - max_exec_steps_auto.
+            - prog_size_auto.
             - rewrite t_update_eq, Eqnbe; simpl. assumption. }
         * inversion H12; subst; clear H12.
           inversion H10; subst; simpl.
@@ -1762,12 +1762,12 @@ Proof.
               =[sel_slh P <{{while be do c end}}>]=> <(st', ast', b', (os2++os3)%list )>).
           { simpl. eapply Spec_Seq; eassumption. }
           apply IH in Hwhile; eauto.
-          { max_exec_steps_auto. }
+          { prog_size_auto. }
           { clear Hwhile; clear H11.
             inversion H1; subst; clear H1.
             inversion H2; subst; clear H2. simpl in H12.
             apply IH in H12; try tauto.
-            - max_exec_steps_auto.
+            - prog_size_auto.
             - rewrite t_update_eq, Eqnbe; simpl. reflexivity. }
   - (* ARead *)
     destruct (P x) eqn:Eqnbe.
@@ -1902,7 +1902,7 @@ Definition sel_slh_ideal_prop (c: com) (ds :dirs) :Prop :=
 Lemma sel_slh_ideal : forall c ds,
   sel_slh_ideal_prop c ds.
 Proof.
-  apply max_exec_steps_ind. unfold sel_slh_ideal_prop.
+  apply prog_size_ind. unfold sel_slh_ideal_prop.
   intros c ds IH P st ast b st' ast' b' os Hunused Hstb Heval.
   destruct c; simpl in *; inversion Heval; subst; clear Heval;
   try (destruct (P x); discriminate).
@@ -1916,11 +1916,11 @@ Proof.
     eapply Ideal_Seq.
     + apply IH in H1; try tauto.
       * eassumption.
-      * max_exec_steps_auto.
+      * prog_size_auto.
     + apply sel_slh_flag in H1 as Hstb'0; try tauto.
       apply IH in H10; try tauto.
       * eapply ideal_unused_update_rev; try tauto.
-      * max_exec_steps_auto.
+      * prog_size_auto.
   (* IF *)
   - (* non-speculative *) 
     destruct (beval st be) eqn:Eqnbe; inversion H10; 
@@ -1931,7 +1931,7 @@ Proof.
         apply Ideal_If. rewrite Eqnbe.
         rewrite Eqnbe in H11. rewrite t_update_same in H11.
         rewrite app_nil_r. apply H11.
-      * max_exec_steps_auto.
+      * prog_size_auto.
       * rewrite t_update_eq. rewrite Eqnbe. assumption.
     + (* analog to true case *)
       apply IH in H11; try tauto.
@@ -1940,7 +1940,7 @@ Proof.
         apply Ideal_If. rewrite Eqnbe. rewrite Eqnbe in H11.
         rewrite t_update_same in H11. rewrite app_nil_r.
         apply H11.
-      * max_exec_steps_auto.
+      * prog_size_auto.
       * rewrite t_update_eq. rewrite Eqnbe. assumption.
   - (* speculative *)
     destruct (beval st be) eqn:Eqnbe; inversion H10; inversion H1;
@@ -1951,7 +1951,7 @@ Proof.
       * rewrite t_update_eq in H11.
         apply ideal_unused_update in H11; try tauto.
         rewrite app_nil_r. apply H11.
-      * max_exec_steps_auto. 
+      * prog_size_auto. 
     + (* analog to true case *)
       replace (OBranch false) with (OBranch (beval st be)) 
         by (rewrite <- Eqnbe; reflexivity).
@@ -1959,7 +1959,7 @@ Proof.
       * rewrite t_update_eq in H11.
         apply ideal_unused_update in H11; try tauto.
         rewrite app_nil_r. apply H11.
-      * max_exec_steps_auto. 
+      * prog_size_auto. 
   - (* While *)
     eapply Ideal_While.
     inversion H1; subst; clear H1.
@@ -1982,10 +1982,10 @@ Proof.
         { rewrite Eqnbe in H13. rewrite t_update_same in H13.
           apply IH in H13; try tauto.
           - eassumption.
-          - max_exec_steps_auto. }
+          - prog_size_auto. }
         { apply IH in Hwhile; auto.
           - eapply ideal_unused_update_rev; eauto.
-          - max_exec_steps_auto.
+          - prog_size_auto.
           - apply sel_slh_flag in H13; try tauto.
             rewrite t_update_eq. rewrite Eqnbe. assumption. }
       * inversion H12; subst; clear H12.
@@ -2016,13 +2016,13 @@ Proof.
           - rewrite t_update_eq in H13.
             apply ideal_unused_update in H13; [| tauto].
             eassumption. 
-          - max_exec_steps_auto. }
+          - prog_size_auto. }
         { apply IH in Hwhile; auto.
           - rewrite Eqnbe in H13.
             apply IH in H13; try tauto.
             + apply ideal_unused_update_rev; eauto.
-            + max_exec_steps_auto.  
-          - max_exec_steps_auto.
+            + prog_size_auto.  
+          - prog_size_auto.
           - apply sel_slh_flag in H13; try tauto.
             rewrite Eqnbe. rewrite t_update_eq. reflexivity. }
   (* ARead *)
@@ -2571,9 +2571,15 @@ end.
 (*         let '(ds', k) := spec_eval_engine_aux ds c1 in *)
 (*         k >> spec_eval_engine_aux ds' c2 *)
 
+Definition compute_fuel (c :com) (ds :dirs) :=
+  match ds with
+  | [] => com_size c
+  | _ => length ds * com_size c
+  end.
+
 Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) 
       : option (state * astate * bool * obs) :=
-    match (spec_eval_engine_aux (2 * max_exec_steps c ds) c) (st, ast, b, ds, []) with
+    match spec_eval_engine_aux (compute_fuel c ds) c (st, ast, b, ds, []) with
     | OST_Finished _ _ (st', ast', b', ds', os) =>
         if ((length ds') =? 0)%nat then Some (st', ast', b', os)
         else None
@@ -2661,10 +2667,10 @@ Proof.
     simpl in Haux. inversion Haux; subst. 
     exists []; exists []; split;[| split]; try reflexivity.
     apply Spec_Asgn. reflexivity.
-  - destruct (spec_eval_engine_aux n' c1 (st, ast, b, ds, os)) eqn:Hc1; 
+  - destruct (spec_eval_engine_aux _ c1 _) eqn:Hc1; 
     try discriminate; simpl in Haux.
     destruct p as [ [ [ [stm astm] bm] dsm] osm]; simpl in Haux.
-    destruct (spec_eval_engine_aux n' c2 (stm, astm, bm, dsm, osm)) eqn:Hc2;
+    destruct (spec_eval_engine_aux _ c2 _) eqn:Hc2;
     try discriminate; simpl in Haux.
     destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
     apply IH in Hc1. destruct Hc1 as [ds1 [ os1 [Hds1 [Hos1 Heval1] ] ] ].
@@ -2679,7 +2685,7 @@ Proof.
     destruct d eqn:Eqnd; try discriminate; simpl in Haux.
     + (* DStep *)
       destruct (beval st be) eqn:Eqnbe.
-      * destruct (spec_eval_engine_aux _ _ _ ) eqn:Hct; try discriminate; simpl in Haux.
+      * destruct (spec_eval_engine_aux _ ct _ ) eqn:Hct; try discriminate; simpl in Haux.
         destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
         inversion Haux; subst. apply IH in Hct.
         destruct Hct as [dst [ ost [Hds [Hos Heval] ] ] ].
@@ -2687,25 +2693,25 @@ Proof.
         { simpl. rewrite Hds. reflexivity. }
         { rewrite <- app_assoc. simpl. rewrite Hos. reflexivity. }
         { rewrite <- Eqnbe. apply Spec_If. rewrite Eqnbe. apply Heval. }
-      * destruct (spec_eval_engine_aux _ _ _ ) eqn:Hct; try discriminate; simpl in Haux.
+      * destruct (spec_eval_engine_aux _ cf _ ) eqn:Hcf; try discriminate; simpl in Haux.
         destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
-        inversion Haux; subst. apply IH in Hct.
-        destruct Hct as [dst [ ost [Hds [Hos Heval] ] ] ].
+        inversion Haux; subst. apply IH in Hcf.
+        destruct Hcf as [dst [ ost [Hds [Hos Heval] ] ] ].
         exists (DStep :: dst); exists (ost++[OBranch false])%list; split;[| split].
         { simpl. rewrite Hds. reflexivity. }
         { rewrite <- app_assoc. simpl. rewrite Hos. reflexivity. }
         { rewrite <- Eqnbe. apply Spec_If. rewrite Eqnbe. apply Heval. }
     + (* DForce *)
       destruct (beval st be) eqn:Eqnbe.
-      * destruct (spec_eval_engine_aux _ _ _ ) eqn:Hct; try discriminate; simpl in Haux.
+      * destruct (spec_eval_engine_aux _ cf _ ) eqn:Hcf; try discriminate; simpl in Haux.
         destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
-        inversion Haux; subst. apply IH in Hct.
-        destruct Hct as [dst [ ost [Hds [Hos Heval] ] ] ].
+        inversion Haux; subst. apply IH in Hcf.
+        destruct Hcf as [dst [ ost [Hds [Hos Heval] ] ] ].
         exists (DForce :: dst); exists (ost++[OBranch true])%list; split;[| split].
         { simpl. rewrite Hds. reflexivity. }
         { rewrite <- app_assoc. simpl. rewrite Hos. reflexivity. }
         { rewrite <- Eqnbe. apply Spec_If_F. rewrite Eqnbe. apply Heval. }
-      * destruct (spec_eval_engine_aux _ _ _ ) eqn:Hct; try discriminate; simpl in Haux.
+      * destruct (spec_eval_engine_aux _ ct _ ) eqn:Hct; try discriminate; simpl in Haux.
         destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
         inversion Haux; subst. apply IH in Hct.
         destruct Hct as [dst [ ost [Hds [Hos Heval] ] ] ].
@@ -2771,7 +2777,7 @@ Theorem spec_eval_engine_sound: forall c st ast b ds st' ast' b' os',
 Proof.
   intros c st ast b ds st' ast' b' os' Hengine.
   unfold spec_eval_engine in Hengine.
-  destruct (spec_eval_engine_aux (2 * max_exec_steps c ds) c (st, ast, b, ds, [])) eqn:Eqnaux;
+  destruct (spec_eval_engine_aux (2 * prog_size c ds) c (st, ast, b, ds, [])) eqn:Eqnaux;
   try discriminate. destruct p as [ [ [ [stt astt] bt] dst] ost].
   destruct ((Datatypes.length dst =? 0)%nat) eqn:Eqnds; try discriminate.
   apply spec_eval_engine_aux_sound in Eqnaux.
@@ -2781,5 +2787,6 @@ Proof.
   + apply length_zero_iff_nil in Heq. rewrite Heq. rewrite app_nil_r. apply Heval.
   + discriminate.  
 Qed.
+
 
 End SpecCTInterpreter.
