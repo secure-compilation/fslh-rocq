@@ -2479,10 +2479,10 @@ Definition eval_aexp (a : aexp) : evaluator nat :=
     let v := aeval st a in
     ret v pst.
 
-Definition eval_bexp (b : bexp) : evaluator bool :=
+Definition eval_bexp (be : bexp) : evaluator bool :=
   fun (pst : prog_st) =>
     let '(st, _, _, _, _) := pst in
-    let v := beval st b in
+    let v := beval st be in
     ret v pst.
 
 Definition raise_error : interpreter :=
@@ -2510,61 +2510,52 @@ Fixpoint spec_eval_engine_aux (fuel : nat) (c : com) : interpreter :=
   | S fuel => 
     match c with
     | <{ skip }> => finish 
-    | <{ x := e }> => eval_aexp e >>= fun v => set_var x v >> finish
+    | <{ x := e }> => eval_aexp e >>= fun v => set_var x v
     | <{ c1 ; c2 }> =>
         spec_eval_engine_aux fuel c1 >>
         spec_eval_engine_aux fuel c2
-    | <{ if b then ct else cf end }> =>
-        fetch_direction >>= 
+    | <{ if be then ct else cf end }> =>
+        eval_bexp be >>= fun bool_value => observe (OBranch bool_value) >> fetch_direction >>= 
         fun dop => 
           match dop with
-          | Some DStep =>
-              eval_bexp b >>= 
-              fun condition => 
-                let next_c := if condition then ct else cf in
-                observe (OBranch condition) >> spec_eval_engine_aux fuel next_c
-          | Some DForce =>
-              eval_bexp b >>= 
-              fun condition =>
-                let next_c := if condition then cf else ct in
-                start_speculating >> observe (OBranch condition) >> 
-                spec_eval_engine_aux fuel next_c
+          | Some DStep => 
+              if bool_value then spec_eval_engine_aux fuel ct 
+              else spec_eval_engine_aux fuel cf 
+          | Some DForce => 
+              start_speculating >>
+              if bool_value then spec_eval_engine_aux fuel cf
+              else spec_eval_engine_aux fuel ct
           | _ => raise_error
           end
     | <{ while be do c end }> =>
         spec_eval_engine_aux fuel <{if be then c; while be do c end else skip end}>
     | <{ x <- a[[ie]] }> =>
-        eval_aexp ie >>= fun i => get_arr a >>= fun l => is_speculating >>=
-        fun b => fetch_direction >>= 
+        eval_aexp ie >>= fun i => observe (OARead a i) >> get_arr a >>= 
+        fun arr_a => is_speculating >>= fun b => fetch_direction >>= 
         fun dop =>
           match dop with
           | Some DStep =>
-              if (i <? List.length l)%nat then
-                observe (OARead a i) >> set_var x (nth i l 0)
+              if (i <? List.length arr_a)%nat then set_var x (nth i arr_a 0)
               else raise_error
           | Some (DLoad a' i') =>
-              get_arr a' >>=
-              fun l' =>
-                if negb (i <? List.length l)%nat && (i' <? List.length l')%nat && b then
-                  observe (OARead a i) >>= fun _ => set_var x (nth i' l' 0) >>=
-                  fun _ => finish
+              get_arr a' >>= fun arr_a' => 
+                if negb (i <? List.length arr_a)%nat && (i' <? List.length arr_a')%nat && b then
+                  set_var x (nth i' arr_a' 0)
                 else raise_error
           | _ => raise_error
           end
     | <{ a[ie] <- e }> =>
-        eval_aexp e >>= fun n => eval_aexp ie >>= fun i => get_arr a >>= 
-        fun l => is_speculating >>= fun b => fetch_direction >>=
+        eval_aexp ie >>= fun i => observe (OAWrite a i) >> get_arr a >>=   
+        fun arr_a => eval_aexp e >>= fun n => is_speculating >>= fun b => fetch_direction >>=
         fun dop =>
           match dop with
           | Some DStep => 
-              if (i <? List.length l)%nat then
-                observe (OAWrite a i) >>= fun _ => set_arr a (upd i l n)
+              if (i <? List.length arr_a)%nat then set_arr a (upd i arr_a n)
               else raise_error
           | Some (DStore a' i') =>
-              get_arr a' >>=
-              fun l' => 
-                if negb (i <? List.length l)%nat && (i' <? List.length l')%nat && b then
-                  observe (OAWrite a i) >> set_arr a' (upd i' l' n)
+              get_arr a' >>= fun arr_a' => 
+                if negb (i <? List.length arr_a)%nat && (i' <? List.length arr_a')%nat && b then
+                  set_arr a' (upd i' arr_a' n)
                 else raise_error
           | _ => raise_error
           end
@@ -2688,13 +2679,40 @@ Proof.
     destruct d eqn:Eqnd; try discriminate; simpl in Haux.
     + (* DStep *)
       destruct (beval st be) eqn:Eqnbe.
-      { destruct (spec_eval_engine_aux n' ct (st, ast, b, ds_tl, OBranch true :: os)) eqn:Hct;
-        try discriminate.
-        - (* SOONER: why does it not proceed ??? *) try rewrite Hc1 in Haux. admit.
-        - admit.
-        - admit.  (* SOONER: why does it not proceed ??? *) }
-      { admit. } 
-    + (* DForce *) admit. (* SOONER: analog problem to DStep case *) 
+      * destruct (spec_eval_engine_aux _ _ _ ) eqn:Hct; try discriminate; simpl in Haux.
+        destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
+        inversion Haux; subst. apply IH in Hct.
+        destruct Hct as [dst [ ost [Hds [Hos Heval] ] ] ].
+        exists (DStep :: dst); exists (ost++[OBranch true])%list; split;[| split].
+        { simpl. rewrite Hds. reflexivity. }
+        { rewrite <- app_assoc. simpl. rewrite Hos. reflexivity. }
+        { rewrite <- Eqnbe. apply Spec_If. rewrite Eqnbe. apply Heval. }
+      * destruct (spec_eval_engine_aux _ _ _ ) eqn:Hct; try discriminate; simpl in Haux.
+        destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
+        inversion Haux; subst. apply IH in Hct.
+        destruct Hct as [dst [ ost [Hds [Hos Heval] ] ] ].
+        exists (DStep :: dst); exists (ost++[OBranch false])%list; split;[| split].
+        { simpl. rewrite Hds. reflexivity. }
+        { rewrite <- app_assoc. simpl. rewrite Hos. reflexivity. }
+        { rewrite <- Eqnbe. apply Spec_If. rewrite Eqnbe. apply Heval. }
+    + (* DForce *)
+      destruct (beval st be) eqn:Eqnbe.
+      * destruct (spec_eval_engine_aux _ _ _ ) eqn:Hct; try discriminate; simpl in Haux.
+        destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
+        inversion Haux; subst. apply IH in Hct.
+        destruct Hct as [dst [ ost [Hds [Hos Heval] ] ] ].
+        exists (DForce :: dst); exists (ost++[OBranch true])%list; split;[| split].
+        { simpl. rewrite Hds. reflexivity. }
+        { rewrite <- app_assoc. simpl. rewrite Hos. reflexivity. }
+        { rewrite <- Eqnbe. apply Spec_If_F. rewrite Eqnbe. apply Heval. }
+      * destruct (spec_eval_engine_aux _ _ _ ) eqn:Hct; try discriminate; simpl in Haux.
+        destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
+        inversion Haux; subst. apply IH in Hct.
+        destruct Hct as [dst [ ost [Hds [Hos Heval] ] ] ].
+        exists (DForce :: dst); exists (ost++[OBranch false])%list; split;[| split].
+        { simpl. rewrite Hds. reflexivity. }
+        { rewrite <- app_assoc. simpl. rewrite Hos. reflexivity. }
+        { rewrite <- Eqnbe. apply Spec_If_F. rewrite Eqnbe. apply Heval. }
   - (* While *)
     apply IH in Haux. destruct Haux as [dst [ ost [Hds [Hos Heval] ] ] ].
     exists dst; exists ost; split; [| split]; eauto.
@@ -2745,7 +2763,7 @@ Proof.
     * destruct (ltb_reflect i (length (ast a0))) as [Hlt | Hgeq].
       { apply Hlt. }
       { discriminate. }
-Admitted.
+Qed.
 
 Theorem spec_eval_engine_sound: forall c st ast b ds st' ast' b' os',
   spec_eval_engine c st ast b ds = Some (st', ast', b', os') -> 
@@ -2762,6 +2780,6 @@ Proof.
   destruct (eqb_reflect (length dst) 0) as [Heq | Hneq].
   + apply length_zero_iff_nil in Heq. rewrite Heq. rewrite app_nil_r. apply Heval.
   + discriminate.  
-Admitted.
+Qed.
 
 End SpecCTInterpreter.
