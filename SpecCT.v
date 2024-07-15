@@ -274,12 +274,12 @@ Definition obs := list observation.
                   beval st b = true
                   <(st, ast)> =[ c1 ]=> <(st', ast', os1)>
   ---------------------------------------------------------------------------   (* CTE_IfTrue *)
-  <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', OBranch true::os1)>
+  <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', os1 ++ [OBranch true])>
 
                   beval st b = false
                   <(st, ast)> =[ c2 ]=> <(st', ast', os1)>
   ----------------------------------------------------------------------------    (* CTE_IfFalse *)
-  <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', OBranch false::os1)>
+  <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', os1 ++ [OBranch false])>
 
   <(st,ast)> =[ if b then c; while b do c end else skip end ]=> <(st', ast', os)>
   -------------------------------------------------------------------------------   (* CTE_While *)
@@ -319,11 +319,11 @@ Inductive cteval : com -> state -> astate -> state -> astate -> obs -> Prop :=
   | CTE_IfTrue : forall st ast st' ast' b c1 c2 os1,
       beval st b = true ->
       <(st, ast)> =[ c1 ]=> <(st', ast', os1)> ->
-      <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', OBranch true::os1)>
+      <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', os1 ++ [OBranch true])>
   | CTE_IfFalse : forall st ast st' ast' b c1 c2 os1,
       beval st b = false ->
       <(st, ast)> =[ c2 ]=> <(st', ast', os1)> ->
-      <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', OBranch false::os1)>
+      <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', os1 ++ [OBranch false])>
   | CTE_While : forall b st ast st' ast' os c,
       <(st,ast)> =[ if b then c; while b do c end else skip end ]=>
         <(st', ast', os)> -> (* <^- Nice trick; from small-step semantics *)
@@ -749,13 +749,13 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
                        | true => c1
                        | false => c2 end ]=> <(st', ast', b', os1)> ->
       <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', OBranch (beval st be)::os1)>
+        <(st', ast', b', os1 ++ [OBranch (beval st be)])>
   | Spec_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
       <(st, ast, true, ds)> =[ match beval st be with
                        | true => c2 (* <-- branches swapped *)
                        | false => c1 end ]=> <(st', ast', b', os1)> ->
       <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', OBranch (beval st be)::os1)>
+        <(st', ast', b', os1 ++ [OBranch (beval st be)])>
   | Spec_While : forall be st ast b ds st' ast' b' os c,
       <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
@@ -868,20 +868,22 @@ Proof.
     remember (AP!-> [1]; AS!-> [1;3]; _ !-> []) as ast1.
     remember (AP!-> [1]; AS!-> [1;7]; _ !-> []) as ast2.
     remember (DForce :: ([DLoad "AS" 1] ++ [DStep])) as ds.
-    remember ((OBranch false) :: ([OBranch true] ++ [OARead "AP" 1])) as os1.
-    remember ((OBranch false) :: ([OBranch false] ++ [OARead "AP" 1])) as os2.
+    remember (([OBranch true] ++ [OARead "AP" 1]) ++ [OBranch false]) as os1.
+    remember (([OBranch false] ++ [OARead "AP" 1])++ [OBranch false]) as os2.
     assert (Heval1: 
     <(st, ast1, false, ds )> =[ spec_insecure_prog ]=> <( Y!-> 1; X!-> 3; st, ast1, true, os1)>).
     { unfold spec_insecure_prog; subst.
       eapply Spec_If_F. eapply Spec_Seq.
       - eapply Spec_ARead_U; simpl; eauto.
-      - eapply Spec_If; simpl. eapply Spec_Asgn; eauto. }
+      - replace ([OBranch true]) with ([] ++ [OBranch true]) by reflexivity.
+        eapply Spec_If; simpl. eapply Spec_Asgn; eauto. }
     assert (Heval2: 
       <(st, ast2, false, ds )> =[ spec_insecure_prog ]=> <( Y!-> 0; X!-> 7; st, ast2, true, os2)>).
       { unfold spec_insecure_prog; subst.
         eapply Spec_If_F. eapply Spec_Seq.
         - eapply Spec_ARead_U; simpl; eauto.
-        - eapply Spec_If; simpl. eapply Spec_Asgn; eauto. }
+        - replace ([OBranch false]) with ([] ++ [OBranch false]) by reflexivity.
+          eapply Spec_If; simpl. eapply Spec_Asgn; eauto. }
     subst. eapply H in Heval1.
     + eapply Heval1 in Heval2. inversion Heval2.
     + eapply pub_equiv_refl.
@@ -1090,13 +1092,13 @@ Inductive ideal_eval (P:pub_vars) :
                                  | true => c1
                                  | false => c2 end ]=> <(st', ast', b', os1)> ->
       P |- <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', OBranch (beval st be)::os1)>
+        <(st', ast', b', os1++[OBranch (beval st be)])>
   | Ideal_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
       P |- <(st, ast, true, ds)> =[ match beval st be with
                                     | true => c2 (* <-- branches swapped *)
                                     | false => c1 end ]=> <(st', ast', b', os1)> ->
       P |- <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', OBranch (beval st be)::os1)>
+        <(st', ast', b', os1++[OBranch (beval st be)])>
   | Ideal_While : forall be st ast b ds st' ast' b' os c,
       P |- <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
@@ -1496,14 +1498,16 @@ Proof.
     erewrite IHHeval1_2; [erewrite IHHeval1_1 | | | |];
       try reflexivity; try eassumption.
   - (* If *) f_equal.
-    + f_equal. eapply noninterferent_bexp; eassumption.
     + eapply IHHeval1; try eassumption; try (destruct (beval st be); eassumption).
       erewrite noninterferent_bexp; eassumption.
+    + f_equal. eapply noninterferent_bexp in Heq; [| eassumption].
+      rewrite Heq. reflexivity.
   - (*If_F *) f_equal.
-    + f_equal. eapply noninterferent_bexp; eassumption.
     + eapply IHHeval1; try eassumption; try (destruct (beval st be); eassumption).
       * intro contra. discriminate contra.
       * erewrite noninterferent_bexp; eassumption.
+    + f_equal. eapply noninterferent_bexp in Heq; [| eassumption].
+      rewrite Heq. reflexivity.
   - eapply IHHeval1; eauto. repeat constructor; eassumption.
   - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
   - (* ARead_U *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
@@ -2192,9 +2196,9 @@ Proof.
         destruct L; subst.
         replace (DStep::ds1++[])%list with ((DStep::ds1)++[])%list
           by (rewrite app_comm_cons; reflexivity).
-        replace (OBranch(beval ("b" !-> (if b then 1 else 0); st) be)::[]++os0)%list 
-          with ([]++(OBranch(beval ("b" !-> (if b then 1 else 0); st) be)::os0))%list
-            by (rewrite app_comm_cons; reflexivity).
+        replace (([] ++ os0) ++ [OBranch (beval ("b" !-> (if b then 1 else 0); st) be)])%list
+          with ([] ++ (os0 ++ [OBranch (beval ("b" !-> (if b then 1 else 0); st) be)]))%list
+            by (rewrite <- app_assoc; reflexivity).        
         eapply Spec_Seq; [| eassumption].
         apply Spec_While. eapply Spec_If.
         rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
@@ -2225,9 +2229,9 @@ Proof.
         destruct L; subst.
         replace (DForce::ds1++[])%list with ((DForce::ds1)++[])%list
           by (rewrite app_comm_cons; reflexivity).
-        replace (OBranch(beval ("b" !-> (if b then 1 else 0); st) be)::[]++os0)%list 
-          with ([]++(OBranch(beval ("b" !-> (if b then 1 else 0); st) be)::os0))%list
-            by (rewrite app_comm_cons; reflexivity).
+        replace (([] ++ os0) ++ [OBranch (beval ("b" !-> (if b then 1 else 0); st) be)])%list
+          with ([] ++ (os0 ++ [OBranch (beval ("b" !-> (if b then 1 else 0); st) be)]))%list
+            by (rewrite app_assoc; reflexivity).
         eapply Spec_Seq; [| eassumption].
         apply Spec_While. eapply Spec_If_F.
         rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
