@@ -853,7 +853,7 @@ Definition spec_insecure_prog :=
         if X <= 5 then Y := 1 else Y := 0 end
       else skip end }}> .
 
-Example spec_insecure_prog_is_ct_and_spec_unsecure :
+Example spec_insecure_prog_is_ct_and_spec_insecure :
  exists P PA,
   P ;; PA |-ct- spec_insecure_prog /\ ~ (spec_ct_secure P PA spec_insecure_prog) .
 Proof.
@@ -2785,8 +2785,55 @@ Proof.
   inversion Hengine; subst. rewrite app_nil_r.
   destruct (eqb_reflect (length dst) 0) as [Heq | Hneq].
   + apply length_zero_iff_nil in Heq. rewrite Heq. rewrite app_nil_r. apply Heval.
-  + discriminate.  
+  + discriminate.
 Qed.
 
+Definition spec_insecure_prog_2 :=
+  <{{ X := 0;
+      Y := 0;
+      while Y <= 2 do
+        Z <- AP[[Y]]; 
+        X := X + Z;
+        Y := Y + 1
+      end;
+      if X <= 42 then W := 1 else W := 0 end  }}> .
+
+Example spec_insecure_prog_2_is_ct_and_spec_insecure :
+  exists P PA,
+    P ;; PA |-ct- spec_insecure_prog_2 /\ ~ (spec_ct_secure P PA spec_insecure_prog_2) .
+Proof.
+  exists (X!-> public; Y!-> public; Z!-> public; _ !-> secret).
+  exists  (AP!-> public; AS!-> secret; _ !-> public).
+  split; unfold spec_insecure_prog.
+  - repeat econstructor;
+    replace (public) with (join public public) at 4 by reflexivity;
+    repeat constructor.
+  - remember (_ !-> 0) as st.
+    remember (AP!-> [1;2;3]; AS!-> [40;41;42;43]; _ !-> []) as ast1.
+    remember (AP!-> [1;2;3]; AS!-> [4;5;6;7]; _ !-> []) as ast2.
+    remember ([DStep; DStep; DStep; DStep; DStep; DStep; DForce; DLoad AS 3; DStep; DStep]) as ds.
+    intros Hsecure.
+    assert (L: exists stt1 astt1 bt1 os1 stt2 astt2 bt2 os2,
+      <(st, ast1, false, ds )> =[ spec_insecure_prog_2 ]=> <( stt1, astt1, bt1, os1)> /\
+      <(st, ast2, false, ds )> =[ spec_insecure_prog_2 ]=> <( stt2, astt2, bt2, os2)> /\
+      os1 <> os2 ).
+    { eexists; eexists; eexists; eexists; eexists; eexists; eexists; eexists.
+      split; [| split].
+      - apply spec_eval_engine_sound. unfold spec_insecure_prog_2, spec_eval_engine;
+        subst; simpl; reflexivity.
+      - apply spec_eval_engine_sound. unfold spec_insecure_prog_2, spec_eval_engine;
+        subst; simpl; reflexivity.
+      - intros Contra; inversion Contra. }
+    destruct L as [stt1 [astt1 [bt1 [os1 [stt2 [astt2 [bt2 [os2 [Heval1 [Heval2 Hneq] ] ] ] ] ] ] ] ] ].
+    eapply Hsecure in Heval1; eauto.
+    + apply pub_equiv_refl.
+    + intros x Hx. destruct (String.eqb_spec "AP" x) as [HeqAP | HneqAP];
+      destruct (String.eqb_spec "AS" x) as [HeqAS | HneqAS].
+      * subst. do 2 rewrite t_update_eq. reflexivity.
+      * subst. do 2 rewrite t_update_eq. reflexivity.
+      * subst. rewrite t_update_neq in Hx; [| assumption]. 
+        rewrite t_update_eq in Hx. discriminate.
+      * subst. do 4 (rewrite t_update_neq; [| assumption]). reflexivity.
+Qed.
 
 End SpecCTInterpreter.
