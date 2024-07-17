@@ -2777,7 +2777,7 @@ Theorem spec_eval_engine_sound: forall c st ast b ds st' ast' b' os',
 Proof.
   intros c st ast b ds st' ast' b' os' Hengine.
   unfold spec_eval_engine in Hengine.
-  destruct (spec_eval_engine_aux (2 * prog_size c ds) c (st, ast, b, ds, [])) eqn:Eqnaux;
+  destruct (spec_eval_engine_aux _ c _) eqn:Eqnaux;
   try discriminate. destruct p as [ [ [ [stt astt] bt] dst] ost].
   destruct ((Datatypes.length dst =? 0)%nat) eqn:Eqnds; try discriminate.
   apply spec_eval_engine_aux_sound in Eqnaux.
