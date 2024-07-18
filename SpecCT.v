@@ -2309,13 +2309,34 @@ Qed.
 Axiom ideal_total : forall P c st ast b ds, exists stt astt bb os,
   P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>. 
 
-Lemma spec_eval_add_dirs : forall c st ast b ds ds' st' ast' b' os st'' ast'' b'' os'',
-  <( st , ast , b , ds )> =[ c ]=> <( st' , ast' , b' , os )> ->
-  <( st , ast , b , (ds ++ ds')%list )> =[ c ]=> <( st'' , ast'' , b'' , os'' )> ->
-  <( st' , ast' , b' , ds' )> =[ c ]=> <( st'' , ast'' , b'' , os'' )> .
+
+(* LATER: Proof this lemma below *)
+Lemma spec_eval_prefix_dirs : forall c st1 ast1 b1 ds1 stt1 astt1 bt1 os1 st2 ast2 b2 ds2 stt2 astt2 bt2 os2,
+  <( st1 , ast1 , b1 , ds1 )> =[ c ]=> <( stt1 , astt1 , bt1 , os1 )> ->
+  <( st2 , ast2 , b2 , ds2 )> =[ c ]=> <( stt2 , astt2 , bt2 , os2 )> ->
+  (prefix ds1 ds2 \/ prefix ds2 ds1) ->
+  ds1 = ds2.
+Proof.
+  intros c st1 ast1 b1 ds1 stt1 astt1 bt1 os1 st2 ast2 b2 ds2 stt2 astt2 bt2 os2 Heval1.
+  generalize dependent os2; generalize dependent bt2; 
+  generalize dependent astt2; generalize dependent stt2;
+  generalize dependent ds2; generalize dependent b2;
+  generalize dependent ast2; generalize dependent st2.
+  induction Heval1; intros st2 ast2 b2 ds2' stt2 astt2 bt2 os2' Heval2 [Hpre | Hpre];
+  inversion Heval2; subst; auto.
+  - apply prefix_app in Hpre as Heq.
+    destruct Heq as [Hds1 | Hds0];
+    apply IHHeval1_1 in H1; subst; auto;
+    apply IHHeval1_2 in H10; subst; auto;
+    apply prefix_append_front in Hpre; left; auto.
+  - apply prefix_app in Hpre as Heq.
+    destruct Heq as [Hds1 | Hds0];
+    apply IHHeval1_1 in H1; subst; auto;
+    apply IHHeval1_2 in H10; subst; auto;
+    apply prefix_append_front in Hpre; right; auto.
+  - admit.
 Admitted.
 
-(* Later: Prove Seq case *)
 Lemma spec_eval_deterministic : forall c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
   <( st , ast , b , ds )> =[ c ]=> <( stt1 , astt1 , bb1 , os1 )> ->
   <( st , ast , b , ds )> =[ c ]=> <( stt2 , astt2 , bb2 , os2 )> ->
@@ -2327,14 +2348,19 @@ Proof.
   induction Heval1; intros stt2 astt2 bb2 os2' Heval2; 
   try (inversion Heval2; subst; eauto).
   - (* Spec_Seq *)
-    apply app_eq_app in H1. 
-    destruct H1 as [ds_diff [ [Hds0 Hds2] | [Hds1 Hds3] ] ]; subst.
-    + eapply spec_eval_add_dirs in Heval1_1 as Hdiff; [| eapply H5].
-      assert(L: <( st', ast', b', (ds_diff ++ ds3)%list )>
-          =[ c1;c2 ]=> <( stt2, astt2, bb2, (os0 ++ os3)%list )>).
-      { eapply Spec_Seq; eauto. }
-      admit.
-    + admit.
+    eapply spec_eval_prefix_dirs in Heval1_1; eauto.
+    + eapply spec_eval_prefix_dirs in Heval1_2; eauto.
+      * subst. apply IHHeval1_1 in H5; auto.
+        destruct H5 as [Hst [Hast [Hb Hos] ] ]; subst.
+        apply IHHeval1_2 in H10; auto.
+        destruct H10 as [Hst [Hast [Hb Hos] ] ]; subst.
+        auto.
+      * subst. assert (L: prefix (ds1 ++ ds3)%list (ds1 ++ ds2)%list).
+        { rewrite H1; apply prefix_refl. }
+        apply prefix_append_front in L. left; auto. 
+    + assert (L: prefix (ds0++ds3)%list (ds1++ds2)%list).
+      { rewrite H1. apply prefix_refl. }
+      eapply prefix_app; eapply L. 
   - (* Spe_If *)
     apply IHHeval1 in H10.
     destruct H10 as [Hst [Hast [Hb Hos] ] ]; subst.
@@ -2343,7 +2369,7 @@ Proof.
     apply IHHeval1 in H10.
     destruct H10 as [Hst [Hast [Hb Hos] ] ]; subst.
     auto.
-Admitted.
+Qed.
 
 Require Import ClassicalFacts.
 
@@ -2353,7 +2379,6 @@ Lemma decidability_ouput_tuple : forall (st st' : state) (ast ast' :astate)
   (st, ast, b, os) = (st', ast', b', os') \/ ~ ((st, ast, b, os) = (st', ast', b', os')).
 Proof. auto. Qed.
 
-(* Later: This proof is done, except that proof of spec_determinism is admitted. *)
 Lemma sel_slh_ideal' : forall c P st ast (b:bool) ds st' ast' (b':bool) os,
   excluded_middle ->
   unused "b" c ->
@@ -2385,7 +2410,7 @@ Proof.
       apply LFcc in H. apply H in Hev1. destruct Hev1. }
   inversion Leq. subst. rewrite t_update_shadow.
   eapply ideal_unused_overwrite in Hev1; eauto.
-Admitted.
+Qed.
 
 (* /HIDE *)
 
