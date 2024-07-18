@@ -2322,19 +2322,21 @@ Proof.
   generalize dependent astt2; generalize dependent stt2;
   generalize dependent ds2; generalize dependent b2;
   generalize dependent ast2; generalize dependent st2.
-  induction Heval1; intros st2 ast2 b2 ds2' stt2 astt2 bt2 os2' Heval2 [Hpre | Hpre];
-  inversion Heval2; subst; auto.
-  - apply prefix_app in Hpre as Heq.
-    destruct Heq as [Hds1 | Hds0];
-    apply IHHeval1_1 in H1; subst; auto;
-    apply IHHeval1_2 in H10; subst; auto;
-    apply prefix_append_front in Hpre; left; auto.
-  - apply prefix_app in Hpre as Heq.
-    destruct Heq as [Hds1 | Hds0];
-    apply IHHeval1_1 in H1; subst; auto;
-    apply IHHeval1_2 in H10; subst; auto;
-    apply prefix_append_front in Hpre; right; auto.
-  - admit.
+  induction Heval1; intros st2 ast2 b2 ds2' stt2 astt2 bt2 os2' Heval2 Hpre.
+  - (* Spec_Skip *) inversion Heval2; subst; auto.
+  - (* Spec_Asgn *) inversion Heval2; subst; auto.
+  - (* Spec_Seq *)
+    inversion Heval2; subst.
+    destruct Hpre as [Hpre | Hpre]; apply prefix_app in Hpre as L; destruct L as [Hds1 | Hds0];
+    apply IHHeval1_1 in H1; subst; auto; apply IHHeval1_2 in H10; subst; auto.
+    + apply prefix_append_front in Hpre; left; auto.
+    + apply prefix_append_front in Hpre; left; auto.
+    + apply prefix_append_front in Hpre; right; auto.
+    + apply prefix_append_front in Hpre; right; auto.
+  - (* Spec_IF *) 
+    inversion Heval2; subst.
+    + destruct Hpre as [Hpre | Hpre]; apply prefix_cons in Hpre. 
+      * admit.
 Admitted.
 
 Lemma spec_eval_deterministic : forall c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
