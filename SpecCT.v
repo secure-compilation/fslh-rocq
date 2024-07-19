@@ -2309,68 +2309,88 @@ Qed.
 Axiom ideal_total : forall P c st ast b ds, exists stt astt bb os,
   P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>. 
 
-
-(* LATER: Proof this lemma below *)
-Lemma spec_eval_prefix_dirs : forall c st1 ast1 b1 ds1 stt1 astt1 bt1 os1 st2 ast2 b2 ds2 stt2 astt2 bt2 os2,
-  <( st1 , ast1 , b1 , ds1 )> =[ c ]=> <( stt1 , astt1 , bt1 , os1 )> ->
-  <( st2 , ast2 , b2 , ds2 )> =[ c ]=> <( stt2 , astt2 , bt2 , os2 )> ->
+Lemma spec_eval_deterministic_gen : forall c st ast b ds1 ds2 stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
+  <( st , ast , b , ds1 )> =[ c ]=> <( stt1 , astt1 , bb1 , os1 )> ->
+  <( st , ast , b , ds2 )> =[ c ]=> <( stt2 , astt2 , bb2 , os2 )> ->
   (prefix ds1 ds2 \/ prefix ds2 ds1) ->
-  ds1 = ds2.
+  stt1 = stt2 /\ astt1 = astt2 /\ bb1 = bb2 /\ os1 = os2 /\ ds1 = ds2.
 Proof.
-  intros c st1 ast1 b1 ds1 stt1 astt1 bt1 os1 st2 ast2 b2 ds2 stt2 astt2 bt2 os2 Heval1.
-  generalize dependent os2; generalize dependent bt2; 
+  intros c st ast b ds1 ds2 stt1 astt1 bb1 os1 stt2 astt2 bb2 os2 Heval1.
+  generalize dependent os2; generalize dependent bb2; 
   generalize dependent astt2; generalize dependent stt2;
-  generalize dependent ds2; generalize dependent b2;
-  generalize dependent ast2; generalize dependent st2.
-  induction Heval1; intros st2 ast2 b2 ds2' stt2 astt2 bt2 os2' Heval2 Hpre.
-  - (* Spec_Skip *) inversion Heval2; subst; auto.
-  - (* Spec_Asgn *) inversion Heval2; subst; auto.
-  - (* Spec_Seq *)
+  generalize dependent ds2.
+  induction Heval1; intros ds2' stt2 astt2 bb2 os2' Heval2 Hpre;
+  try (now inversion Heval2; subst; auto).
+  - (* Spec_Seq *) 
     inversion Heval2; subst.
-    destruct Hpre as [Hpre | Hpre]; apply prefix_app in Hpre as L; destruct L as [Hds1 | Hds0];
-    apply IHHeval1_1 in H1; subst; auto; apply IHHeval1_2 in H10; subst; auto.
-    + apply prefix_append_front in Hpre; left; auto.
-    + apply prefix_append_front in Hpre; left; auto.
-    + apply prefix_append_front in Hpre; right; auto.
-    + apply prefix_append_front in Hpre; right; auto.
-  - (* Spec_IF *) 
+    destruct Hpre as [Hpre | Hpre]; apply prefix_app in Hpre as L; destruct L as [Hds1 | Hds0].
+    + apply IHHeval1_1 in H1; subst; auto.
+      destruct H1 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst.
+      apply IHHeval1_2 in H10; subst; auto.
+      * destruct H10 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst; auto.
+      * apply prefix_append_front in Hpre; left; auto.
+    + apply IHHeval1_1 in H1; subst; auto.
+      destruct H1 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst.
+      apply IHHeval1_2 in H10; subst; auto.
+      * destruct H10 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst; auto.
+      * apply prefix_append_front in Hpre; left; auto.
+    + apply IHHeval1_1 in H1; subst; auto.
+      destruct H1 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst.
+      apply IHHeval1_2 in H10; subst; auto.
+      * destruct H10 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst; auto.
+      * apply prefix_append_front in Hpre; right; auto.
+    + apply IHHeval1_1 in H1; subst; auto.
+      destruct H1 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst.
+      apply IHHeval1_2 in H10; subst; auto.
+      * destruct H10 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst; auto.
+      * apply prefix_append_front in Hpre; right; auto.
+  - (* Spec_If *)
     inversion Heval2; subst.
-    + destruct Hpre as [Hpre | Hpre]; apply prefix_cons in Hpre. 
-      * admit.
-Admitted.
+    + destruct Hpre as [Hpre | Hpre]; apply prefix_cons in Hpre;
+      apply IHHeval1 in H10; auto; 
+      destruct H10 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst; auto.
+    + destruct Hpre as [Hpre | Hpre]; apply prefix_heads in Hpre;
+      discriminate Hpre.
+  - (* Spec_If_F *)
+    inversion Heval2; subst.
+    + destruct Hpre as [Hpre | Hpre]; apply prefix_heads in Hpre;
+      discriminate Hpre.
+    + destruct Hpre as [Hpre | Hpre]; apply prefix_cons in Hpre;
+      apply IHHeval1 in H10; auto; 
+      destruct H10 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst; auto.
+  - (* Spec_ARead *) 
+    inversion Heval2; subst.
+    * auto.
+    * destruct Hpre as [Hpre | Hpre]; apply prefix_heads in Hpre;
+      discriminate Hpre.
+  - (* Spec_ARead_U *)
+    inversion Heval2; subst; auto.
+    + destruct Hpre as [Hpre | Hpre]; apply prefix_heads in Hpre;
+      discriminate Hpre.
+    + destruct Hpre as [Hpre | Hpre]; apply prefix_heads in Hpre;
+      inversion Hpre; subst; auto.
+  - (* Spec_Write *)
+    inversion Heval2; subst.
+    * auto.
+    * destruct Hpre as [Hpre | Hpre]; apply prefix_heads in Hpre;
+      discriminate Hpre.
+  - (* Spec_Write_U *)
+    inversion Heval2; subst.
+    * destruct Hpre as [Hpre | Hpre]; apply prefix_heads in Hpre;
+      discriminate Hpre.
+    * destruct Hpre as [Hpre | Hpre]; apply prefix_heads in Hpre;
+      inversion Hpre; subst; auto.
+Qed.
 
 Lemma spec_eval_deterministic : forall c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
   <( st , ast , b , ds )> =[ c ]=> <( stt1 , astt1 , bb1 , os1 )> ->
   <( st , ast , b , ds )> =[ c ]=> <( stt2 , astt2 , bb2 , os2 )> ->
   stt1 = stt2 /\ astt1 = astt2 /\ bb1 = bb2 /\ os1 = os2.
 Proof.
-  intros c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2 Heval1.
-  generalize dependent os2; generalize dependent bb2; 
-  generalize dependent astt2; generalize dependent stt2.
-  induction Heval1; intros stt2 astt2 bb2 os2' Heval2; 
-  try (inversion Heval2; subst; eauto).
-  - (* Spec_Seq *)
-    eapply spec_eval_prefix_dirs in Heval1_1; eauto.
-    + eapply spec_eval_prefix_dirs in Heval1_2; eauto.
-      * subst. apply IHHeval1_1 in H5; auto.
-        destruct H5 as [Hst [Hast [Hb Hos] ] ]; subst.
-        apply IHHeval1_2 in H10; auto.
-        destruct H10 as [Hst [Hast [Hb Hos] ] ]; subst.
-        auto.
-      * subst. assert (L: prefix (ds1 ++ ds3)%list (ds1 ++ ds2)%list).
-        { rewrite H1; apply prefix_refl. }
-        apply prefix_append_front in L. left; auto. 
-    + assert (L: prefix (ds0++ds3)%list (ds1++ds2)%list).
-      { rewrite H1. apply prefix_refl. }
-      eapply prefix_app; eapply L. 
-  - (* Spe_If *)
-    apply IHHeval1 in H10.
-    destruct H10 as [Hst [Hast [Hb Hos] ] ]; subst.
-    auto.
-  - (* Spec_If_F *)  
-    apply IHHeval1 in H10.
-    destruct H10 as [Hst [Hast [Hb Hos] ] ]; subst.
-    auto.
+  intros c st ast b ds stt1 astt1 bb1 os1 stt2 astt2 bb2 os2 Heval1 Heval2.
+  eapply spec_eval_deterministic_gen in Heval2; [| eapply Heval1 |].
+  - tauto.
+  - left; apply prefix_refl.
 Qed.
 
 Require Import ClassicalFacts.
