@@ -16,26 +16,29 @@ Set Default Goal Selector "!".
 
 (** * Relative security *)
 
-Definition relative_secure (trans : com -> com) (c:com) (s1 s2:state) : Prop :=
-  forall as1 as2,
-   (* original program c sequentially secure for some initial states *)
-   (forall s1' s2' as1' as2' os1 os2,
-      <(s1, as1)> =[ c ]=> <(s1', as1', os1)> ->
-      <(s2, as2)> =[ c ]=> <(s2', as2', os2)> ->
-      os1 = os2) ->
-  (* transformed program speculatively secure these initial states *)
-  (forall ds s1' s2' as1' as2' os1 os2 b1' b2',
-    <(s1, as1, false, ds)> =[ trans c ]=> <(s1', as1', b1', os1)> ->
-    <(s2, as2, false, ds)> =[ trans c ]=> <(s2', as2', b2', os2)> ->
-    os1 = os2).
+Definition seq_obs_secure c st1 st2 ast1 ast2 :Prop :=
+  forall stt1 stt2 astt1 astt2 os1 os2,
+    <(st1, ast1)> =[ c ]=> <(stt1, astt1, os1)> ->
+    <(st2, ast2)> =[ c ]=> <(stt2, astt2, os2)> ->
+    os1 = os2.
+
+Definition spec_obs_secure c st1 st2 ast1 ast2 :Prop :=
+  forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
+    <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
+    <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
+    os1 = os2.
+
+Definition relative_secure (trans : com -> com) (c:com) (st1 st2:state) (ast1 ast2 :astate) : Prop :=
+  seq_obs_secure c st1 st2 ast1 ast2 -> 
+  spec_obs_secure (trans c) st1 st2 ast1 ast2.  
 
 (** * Speculative Load Hardening (SLH, not selective *)
 
-Definition AllP : pub_vars := fun X => true.
+Definition AllPub : pub_vars := (_!-> true).
 
-Definition slh := sel_slh AllP.
+Definition slh := sel_slh AllPub.
 
-Definition ideal_eval_slh := ideal_eval AllP.
+Definition ideal_eval_slh := ideal_eval AllPub.
 
 (* We can reuse the BCC proof for proving [relative_secure slh] *)
 
@@ -43,7 +46,7 @@ Lemma slh_bcc : forall c ds st ast (b: bool) st' ast' b' os,
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
   <(st, ast, b, ds)> =[ slh c ]=> <(st', ast', b', os)> ->
-    AllP |- <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
+  AllPub |- <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
 Proof. intros; eapply sel_slh_ideal; eauto. Qed.
 
 Conjecture same_final_b : forall P c s1 s2 as1 as2 b ds s1' s2' as1' as2' b1' b2' os1 os2,
@@ -61,23 +64,23 @@ Conjecture ideal_eval_no_spec_to_seq : forall P c s ast ds s' ast' os,
   <( s, ast )> =[ c ]=> <( s', ast', os )>.
 
 Theorem relative_secure_slh :
-  forall c s1 s2,
+  forall c st1 st2 ast1 ast2,
     (* some extra assumptions needed by slh_bcc *)
     unused "b" c ->
-    s1 "b" = 0 ->
-    s2 "b" = 0 ->
-    relative_secure slh c s1 s2.
+    st1 "b" = 0 ->
+    st2 "b" = 0 ->
+    relative_secure slh c st1 st2 ast1 ast2.
 Proof.
-  unfold relative_secure.
-  intros c s1 s2 Hunused Hb1 Hb2 as1 as2 H ds s1' s2' as1' as2' os1 os2 b1' b2' H1 H2.
-  apply slh_bcc in H1; try assumption.
-  apply slh_bcc in H2; try assumption.
-  eapply same_final_b in H1 as SameB; try eassumption. subst.
-  destruct b1' eqn:Eqb1'.
+  unfold relative_secure, seq_obs_secure, spec_obs_secure.
+  intros c st1 st2 ast1 ast2 Hunused Hst1b Hst2b Hseq ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
+  apply slh_bcc in Hev1; try assumption.
+  apply slh_bcc in Hev2; try assumption.
+  eapply same_final_b in Hev1 as SameB; try eassumption. subst.
+  destruct bt1 eqn:Eqbt1.
   - (* with speculation *) admit. (* ... the difficult case ... *)
   - (* without speculation *)
-    pose proof (ideal_eval_no_spec _ _ _ _ _ _ _ _ H1) as NoSpec.
-    eapply ideal_eval_no_spec_to_seq in H1; try assumption.
-    eapply ideal_eval_no_spec_to_seq in H2; try assumption.
+    pose proof (ideal_eval_no_spec _ _ _ _ _ _ _ _ Hev1) as NoSpec.
+    eapply ideal_eval_no_spec_to_seq in Hev1; try assumption.
+    eapply ideal_eval_no_spec_to_seq in Hev2; try assumption.
     eauto.
 Admitted.
