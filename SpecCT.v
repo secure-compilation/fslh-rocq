@@ -1063,7 +1063,8 @@ Fixpoint sel_slh (P:pub_vars) (c:com) :=
   | <{{a[i] <- e}}> => <{{a[i] <- e}}>
   end)%string.
 
-(** To prove this transformation secure, Spectre Declassified uses an idealized semantics *)
+(** To prove this transformation secure, Spectre Declassified uses an idealized
+    semantics, capturing selective speculative load hardening more abstractly. *)
 
 (* HIDE: We had to fix their ideal semantics for the proofs to go though: (1) in
    (Ideal_ARead) we are allowing mis-speculated in-bound reads; (2) we removed
@@ -1647,7 +1648,7 @@ Fixpoint com_size (c :com) :nat :=
 
 Definition prog_size (c :com) (ds :dirs) :nat := com_size c + length ds.
 
-(** The induction prinicipal on [prog_size] *)
+(** The induction principle on [prog_size] *)
 
 Axiom prog_size_ind : 
   forall P : com -> dirs -> Prop,
@@ -1656,6 +1657,8 @@ Axiom prog_size_ind :
       prog_size c' ds' < prog_size c ds -> 
       P c' ds') -> P c ds  ) -> 
   (forall c ds, P c ds).
+
+(* SOONER: we should prove this *)
 
 (** The proof of [sel_slh_flag] *)
 
