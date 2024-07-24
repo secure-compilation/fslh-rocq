@@ -16,6 +16,20 @@ Set Default Goal Selector "!".
 
 (** * Relative security *)
 
+(** We would like to also enforce security for arbitrary programs that are do
+    not follow the cryptographic constant time programming discipline
+    (i.e. which do not satisfy [ct_well_typed]). The goal is to achieve a
+    relative notion of security which intuitively ensures that the protected
+    program does not leak more information speculatively than the original
+    program leaks sequentially via the CT observations. One way to achieve this
+    protection is by transforming the program using standard Speculative Load
+    Hardening (SLH), instead of the selective variant from the previous chapter. *)
+
+(** We formalize this as a relative security property that doesn't label data at
+    all as public or secret. This seems to roughly correspond to the "weak
+    speculative non-interference" from the paper "Hardware-Software Contracts
+    for Secure Speculation" (IEEE SP 2021). *)
+
 Definition seq_obs_secure c st1 st2 ast1 ast2 :Prop :=
   forall stt1 stt2 astt1 astt2 os1 os2,
     <(st1, ast1)> =[ c ]=> <(stt1, astt1, os1)> ->
@@ -29,10 +43,10 @@ Definition spec_obs_secure c st1 st2 ast1 ast2 :Prop :=
     os1 = os2.
 
 Definition relative_secure (trans : com -> com) (c:com) (st1 st2:state) (ast1 ast2 :astate) : Prop :=
-  seq_obs_secure c st1 st2 ast1 ast2 -> 
-  spec_obs_secure (trans c) st1 st2 ast1 ast2.  
+  seq_obs_secure c st1 st2 ast1 ast2 ->
+  spec_obs_secure (trans c) st1 st2 ast1 ast2.
 
-(** * Speculative Load Hardening (SLH, not selective *)
+(** * Standard Speculative Load Hardening (SLH, not selective *)
 
 Definition AllPub : pub_vars := (_!-> true).
 
