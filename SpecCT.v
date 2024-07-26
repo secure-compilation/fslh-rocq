@@ -34,7 +34,7 @@ Set Default Goal Selector "!".
     branches), but not constant-time secure (since it's accesses memory based on
     secret information):
 [[
-   x <- a[[secret]]
+   x <- a[secret]
 ]]
 *)
 
