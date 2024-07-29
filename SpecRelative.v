@@ -125,19 +125,46 @@ Lemma sub_com_seq_obs_secure : forall c1 c2 st1 st2,
 Proof.
 Admitted.
 
-Fixpoint branching_on_bexp (be :bexp) (c :com) :Prop :=
+Fixpoint branch_on_bexp (be :bexp) (c :com) :Prop :=
   match c with
-  | <{{ c1; c2 }}> =>  branching_on_bexp be c1 \/ branching_on_bexp be c2
+  | <{{ c1; c2 }}> =>  branch_on_bexp be c1 \/ branch_on_bexp be c2
   | <{{ if be' then ct else cf end }}> => 
-        be = be' \/ branching_on_bexp be ct \/ branching_on_bexp be cf
-  | <{{ while be' do cw end }}> => be = be' \/ branching_on_bexp be cw
+        be = be' \/ branch_on_bexp be ct \/ branch_on_bexp be cf
+  | <{{ while be' do cw end }}> => be = be' \/ branch_on_bexp be cw
   | _  => False
   end.
 
 Definition branch_equiv (c :com) (st1 st2 :state) :Prop :=
-  forall be, branching_on_bexp be c -> beval st1 be = beval st2 be.
+  forall be, branch_on_bexp be c -> beval st1 be = beval st2 be.
 
-Lemma branch_equiv_seq_obs_secure : forall c st1 st2,
-  branch_equiv c st1 st2 ->
-  seq_obs_secure c st1 st2.
+Lemma branch_equiv_sub_com : forall c1 c2 st1 st2,
+  branch_equiv c2 st1 st2 ->
+  sub_com c1 c2 ->
+  branch_equiv c1 st1 st2.
+Admitted.
+
+Lemma seq_obs_secure_branch_equiv : forall c st1 st2,
+  seq_obs_secure c st1 st2 ->
+  branch_equiv c st1 st2.
+Proof.
+Admitted.
+
+Fixpoint access_on_index (ie :aexp) (c :com) :Prop :=
+  match c with
+  | <{{ c1; c2 }}> =>  access_on_index ie c1 \/ access_on_index ie c2
+  | <{{ if be then ct else cf end }}> => 
+        access_on_index ie ct \/ access_on_index ie cf
+  | <{{ while be do cw end }}> => access_on_index ie cw
+  | <{{ X <- A[[ie']] }}> => ie = ie'
+  | <{{ A[ie'] <- e}}> => ie = ie'
+  | _  => False
+  end.
+
+Definition index_equiv (c :com) (st1 st2 :state) :Prop :=
+  forall ie, access_on_index ie c -> aeval st1 ie = aeval st2 ie.
+
+Lemma seq_obs_secure_index_equiv : forall c st1 st2,
+  seq_obs_secure c st1 st2 ->
+  index_equiv c st1 st2.
+Proof.
 Admitted.
