@@ -67,6 +67,17 @@ Scheme aexp_bexp_ind := Induction for aexp Sort Prop
 with bexp_aexp_ind := Induction for bexp Sort Prop.
 Combined Scheme aexp_bexp_mutind from aexp_bexp_ind,bexp_aexp_ind.
 
+(* SOONER: Looking at Jonathan Baumann's BSc thesis, I got a new idea about how
+   to do expressions without introducing mutual inductives: could just drop the
+   bools and make everything work on integers like in C (where nonzero means
+   true). Moreover, could also refactor the semantics at least for binary
+   operators to just one ABinOp parameterized constructor, so that there is less
+   duplication in proofs / less need for automation. And for BNot, could it
+   maybe also just be encoded in terms of ACTIf or better in terms of ABinOp?
+   Would we need bitwise operators for encoding in terms of ABinOp though?
+   Anyway, BAnd would already doing bitwise and? Could we maybe just add BImpl
+   for bitwise boolean implication?  *)
+
 (** ** Typing Constant-time conditional *)
 
 (** Typing of arithmetic and boolean expressions will also become
