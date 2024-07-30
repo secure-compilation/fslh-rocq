@@ -72,11 +72,57 @@ Combined Scheme aexp_bexp_mutind from aexp_bexp_ind,bexp_aexp_ind.
    bools and make everything work on integers like in C (where nonzero means
    true). Moreover, could also refactor the semantics at least for binary
    operators to just one ABinOp parameterized constructor, so that there is less
-   duplication in proofs / less need for automation. And for BNot, could it
-   maybe also just be encoded in terms of ACTIf or better in terms of ABinOp?
-   Would we need bitwise operators for encoding in terms of ABinOp though?
-   Anyway, BAnd would already doing bitwise and? Could we maybe just add BImpl
-   for bitwise boolean implication?  *)
+   duplication in proofs / less need for automation. And BNot can just be
+   encoded in terms of ACTIf or better in terms of ABinOp. We should, however,
+   avoid bitwise operations since we are working with nats. We can just add
+   BImpl for boolean implication. Like this: *)
+(* HIDE *)
+Module MergedExps.
+(* A small set of binary operators *)
+Inductive binop : Type :=
+  | BinPlus
+  | BinMinus
+  | BinMult
+  | BinEq
+  | BinLe
+  | BinAnd
+  | BinImpl.
+
+(* We define their semantics directly on nats. For boolean operators we are
+   careful to allow other representations of true (any non-zero number).  *)
+Definition eval_binop (o:binop) (n1 n2 : nat) : nat :=
+  match o with
+  | BinPlus => n1 + n2
+  | BinMinus => n1 - n2
+  | BinMult => n1 * n2
+  | BinEq => if n1 =? n2 then 1 else 0
+  | BinLe => if n1 <=? n2 then 1 else 0
+  | BinAnd => if (n1 =? 0) || (n2 =? 0) then 0 else 1
+  | BinImpl => if negb (n1 =? 0) && (n2 =? 0) then 0 else 1
+  end.
+
+Inductive aexp : Type :=
+  | ANum (n : nat)
+  | AId (x : string)
+  | ABin (o:binop) (a1 a2 : aexp) (* <--- REFACTORED *)
+  | ACTIf (b:aexp) (a1 a2:aexp). (* <--- NEW *)
+
+(* We can recover all the previous operations: *)
+Definition APlus := ABin BinPlus.
+Definition AMinus := ABin BinMinus.
+Definition AMult := ABin BinMult.
+Definition BTrue := ANum 1.
+Definition BFalse := ANum 0.
+Definition BAnd := ABin BinAnd.
+Definition BImpl := ABin BinImpl.
+Definition BNot b := BImpl b BFalse.
+Definition BOr a1 a2 := BImpl (BNot a1) a2.
+Definition BEq := ABin BinEq.
+Definition BNeq a1 a2 := BNot (BEq a1 a2).
+Definition BLe := ABin BinLe.
+Definition BGt a1 a2 := BNot (BLe a1 a2).
+End MergedExps.
+(* /HIDE *)
 
 (** ** Typing Constant-time conditional *)
 
