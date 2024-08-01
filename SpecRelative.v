@@ -78,6 +78,8 @@ Conjecture ideal_eval_no_spec_to_seq : forall P c s ast ds s' ast' os,
   P |- <( s, ast, false, ds )> =[ c ]=> <( s', ast', false, os )> ->
   <( s, ast )> =[ c ]=> <( s', ast', os )>.
 
+  (* HIDE: This theorem does not hold, since slh is not strong enough (see counterexample below). Therefore 
+     ultimate slh is introduced in [UltimateSLH.v] *)
 Theorem relative_secure_slh :
   forall c st1 st2,
     (* some extra assumptions needed by slh_bcc *)
@@ -107,65 +109,9 @@ Proof.
     eauto.
 Admitted.
 
-Fixpoint sub_com (c1 c2 :com) :Prop :=
-  match c2 with 
-  | <{{ c21; c22 }}> => c1 = c2 \/ sub_com c1 c21 \/ sub_com c1 c22
-  | <{{ if be2 then ct2 else cf2 end }}> =>
-        c1 = c2 \/ sub_com c1 ct2 \/ sub_com c1 cf2
-  | <{{ while be2 do cw2 end }}> => c1 = c2 \/ sub_com c1 cw2
-  | _ => c1 = c2
-  end.
+Definition example_program :=
+  <{{if false then X <- A[[Y]] else skip end }}>.
 
-Lemma sub_com_refl : forall c, sub_com c c.
-Proof. destruct c; simpl; auto. Qed.
-
-Lemma sub_com_seq_obs_secure : forall c1 c2 st1 st2 ast1 ast2,
-  spec_obs_secure c2 st1 st2 ast1 ast2 ->
-  sub_com c1 c2 ->
-  spec_obs_secure c1 st1 st2 ast1 ast2.
-Proof.
-Admitted.
-
-Fixpoint branch_on_bexp (be :bexp) (c :com) :Prop :=
-  match c with
-  | <{{ c1; c2 }}> =>  branch_on_bexp be c1 \/ branch_on_bexp be c2
-  | <{{ if be' then ct else cf end }}> => 
-        be = be' \/ branch_on_bexp be ct \/ branch_on_bexp be cf
-  | <{{ while be' do cw end }}> => be = be' \/ branch_on_bexp be cw
-  | _  => False
-  end.
-
-Definition branch_equiv (c :com) (st1 st2 :state) :Prop :=
-  forall be, branch_on_bexp be c -> beval st1 be = beval st2 be.
-
-Lemma branch_equiv_sub_com : forall c1 c2 st1 st2,
-  branch_equiv c2 st1 st2 ->
-  sub_com c1 c2 ->
-  branch_equiv c1 st1 st2.
-Admitted.
-
-Lemma seq_obs_secure_branch_equiv : forall c st1 st2 ast1 ast2,
-  seq_obs_secure c st1 st2 ast1 ast2 ->
-  branch_equiv c st1 st2.
-Proof.
-Admitted.
-
-Fixpoint access_on_index (ie :aexp) (c :com) :Prop :=
-  match c with
-  | <{{ c1; c2 }}> =>  access_on_index ie c1 \/ access_on_index ie c2
-  | <{{ if be then ct else cf end }}> => 
-        access_on_index ie ct \/ access_on_index ie cf
-  | <{{ while be do cw end }}> => access_on_index ie cw
-  | <{{ X <- A[[ie']] }}> => ie = ie'
-  | <{{ A[ie'] <- e}}> => ie = ie'
-  | _  => False
-  end.
-
-Definition index_equiv (c :com) (st1 st2 :state) :Prop :=
-  forall ie, access_on_index ie c -> aeval st1 ie = aeval st2 ie.
-
-Lemma seq_obs_secure_index_equiv : forall c st1 st2 ast1 ast2,
-  seq_obs_secure c st1 st2 ast1 ast2 ->
-  index_equiv c st1 st2.
-Proof.
+Lemma counterexample : 
+  ~ (relative_secure slh example_program (Y!-> 1; _!-> 0) (Y!-> 2; _!->0)).
 Admitted.
