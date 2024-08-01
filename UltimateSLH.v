@@ -95,7 +95,7 @@ Proof.
 Qed.
 
 Reserved Notation
-         "'|-ideal-' '<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
+         "'|-i' '<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
          (at level 40, c custom com at level 99,
           st constr, ast constr, stt constr, astt constr at next level).
 
@@ -103,60 +103,60 @@ Inductive ideal_eval :
     com -> state -> astate -> bool -> dirs ->
            state -> astate -> bool -> obs -> Prop :=
   | Ideal_Skip : forall st ast b,
-      |-ideal- <(st, ast, b, [])> =[ skip ]=> <(st, ast, b, [])>
+      |-i <(st, ast, b, [])> =[ skip ]=> <(st, ast, b, [])>
   | Ideal_Asgn  : forall st ast b e n x,
       aeval st e = n ->
-      |-ideal- <(st, ast, b, [])> =[ x := e ]=> <(x !-> n; st, ast, b, [])>
+      |-i <(st, ast, b, [])> =[ x := e ]=> <(x !-> n; st, ast, b, [])>
   | Ideal_Seq : forall c1 c2 st ast b st' ast' b' st'' ast'' b'' os1 os2 ds1 ds2,
-      |-ideal- <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)>  ->
-      |-ideal- <(st', ast', b', ds2)> =[ c2 ]=> <(st'', ast'', b'', os2)> ->
-      |-ideal- <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os2++os1)>
+      |-i <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)>  ->
+      |-i <(st', ast', b', ds2)> =[ c2 ]=> <(st'', ast'', b'', os2)> ->
+      |-i <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os2++os1)>
   | Ideal_If : forall st ast b st' ast' b' be c1 c2 os1 ds,
-      |-ideal- <(st, ast, b, ds)> =[ match beval st be && (negb b) with
+      |-i <(st, ast, b, ds)> =[ match beval st be && (negb b) with
                                  | true => c1
                                  | false => c2 end ]=> <(st', ast', b', os1)> ->
-      |-ideal- <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
+      |-i <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
         <(st', ast', b', os1++[OBranch (beval st be && (negb b))])>
   | Ideal_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
-      |-ideal- <(st, ast, true, ds)> =[ c1 ]=> <(st', ast', b', os1)> ->
-      |-ideal- <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
+      |-i <(st, ast, true, ds)> =[ c1 ]=> <(st', ast', b', os1)> ->
+      |-i <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
         <(st', ast', b', os1++[OBranch false])>
   | Ideal_While : forall be st ast b ds st' ast' b' os c,
-      |-ideal- <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
+      |-i <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
-      |-ideal- <(st, ast, b, ds)> =[ while be do c end ]=> <(st', ast', b', os)>
+      |-i <(st, ast, b, ds)> =[ while be do c end ]=> <(st', ast', b', os)>
   | Ideal_ARead : forall st ast b x a ie i,
       aeval st ie = i ->
       i < length (ast a) ->
-      |-ideal- <(st, ast, b, [DStep])> =[ x <- a[[ie]] ]=>
+      |-i <(st, ast, b, [DStep])> =[ x <- a[[ie]] ]=>
         <(x !-> if b then nth 0 (ast a) 0 else nth i (ast a) 0; st, ast, b, [OARead a i])>
   | Ideal_ARead_U : forall st ast x a ie i a' i',
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      |-ideal- <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
+      |-i <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
         <(x !-> nth 0 (ast a') 0; st, ast, true, [OARead a i])>
   | Ideal_Write : forall st ast b a ie i e n,
       aeval st e = n ->
       aeval st ie = i ->
       i < length (ast a) ->
-      |-ideal- <(st, ast, b, [DStep])> =[ a[ie] <- e ]=>
+      |-i <(st, ast, b, [DStep])> =[ a[ie] <- e ]=>
         <(st, a !-> if b then upd 0 (ast a) n else upd i (ast a) n; ast, b, [OAWrite a i])>
   | Ideal_Write_U : forall st ast a ie i e n a' i',
       aeval st e = n ->
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      |-ideal- <(st, ast, true, [DStore a' i'])> =[ a[ie] <- e ]=>
+      |-i <(st, ast, true, [DStore a' i'])> =[ a[ie] <- e ]=>
         <(st, a' !-> upd 0 (ast a') n; ast, true, [OAWrite a i])>
 
-  where "|-ideal- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
+  where "|-i <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
     (ideal_eval c st ast b ds stt astt bb os).
 
 Definition ideal_obs_secure c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
-    |-ideal- <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
-    |-ideal- <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
+    |-i <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
+    |-i <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
     os1 = os2.
 
 Lemma relative_noninterference : forall c st1 st2 ast1 ast2,
@@ -173,7 +173,7 @@ Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
     unused "b" c ->
     st "b" = (if b then 1 else 0) ->
     <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
-    |-ideal- <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
+    |-i <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
 
 Lemma ultimate_slh_bcc : forall c ds,
   ultimate_slh_bcc_prop c ds.
