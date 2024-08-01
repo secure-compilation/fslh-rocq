@@ -30,21 +30,22 @@ Set Default Goal Selector "!".
     speculative non-interference" from the paper "Hardware-Software Contracts
     for Secure Speculation" (IEEE SP 2021). *)
 
-Definition seq_obs_secure c st1 st2 :Prop :=
-  forall ast1 ast2 stt1 stt2 astt1 astt2 os1 os2,
+Definition seq_obs_secure c st1 st2 ast1 ast2 : Prop :=
+  forall stt1 stt2 astt1 astt2 os1 os2,
     <(st1, ast1)> =[ c ]=> <(stt1, astt1, os1)> ->
     <(st2, ast2)> =[ c ]=> <(stt2, astt2, os2)> ->
     os1 = os2.
 
-Definition spec_obs_secure c st1 st2 :Prop :=
-  forall ds ast1 ast2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
+Definition spec_obs_secure c st1 st2 ast1 ast2 : Prop :=
+  forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
     <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
     <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
     os1 = os2.
 
 Definition relative_secure (trans : com -> com) (c:com) (st1 st2:state) : Prop :=
-  seq_obs_secure c st1 st2  -> 
-  spec_obs_secure (trans c) st1 st2.  
+  forall ast1 ast2,
+    seq_obs_secure c st1 st2 ast1 ast2 ->
+    spec_obs_secure (trans c) st1 st2 ast1 ast2.
 
 (** * Standard Speculative Load Hardening (SLH, not selective *)
 
@@ -118,10 +119,10 @@ Fixpoint sub_com (c1 c2 :com) :Prop :=
 Lemma sub_com_refl : forall c, sub_com c c.
 Proof. destruct c; simpl; auto. Qed.
 
-Lemma sub_com_seq_obs_secure : forall c1 c2 st1 st2,
-  spec_obs_secure c2 st1 st2 ->
+Lemma sub_com_seq_obs_secure : forall c1 c2 st1 st2 ast1 ast2,
+  spec_obs_secure c2 st1 st2 ast1 ast2 ->
   sub_com c1 c2 ->
-  spec_obs_secure c1 st1 st2.
+  spec_obs_secure c1 st1 st2 ast1 ast2.
 Proof.
 Admitted.
 
@@ -143,8 +144,8 @@ Lemma branch_equiv_sub_com : forall c1 c2 st1 st2,
   branch_equiv c1 st1 st2.
 Admitted.
 
-Lemma seq_obs_secure_branch_equiv : forall c st1 st2,
-  seq_obs_secure c st1 st2 ->
+Lemma seq_obs_secure_branch_equiv : forall c st1 st2 ast1 ast2,
+  seq_obs_secure c st1 st2 ast1 ast2 ->
   branch_equiv c st1 st2.
 Proof.
 Admitted.
@@ -163,8 +164,8 @@ Fixpoint access_on_index (ie :aexp) (c :com) :Prop :=
 Definition index_equiv (c :com) (st1 st2 :state) :Prop :=
   forall ie, access_on_index ie c -> aeval st1 ie = aeval st2 ie.
 
-Lemma seq_obs_secure_index_equiv : forall c st1 st2,
-  seq_obs_secure c st1 st2 ->
+Lemma seq_obs_secure_index_equiv : forall c st1 st2 ast1 ast2,
+  seq_obs_secure c st1 st2 ast1 ast2 ->
   index_equiv c st1 st2.
 Proof.
 Admitted.
