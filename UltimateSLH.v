@@ -90,7 +90,16 @@ Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
           end
       | _ => None
       end
-  | <{{while be do c end}}> => Some ([],ds)
+  | <{{while be do c end}}> =>
+      match ds with
+      | DStep :: ds' => Some ([OBranch false],ds')
+      | DForce :: ds' =>
+          match observations c (* <- should actually be: while be do c end *) ds' with
+          | Some (os',ds') => Some (os'++[OBranch true],ds')
+          | None => None
+          end
+      | _ => None
+      end
   | <{{x <- a[[i]]}}> => Some ([OARead a 0],ds)
   | <{{a[i] <- e}}> => Some ([OAWrite a 0],ds)
   end.
