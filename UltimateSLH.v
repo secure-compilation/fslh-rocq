@@ -53,32 +53,53 @@ Fixpoint ultimate_slh (c:com) :=
   | <{{x := e}}> => <{{x := e}}>
   | <{{c1; c2}}> => <{{ ultimate_slh c1; ultimate_slh c2}}>
   | <{{if be then c1 else c2 end}}> =>
-      <{{if be && "b" = 0 then "b" := (be ? "b" : 1); ultimate_slh c1
-                          else "b" := (be ? 1 : "b"); ultimate_slh c2 end}}>
+      <{{if be && "b" = 0 then "b" := ((be && "b" = 0) ? "b" : 1); ultimate_slh c1
+                          else "b" := ((be && "b" = 0) ? 1 : "b"); ultimate_slh c2 end}}>
   | <{{while be do c end}}> =>
-      <{{while be && "b" = 0 do "b" := (be ? "b" : 1); ultimate_slh c end;
-         "b" := (be ? 1 : "b")}}>
+      <{{while be && "b" = 0 do "b" := ((be && "b" = 0) ? "b" : 1); ultimate_slh c end;
+         "b" := ((be && "b" = 0) ? 1 : "b")}}>
   | <{{x <- a[[i]]}}> =>
     <{{x <- a[[("b" = 1) ? 0 : i]] }}>
   | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
-Fixpoint observations (c:com) (ds:dirs) : obs :=
+Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
   match c with
-  | <{{skip}}> => []
-  | <{{x := e}}> => []
-  | <{{c1; c2}}> => observations c2 ds ++ observations c1 ds
-  | <{{if be then c1 else c2 end}}> => observations c2 ds ++ [OBranch false]
-  | <{{while be do c end}}> => []
-  | <{{x <- a[[i]]}}> => [OARead a 0]
-  | <{{a[i] <- e}}> => [OAWrite a 0]
+  | <{{skip}}> => Some ([],ds)
+  | <{{x := e}}> => Some ([],ds)
+  | <{{c1; c2}}> =>
+      match observations c1 ds with
+      | Some (os',ds') =>
+          match observations c2 ds' with
+          | Some (os'',ds'') => Some (os''++os', ds'')
+          | None => None
+          end
+      | None => None
+      end
+  | <{{if be then c1 else c2 end}}> =>
+      match ds with
+      | DStep :: ds' =>
+          match observations c2 ds' with
+          | Some (os',ds') => Some (os'++[OBranch false],ds')
+          | None => None
+          end
+      | DForce :: ds' =>
+          match observations c2 ds' with
+          | Some (os',ds') => Some (os'++[OBranch true],ds')
+          | None => None
+          end
+      | _ => None
+      end
+  | <{{while be do c end}}> => Some ([],ds)
+  | <{{x <- a[[i]]}}> => Some ([OARead a 0],ds)
+  | <{{a[i] <- e}}> => Some ([OAWrite a 0],ds)
   end.
 
 Lemma observations_fixed : forall c st ast ds stt astt os,
   unused "b" c ->
   st "b" = 1 ->
   <(st, ast, true, ds)> =[ ultimate_slh c ]=> <(stt, astt, true, os)> ->
-  os = observations c ds.
+  Some (os,[]) = observations c ds.
 Admitted.
 
 Lemma gilles_lemma : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
