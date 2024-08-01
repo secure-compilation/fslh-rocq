@@ -80,12 +80,12 @@ Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
       match ds with
       | DStep :: ds' =>
           match observations c2 ds' with
-          | Some (os',ds') => Some (os'++[OBranch false],ds')
+          | Some (os,ds'') => Some (os++[OBranch false],ds'')
           | None => None
           end
       | DForce :: ds' =>
           match observations c2 ds' with
-          | Some (os',ds') => Some (os'++[OBranch true],ds')
+          | Some (os,ds'') => Some (os++[OBranch true],ds'')
           | None => None
           end
       | _ => None
@@ -95,7 +95,7 @@ Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
       | DStep :: ds' => Some ([OBranch false],ds')
       | DForce :: ds' =>
           match observations c (* <- should actually be: while be do c end *) ds' with
-          | Some (os',ds') => Some (os'++[OBranch true],ds')
+          | Some (os,ds'') => Some (os++[OBranch true],ds'')
           | None => None
           end
       | _ => None
