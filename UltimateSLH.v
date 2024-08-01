@@ -84,7 +84,7 @@ Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
           | None => None
           end
       | DForce :: ds' =>
-          match observations c2 ds' with
+          match observations c1 ds' with
           | Some (os,ds'') => Some (os++[OBranch true],ds'')
           | None => None
           end
