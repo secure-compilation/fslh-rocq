@@ -47,10 +47,6 @@ Definition relative_secure (trans : com -> com) (c:com) (st1 st2:state) : Prop :
 
 (** * Ultimate Speculative Load Hardening *)
 
-(* HIDE: With BOr cand do [be || "b" <> 0], but whatever can also do it with BAnd
-Definition BOr b1 b2 := BNot (BAnd (BNot b1) (BNot b2)).
-Notation "x || y"  := (BOr x y) (in custom com at level 80, left associativity). *)
-
 Fixpoint ultimate_slh (c:com) :=
   (match c with
   | <{{skip}}> => <{{skip}}>
