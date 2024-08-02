@@ -200,6 +200,15 @@ Lemma relative_noninterference : forall c st1 st2 ast1 ast2,
 Proof.
 Admitted.
 
+Lemma flag_zero_check_spec_bit : forall (st :state) (X :string) (b b' :bool), 
+  st X = (if b then 1 else 0) ->
+  (st X =? 0)%nat = b' ->
+  b = negb b'.
+Proof.
+ intros st X b b' Hflag Heqb. destruct b; destruct b'; try reflexivity;
+ rewrite Hflag in Heqb; simpl in Heqb; discriminate.
+Qed. 
+
 Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
   forall st ast (b: bool) st' ast' b' os,
     unused "b" c ->
@@ -230,22 +239,40 @@ Proof.
       * eapply ideal_unused_update_rev; try tauto.
       * prog_size_auto. *)
   (* IF *)
-  - (* non-speculative *) (* CH: please clean up after my changes below *)
-    destruct (beval st <{{ "b" = 0 && be }}>) eqn:Eqnbe; inversion H10;
-    inversion H1; subst; clear H10; clear H1; simpl in *.
-    + apply andb_true_iff in Eqnbe as [Temp Eqnbe].
-      rewrite Hstb in Temp. destruct b'0 eqn:Hbit; [discriminate |]; clear Temp.
+  - (* non-speculative *)
+    simpl in H10. destruct (st "b" =? 0)%nat eqn:Eqstb; 
+    destruct (beval st be) eqn:Eqbe; inversion H10; inversion H1; subst;
+    clear H10; clear H1; simpl in *; rewrite Eqstb in *; rewrite Eqbe in *;
+    eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit;
+    rewrite t_update_same in H11; simpl in *.
+    + (* true; true *)  
       apply IH in H11; try tauto.
       * replace (OBranch true) with (OBranch (negb b'0 && beval st be))
-          by (rewrite Eqnbe; rewrite Hbit; reflexivity).
-        rewrite <- Hbit at 1. apply Ideal_If. subst. rewrite Eqnbe; simpl.
-          rewrite Eqnbe in H11. rewrite andb_comm in H11. simpl in H11.
-          rewrite Hstb in H11. simpl in H11. rewrite <- Hstb in H11.
-          rewrite t_update_same in H11.
-          rewrite app_nil_r. apply H11.
+          by (rewrite Eqbe; rewrite Hbit; reflexivity).
+        apply Ideal_If. rewrite Eqbe, Hbit; simpl.
+        rewrite app_nil_r. subst. apply H11.
       * prog_size_auto.
-      * rewrite Hstb. simpl. rewrite Eqnbe. rewrite t_update_eq. reflexivity.
-    + (* analog to true case *) admit.
+    + (* true; false *)
+      apply IH in H11; try tauto.
+      * replace (OBranch false) with (OBranch (negb b'0 && beval st be))
+          by (rewrite Eqbe; rewrite Hbit; reflexivity).
+        apply Ideal_If. rewrite Eqbe, Hbit; simpl.
+        rewrite app_nil_r. subst. apply H11.
+      *  prog_size_auto.
+    + (* false; true *)
+      apply IH in H11; try tauto.
+      * replace (OBranch false) with (OBranch (negb b'0 && beval st be))
+          by (rewrite Eqbe; rewrite Hbit; reflexivity).
+        apply Ideal_If. rewrite Eqbe, Hbit; simpl.
+        rewrite app_nil_r. subst. apply H11.
+      *  prog_size_auto.
+    + apply IH in H11; try tauto.
+      * replace (OBranch false) with (OBranch (negb b'0 && beval st be))
+          by (rewrite Eqbe; rewrite Hbit; reflexivity).
+        apply Ideal_If. rewrite Eqbe, Hbit; simpl.
+        rewrite app_nil_r. subst. apply H11.
+      *  prog_size_auto.
+  - (* speculative *)  
 Admitted.
 
 Theorem relative_secure_slh :
