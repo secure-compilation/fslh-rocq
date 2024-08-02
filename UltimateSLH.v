@@ -63,67 +63,6 @@ Fixpoint ultimate_slh (c:com) :=
   | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
-Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
-  match c with
-  | <{{skip}}> => Some ([],ds)
-  | <{{x := e}}> => Some ([],ds)
-  | <{{c1; c2}}> =>
-      match observations c1 ds with
-      | Some (os',ds') =>
-          match observations c2 ds' with
-          | Some (os'',ds'') => Some (os''++os', ds'')
-          | None => None
-          end
-      | None => None
-      end
-  | <{{if be then c1 else c2 end}}> =>
-      match ds with
-      | DStep :: ds' =>
-          match observations c2 ds' with
-          | Some (os,ds'') => Some (os++[OBranch false],ds'')
-          | None => None
-          end
-      | DForce :: ds' =>
-          match observations c1 ds' with
-          | Some (os,ds'') => Some (os++[OBranch true],ds'')
-          | None => None
-          end
-      | _ => None
-      end
-  | <{{while be do c end}}> =>
-      match ds with
-      | DStep :: ds' => Some ([OBranch false],ds')
-      | DForce :: ds' =>
-          match observations c (* <- should actually be: while be do c end *) ds' with
-          | Some (os,ds'') => Some (os++[OBranch true],ds'')
-          | None => None
-          end
-      | _ => None
-      end
-  | <{{x <- a[[i]]}}> => Some ([OARead a 0],ds)
-  | <{{a[i] <- e}}> => Some ([OAWrite a 0],ds)
-  end.
-
-Lemma observations_fixed : forall c st ast ds stt astt os,
-  unused "b" c ->
-  st "b" = 1 ->
-  <(st, ast, true, ds)> =[ ultimate_slh c ]=> <(stt, astt, true, os)> ->
-  Some (os,[]) = observations c ds.
-Admitted.
-
-Lemma gilles_lemma : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
-  unused "b" c ->
-  st1 "b" = 1 ->
-  st2 "b" = 1 ->
-  <(st1, ast1, true, ds)> =[ ultimate_slh c ]=> <(stt1, astt1, true, os1)> ->
-  <(st2, ast2, true, ds)> =[ ultimate_slh c ]=> <(stt2, astt2, true, os2)> ->
-  os1 = os2.
-Proof.
-  intros c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2 Hunused Hb1 Hb2 H1 H2.
-  apply observations_fixed in H1; try auto.
-  apply observations_fixed in H2; try auto. congruence.
-Qed.
-
 Reserved Notation
          "'|-i' '<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
          (at level 40, c custom com at level 99,
@@ -184,6 +123,67 @@ Inductive ideal_eval :
 
   where "|-i <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
     (ideal_eval c st ast b ds stt astt bb os).
+
+Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
+  match c with
+  | <{{skip}}> => Some ([],ds)
+  | <{{x := e}}> => Some ([],ds)
+  | <{{c1; c2}}> =>
+      match observations c1 ds with
+      | Some (os',ds') =>
+          match observations c2 ds' with
+          | Some (os'',ds'') => Some (os''++os', ds'')
+          | None => None
+          end
+      | None => None
+      end
+  | <{{if be then c1 else c2 end}}> =>
+      match ds with
+      | DStep :: ds' =>
+          match observations c2 ds' with
+          | Some (os,ds'') => Some (os++[OBranch false],ds'')
+          | None => None
+          end
+      | DForce :: ds' =>
+          match observations c1 ds' with
+          | Some (os,ds'') => Some (os++[OBranch true],ds'')
+          | None => None
+          end
+      | _ => None
+      end
+  | <{{while be do c end}}> =>
+      match ds with
+      | DStep :: ds' => Some ([OBranch false],ds')
+      | DForce :: ds' =>
+          match observations c (* <- should actually be: while be do c end *) ds' with
+          | Some (os,ds'') => Some (os++[OBranch true],ds'')
+          | None => None
+          end
+      | _ => None
+      end
+  | <{{x <- a[[i]]}}> => Some ([OARead a 0],ds)
+  | <{{a[i] <- e}}> => Some ([OAWrite a 0],ds)
+  end.
+
+Lemma observations_fixed : forall c st ast ds stt astt os,
+  unused "b" c ->
+  st "b" = 1 ->
+  |-i <(st, ast, true, ds)> =[ c ]=> <(stt, astt, true, os)> ->
+  Some (os,[]) = observations c ds.
+Admitted.
+
+Lemma gilles_lemma : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
+  unused "b" c ->
+  st1 "b" = 1 ->
+  st2 "b" = 1 ->
+  |-i <(st1, ast1, true, ds)> =[ c ]=> <(stt1, astt1, true, os1)> ->
+  |-i <(st2, ast2, true, ds)> =[ c ]=> <(stt2, astt2, true, os2)> ->
+  os1 = os2.
+Proof.
+  intros c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2 Hunused Hb1 Hb2 H1 H2.
+  apply observations_fixed in H1; try auto.
+  apply observations_fixed in H2; try auto. congruence.
+Qed.
 
 Definition ideal_obs_secure c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
