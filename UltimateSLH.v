@@ -53,11 +53,11 @@ Fixpoint ultimate_slh (c:com) :=
   | <{{x := e}}> => <{{x := e}}>
   | <{{c1; c2}}> => <{{ ultimate_slh c1; ultimate_slh c2}}>
   | <{{if be then c1 else c2 end}}> =>
-      <{{if be && "b" = 0 then "b" := ((be && "b" = 0) ? "b" : 1); ultimate_slh c1
-                          else "b" := ((be && "b" = 0) ? 1 : "b"); ultimate_slh c2 end}}>
+      <{{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c1
+                          else "b" := ("b" = 0 && be) ? 1 : "b"; ultimate_slh c2 end}}>
   | <{{while be do c end}}> =>
-      <{{while be && "b" = 0 do "b" := ((be && "b" = 0) ? "b" : 1); ultimate_slh c end;
-         "b" := ((be && "b" = 0) ? 1 : "b")}}>
+      <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c end;
+         "b" := ("b" = 0 && be) ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
     <{{x <- a[[("b" = 1) ? 0 : i]] }}>
   | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
@@ -142,15 +142,17 @@ Inductive ideal_eval :
       |-i <(st', ast', b', ds2)> =[ c2 ]=> <(st'', ast'', b'', os2)> ->
       |-i <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os2++os1)>
   | Ideal_If : forall st ast b st' ast' b' be c1 c2 os1 ds,
-      |-i <(st, ast, b, ds)> =[ match beval st be && (negb b) with
+      |-i <(st, ast, b, ds)> =[ match negb b && beval st be  with
                                  | true => c1
                                  | false => c2 end ]=> <(st', ast', b', os1)> ->
       |-i <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', os1++[OBranch (beval st be && (negb b))])>
+        <(st', ast', b', os1++[OBranch (negb b && beval st be)])>
   | Ideal_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
-      |-i <(st, ast, true, ds)> =[ c1 ]=> <(st', ast', b', os1)> ->
+      |-i <(st, ast, b, ds)> =[ match negb b && beval st be  with
+                                 | true => c2 (* <-- branches swapped *)
+                                 | false => c1 end ]=> <(st', ast', b', os1)> ->
       |-i <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', os1++[OBranch false])>
+        <(st', ast', b', os1++[OBranch (negb b && beval st be)])>
   | Ideal_While : forall be st ast b ds st' ast' b' os c,
       |-i <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
@@ -228,19 +230,21 @@ Proof.
       * eapply ideal_unused_update_rev; try tauto.
       * prog_size_auto. *)
   (* IF *)
-  - (* non-speculative *) 
-    destruct (beval st <{{ be && "b" = 0 }}>) eqn:Eqnbe; inversion H10; 
+  - (* non-speculative *) (* CH: please clean up after my changes below *)
+    destruct (beval st <{{ "b" = 0 && be }}>) eqn:Eqnbe; inversion H10;
     inversion H1; subst; clear H10; clear H1; simpl in *.
-    + apply andb_true_iff in Eqnbe as [Eqnbe Temp].
+    + apply andb_true_iff in Eqnbe as [Temp Eqnbe].
       rewrite Hstb in Temp. destruct b'0 eqn:Hbit; [discriminate |]; clear Temp.
       apply IH in H11; try tauto.
-      * replace (OBranch true) with (OBranch (beval st be && (negb b'0)))
+      * replace (OBranch true) with (OBranch (negb b'0 && beval st be))
           by (rewrite Eqnbe; rewrite Hbit; reflexivity).
         rewrite <- Hbit at 1. apply Ideal_If. subst. rewrite Eqnbe; simpl.
-          rewrite Eqnbe in H11. rewrite t_update_same in H11.
+          rewrite Eqnbe in H11. rewrite andb_comm in H11. simpl in H11.
+          rewrite Hstb in H11. simpl in H11. rewrite <- Hstb in H11.
+          rewrite t_update_same in H11.
           rewrite app_nil_r. apply H11.
       * prog_size_auto.
-      * rewrite t_update_eq. rewrite Eqnbe. assumption.
+      * rewrite Hstb. simpl. rewrite Eqnbe. rewrite t_update_eq. reflexivity.
     + (* analog to true case *) admit.
 Admitted.
 
@@ -252,5 +256,3 @@ Theorem relative_secure_slh :
     st2 "b" = 0 ->
     relative_secure ultimate_slh c st1 st2.
 Admitted. (* from relative noninterference + bcc *)
-
-
