@@ -200,6 +200,20 @@ Lemma relative_noninterference : forall c st1 st2 ast1 ast2,
 Proof.
 Admitted.
 
+Lemma ideal_unused_update : forall st ast b ds c st' ast' b' os X n,
+  unused X c ->
+  |-i <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)> ->
+  |-i <(st, ast, b, ds)> =[ c ]=> <(X !-> st X; st', ast', b', os)>.
+Proof.
+Admitted.
+
+Lemma ideal_unused_update_rev : forall st ast b ds c st' ast' b' os X n,
+  unused X c ->
+  |-i <(st, ast, b, ds)> =[ c ]=> <(X!-> st X; st', ast', b', os)> ->
+  |-i <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)>.
+Proof.
+Admitted.
+
 Lemma flag_zero_check_spec_bit : forall (st :state) (X :string) (b b' :bool), 
   st X = (if b then 1 else 0) ->
   (st X =? 0)%nat = b' ->
@@ -207,7 +221,28 @@ Lemma flag_zero_check_spec_bit : forall (st :state) (X :string) (b b' :bool),
 Proof.
  intros st X b b' Hflag Heqb. destruct b; destruct b'; try reflexivity;
  rewrite Hflag in Heqb; simpl in Heqb; discriminate.
-Qed. 
+Qed.
+
+Lemma flag_one_check_spec_bit : forall (st :state) (X :string) (b b' :bool), 
+  st X = (if b then 1 else 0) ->
+  (st X =? 1)%nat = b' ->
+  b = b'.
+Proof.
+ intros st X b b' Hflag Heqb. destruct b; destruct b'; try reflexivity;
+ rewrite Hflag in Heqb; simpl in Heqb; discriminate.
+Qed.
+
+
+Definition ultimate_slh_flag_prop (c :com) (ds :dirs) :Prop :=
+  forall st ast (b:bool) st' ast' (b':bool) os,
+  unused "b" c ->
+  st "b" = (if b then 1 else 0) ->
+  <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
+  st' "b" = (if b' then 1 else 0).
+
+Lemma ultimate_slh_flag : forall c ds,
+  ultimate_slh_flag_prop c ds.
+Admitted.
 
 Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
   forall st ast (b: bool) st' ast' b' os,
@@ -233,11 +268,10 @@ Proof.
     + apply IH in H1; try tauto.
       * eassumption.
       * prog_size_auto.
-    + admit. (* needs ultimate_slh_flag lemma
-      apply sel_slh_flag in H1 as Hstb'0; try tauto.
+    + apply ultimate_slh_flag in H1 as Hstb'0; try tauto.
       apply IH in H10; try tauto.
       * eapply ideal_unused_update_rev; try tauto.
-      * prog_size_auto. *)
+      * prog_size_auto.
   (* IF *)
   - (* non-speculative *)
     simpl in H10. destruct (st "b" =? 0)%nat eqn:Eqstb; 
@@ -272,6 +306,69 @@ Proof.
         apply Ideal_If. rewrite Eqbe, Hbit; simpl.
         rewrite app_nil_r. subst. apply H11.
       *  prog_size_auto.
+  - (* speculative *)
+    simpl in H10. destruct (st "b" =? 0)%nat eqn:Eqstb; 
+    destruct (beval st be) eqn:Eqbe; inversion H10; inversion H1; subst;
+    clear H10; clear H1; simpl in *; rewrite Eqstb in *; rewrite Eqbe in *;
+    eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit;
+    simpl in *.
+    + (* true; true *)  
+      apply IH in H11; try tauto.
+      * rewrite t_update_eq in H11.
+        apply ideal_unused_update in H11; try tauto.
+        replace (OBranch true) with (OBranch (negb b && beval st be))
+          by (rewrite Eqbe; rewrite Hbit; reflexivity).
+        apply Ideal_If_F. rewrite Eqbe, Hbit; simpl.
+        rewrite app_nil_r. apply H11.
+      * prog_size_auto.
+    + (* true; false *)  
+      apply IH in H11; try tauto.
+      * rewrite t_update_eq in H11.
+        apply ideal_unused_update in H11; try tauto.
+        replace (OBranch false) with (OBranch (negb b && beval st be))
+          by (rewrite Eqbe; rewrite Hbit; reflexivity).
+        apply Ideal_If_F. rewrite Eqbe, Hbit; simpl.
+        rewrite app_nil_r. apply H11.
+      * prog_size_auto.
+    + (* false; true *)  
+      apply IH in H11; try tauto.
+      * rewrite t_update_eq in H11.
+        apply ideal_unused_update in H11; try tauto.
+        replace (OBranch false) with (OBranch (negb b && beval st be))
+          by (rewrite Eqbe; rewrite Hbit; reflexivity).
+        apply Ideal_If_F. rewrite Eqbe, Hbit; simpl.
+        rewrite app_nil_r. apply H11.
+      * prog_size_auto.
+    + (* false; false *)
+      apply IH in H11; try tauto.
+      * rewrite t_update_eq in H11.
+        apply ideal_unused_update in H11; try tauto.
+        replace (OBranch false) with (OBranch (negb b && beval st be))
+          by (rewrite Eqbe; rewrite Hbit; reflexivity).
+        apply Ideal_If_F. rewrite Eqbe, Hbit; simpl.
+        rewrite app_nil_r. apply H11.
+      * prog_size_auto.
+  - (* While *) admit.
+  (* ARead *)
+  - (* non-speculative *)
+    simpl in H11. destruct (st "b" =? 1)%nat eqn:Eqstb;
+    eapply flag_one_check_spec_bit in Hstb as Hbit; eauto; simpl in *;
+    rewrite Eqstb in *; simpl in *.
+    + rewrite t_update_permute; [| tauto]. rewrite t_update_same.
+      destruct (aeval st i) eqn:Eqi.
+      * replace (x !-> nth 0 (ast' a) 0; st) 
+          with (x !-> if b' then nth 0 (ast' a) 0 else nth 0 (ast' a) 0; st)
+            by (rewrite Hbit; reflexivity).
+        apply Ideal_ARead; auto.
+      * replace (x !-> nth 0 (ast' a) 0; st) 
+          with (x !-> if b' then nth 0 (ast' a) 0 else nth (S n) (ast' a) 0; st)
+            by (rewrite Hbit; reflexivity).
+        try eapply Ideal_ARead. (* SOONER: investigate if ideal rules or ultimate
+        slh have a bug. The provlem is [OARead a 0] <> [OARead a (S n)] *) admit.
+  - (* speculative *) admit.
+  (* AWrite *)
+  - (* non-speculative *) admit.
+  - (* speculative *) admit.
 Admitted.
 
 Lemma ideal_eval_deterministic : forall c st ast b ds1 ds2 stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
