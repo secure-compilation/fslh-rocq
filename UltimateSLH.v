@@ -272,7 +272,20 @@ Proof.
         apply Ideal_If. rewrite Eqbe, Hbit; simpl.
         rewrite app_nil_r. subst. apply H11.
       *  prog_size_auto.
-  - (* speculative *)  
+Admitted.
+
+Lemma ideal_eval_deterministic : forall c st ast b ds1 ds2 stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
+  |-i <( st , ast , b , ds1 )> =[ c ]=> <( stt1 , astt1 , bb1 , os1 )> ->
+  |-i <( st , ast , b , ds2 )> =[ c ]=> <( stt2 , astt2 , bb2 , os2 )> ->
+  (prefix ds1 ds2 \/ prefix ds2 ds1) ->
+  stt1 = stt2 /\ astt1 = astt2 /\ bb1 = bb2 /\ os1 = os2 /\ ds1 = ds2.
+Proof.
+  intros c st ast b ds1 ds2 stt1 astt1 bb1 os1 stt2 astt2 bb2 os2 Heval1.
+  generalize dependent os2; generalize dependent bb2; 
+  generalize dependent astt2; generalize dependent stt2;
+  generalize dependent ds2.
+  induction Heval1; intros ds2' stt2 astt2 bb2 os2' Heval2 Hpre;
+  try (now inversion Heval2; subst; auto).
 Admitted.
 
 Theorem relative_secure_slh :
