@@ -206,6 +206,12 @@ Lemma ideal_unused_update_rev : forall st ast b ds c st' ast' b' os X n,
 Proof.
 Admitted.
 
+Lemma spec_eval_preserves_nonempty_arrs : forall c st ast b ds st' ast' b' os,
+  nonempty_arrs ast ->
+  <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> ->
+  nonempty_arrs ast'.
+Admitted.
+
 Lemma flag_zero_check_spec_bit : forall (st :state) (X :string) (b b' :bool), 
   st X = (if b then 1 else 0) ->
   (st X =? 0)%nat = b' ->
@@ -265,7 +271,7 @@ Proof.
       apply IH in H10; try tauto.
       * eapply ideal_unused_update_rev; try tauto.
       * prog_size_auto.
-      * admit. 
+      * eapply spec_eval_preserves_nonempty_arrs in H1; auto. 
   (* IF *)
   - (* non-speculative *)
     simpl in H10. destruct (st "b" =? 0)%nat eqn:Eqstb; 
