@@ -351,10 +351,9 @@ Proof.
       apply Ideal_ARead; auto. rewrite Hbit. reflexivity.
     + rewrite t_update_permute; [| tauto]. rewrite t_update_same.
       apply Ideal_ARead; auto. rewrite Hbit. reflexivity.
-  - simpl in H11. destruct (st "b" =? 1)%nat eqn:Eqstb.
-    + specialize (Hast a). apply lt_neq in Hast.
-      apply le_0_r in H11. exfalso; auto.
-    + admit. 
+  - (* ARead; contradiction *) simpl in H11. rewrite Hstb in H11; simpl in H11.
+    specialize (Hast a). apply lt_neq in Hast. apply le_0_r in H11.
+    exfalso; auto.
   - (* AWrite *)
     simpl in H12. destruct (st' "b" =? 1)%nat eqn:Eqstb;
     eapply flag_one_check_spec_bit in Hstb as Hbit; eauto; simpl in *;
@@ -363,10 +362,9 @@ Proof.
       rewrite Hbit. reflexivity.
     + rewrite t_update_same. apply Ideal_Write; auto.
       rewrite Hbit. reflexivity.
-  - simpl in H12. destruct (st' "b" =? 1)%nat eqn:Eqstb.
-    + specialize (Hast a). apply lt_neq in Hast.
-      apply le_0_r in H12. exfalso; auto.
-    + admit. 
+  - (* AWrite; contradiction *) simpl in H12. rewrite Hstb in H12; simpl in H12.
+    specialize (Hast a). apply lt_neq in Hast. apply le_0_r in H12.
+    exfalso; auto.
 Admitted.
 
 Theorem ultimate_slh_relative_secure :
