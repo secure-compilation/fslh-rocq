@@ -96,30 +96,17 @@ Inductive ideal_eval :
       |-i <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
       |-i <(st, ast, b, ds)> =[ while be do c end ]=> <(st', ast', b', os)>
-  | Ideal_ARead : forall st ast b x a ie i,
-      aeval st ie = i ->
+  | Ideal_ARead : forall st ast (b :bool) x a ie i,
+      (if b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
       |-i <(st, ast, b, [DStep])> =[ x <- a[[ie]] ]=>
-        <(x !-> if b then nth 0 (ast a) 0 else nth i (ast a) 0; st, ast, b, [OARead a i])>
-  | Ideal_ARead_U : forall st ast x a ie i a' i',
-      aeval st ie = i ->
-      i >= length (ast a) ->
-      i' < length (ast a') ->
-      |-i <(st, ast, true, [DLoad a' i'])> =[ x <- a[[ie]] ]=>
-        <(x !-> nth 0 (ast a') 0; st, ast, true, [OARead a i])>
-  | Ideal_Write : forall st ast b a ie i e n,
+        <(x !-> nth i (ast a) 0; st, ast, b, [OARead a i])>
+  | Ideal_Write : forall st ast (b :bool) a ie i e n,
       aeval st e = n ->
-      aeval st ie = i ->
+      (if b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
       |-i <(st, ast, b, [DStep])> =[ a[ie] <- e ]=>
-        <(st, a !-> if b then upd 0 (ast a) n else upd i (ast a) n; ast, b, [OAWrite a i])>
-  | Ideal_Write_U : forall st ast a ie i e n a' i',
-      aeval st e = n ->
-      aeval st ie = i ->
-      i >= length (ast a) ->
-      i' < length (ast a') ->
-      |-i <(st, ast, true, [DStore a' i'])> =[ a[ie] <- e ]=>
-        <(st, a' !-> upd 0 (ast a') n; ast, true, [OAWrite a i])>
+        <(st, a !-> upd i (ast a) n; ast, b, [OAWrite a i])>
 
   where "|-i <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
     (ideal_eval c st ast b ds stt astt bb os).
@@ -349,26 +336,16 @@ Proof.
         rewrite app_nil_r. apply H11.
       * prog_size_auto.
   - (* While *) admit.
-  (* ARead *)
-  - (* non-speculative *)
+  - (* ARead *)
     simpl in H11. destruct (st "b" =? 1)%nat eqn:Eqstb;
     eapply flag_one_check_spec_bit in Hstb as Hbit; eauto; simpl in *;
     rewrite Eqstb in *; simpl in *.
     + rewrite t_update_permute; [| tauto]. rewrite t_update_same.
       destruct (aeval st i) eqn:Eqi.
-      * replace (x !-> nth 0 (ast' a) 0; st) 
-          with (x !-> if b' then nth 0 (ast' a) 0 else nth 0 (ast' a) 0; st)
-            by (rewrite Hbit; reflexivity).
-        apply Ideal_ARead; auto.
-      * replace (x !-> nth 0 (ast' a) 0; st) 
-          with (x !-> if b' then nth 0 (ast' a) 0 else nth (S n) (ast' a) 0; st)
-            by (rewrite Hbit; reflexivity).
-        try eapply Ideal_ARead. (* SOONER: investigate if ideal rules or ultimate
-        slh have a bug. The provlem is [OARead a 0] <> [OARead a (S n)] *) admit.
-  - (* speculative *) admit.
-  (* AWrite *)
-  - (* non-speculative *) admit.
-  - (* speculative *) admit.
+      * admit.
+      * admit.
+    + admit.
+  - (* ARead with DLoad case, no rule for this *) admit.
 Admitted.
 
 Lemma ideal_eval_deterministic : forall c st ast b ds1 ds2 stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
@@ -385,7 +362,7 @@ Proof.
   try (now inversion Heval2; subst; auto).
 Admitted.
 
-Theorem relative_secure_slh :
+Theorem ultimate_slh_relative_secure :
   forall c st1 st2,
     (* some extra assumptions needed by slh_bcc *)
     unused "b" c ->
