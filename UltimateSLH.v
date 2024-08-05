@@ -87,7 +87,7 @@ Inductive ideal_eval :
       |-i <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
         <(st', ast', b', os1++[OBranch (negb b && beval st be)])>
   | Ideal_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
-      |-i <(st, ast, b, ds)> =[ match negb b && beval st be  with
+      |-i <(st, ast, true, ds)> =[ match negb b && beval st be  with
                                  | true => c2 (* <-- branches swapped *)
                                  | false => c1 end ]=> <(st', ast', b', os1)> ->
       |-i <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
