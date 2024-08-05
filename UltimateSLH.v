@@ -45,6 +45,11 @@ Definition relative_secure (trans : com -> com) (c:com) (st1 st2:state) : Prop :
     seq_obs_secure c st1 st2 ast1 ast2 ->
     spec_obs_secure (trans c) st1 st2 ast1 ast2.
 
+(** Additional Property on [astaste]'s *)
+
+Definition nonempty_arrs (ast :astate) :Prop :=
+  forall a, 0 < length (ast a).
+
 (** * Ultimate Speculative Load Hardening *)
 
 Fixpoint ultimate_slh (c:com) :=
@@ -233,6 +238,7 @@ Admitted.
 
 Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
   forall st ast (b: bool) st' ast' b' os,
+    nonempty_arrs ast ->
     unused "b" c ->
     st "b" = (if b then 1 else 0) ->
     <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
@@ -242,7 +248,7 @@ Lemma ultimate_slh_bcc : forall c ds,
   ultimate_slh_bcc_prop c ds.
 Proof.
   apply prog_size_ind. unfold ultimate_slh_bcc_prop.
-  intros c ds IH st ast b st' ast' b' os Hunused Hstb Heval.
+  intros c ds IH st ast b st' ast' b' os Hast Hunused Hstb Heval.
   destruct c; simpl in *; inversion Heval; subst; clear Heval.
   - (* Skip *)
     rewrite t_update_same. apply Ideal_Skip.
@@ -259,6 +265,7 @@ Proof.
       apply IH in H10; try tauto.
       * eapply ideal_unused_update_rev; try tauto.
       * prog_size_auto.
+      * admit. 
   (* IF *)
   - (* non-speculative *)
     simpl in H10. destruct (st "b" =? 0)%nat eqn:Eqstb; 
@@ -339,13 +346,27 @@ Proof.
   - (* ARead *)
     simpl in H11. destruct (st "b" =? 1)%nat eqn:Eqstb;
     eapply flag_one_check_spec_bit in Hstb as Hbit; eauto; simpl in *;
-    rewrite Eqstb in *; simpl in *.
+    rewrite Eqstb in *.
     + rewrite t_update_permute; [| tauto]. rewrite t_update_same.
-      destruct (aeval st i) eqn:Eqi.
-      * admit.
-      * admit.
-    + admit.
-  - (* ARead with DLoad case, no rule for this *) admit.
+      apply Ideal_ARead; auto. rewrite Hbit. reflexivity.
+    + rewrite t_update_permute; [| tauto]. rewrite t_update_same.
+      apply Ideal_ARead; auto. rewrite Hbit. reflexivity.
+  - simpl in H11. destruct (st "b" =? 1)%nat eqn:Eqstb.
+    + specialize (Hast a). apply lt_neq in Hast.
+      apply le_0_r in H11. exfalso; auto.
+    + admit. 
+  - (* AWrite *)
+    simpl in H12. destruct (st' "b" =? 1)%nat eqn:Eqstb;
+    eapply flag_one_check_spec_bit in Hstb as Hbit; eauto; simpl in *;
+    rewrite Eqstb in *.
+    + rewrite t_update_same. apply Ideal_Write; auto.
+      rewrite Hbit. reflexivity.
+    + rewrite t_update_same. apply Ideal_Write; auto.
+      rewrite Hbit. reflexivity.
+  - simpl in H12. destruct (st' "b" =? 1)%nat eqn:Eqstb.
+    + specialize (Hast a). apply lt_neq in Hast.
+      apply le_0_r in H12. exfalso; auto.
+    + admit. 
 Admitted.
 
 Lemma ideal_eval_deterministic : forall c st ast b ds1 ds2 stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
