@@ -1,6 +1,7 @@
 COQMFFLAGS := -Q . SECF
 
-ALLVFILES := $(wildcard *.v)
+EXCLUDE := AutomatedTestingStaticIFC.v
+ALLVFILES := $(filter-out $(EXCLUDE), $(wildcard *.v))
 
 build: Makefile.coq
 	$(MAKE) -f Makefile.coq
