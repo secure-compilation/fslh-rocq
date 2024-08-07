@@ -250,6 +250,8 @@ Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
     <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
     |-i <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
 
+(* LATER: Prove the used lemmas [ultimate_slh_flag], [ideal_unused_update_rev],
+   [spec_eval_preserves_nonempty_arrs] and [ideal_unused_update] *)
 Lemma ultimate_slh_bcc : forall c ds,
   ultimate_slh_bcc_prop c ds.
 Proof.
@@ -304,7 +306,7 @@ Proof.
       inversion H10; inversion H1; subst; clear H10; clear H1; simpl in *;
       eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.  
       * replace (OBranch true) with (OBranch (negb b && beval st be))
-          by (rewrite Eqbe; rewrite Hbit; reflexivity).
+          by (rewrite Eqbe, Hbit; reflexivity).
         rewrite Eqbe, Eqstb in H11; simpl in H11. 
         apply Ideal_If_F. rewrite app_nil_r. rewrite Eqbe; subst; simpl.
         apply IH in H11; try tauto.
@@ -327,7 +329,118 @@ Proof.
       apply IH in H11; try tauto.
       { rewrite t_update_eq in H11. apply ideal_unused_update in H11; try tauto. }
       { prog_size_auto. }
-  - (* While *) admit.
+  - (* While *) 
+    eapply Ideal_While.
+    inversion H1; subst; clear H1.
+    inversion H11; subst; clear H11; simpl in *.
+    + (* non-speculative *)
+      assert(Lnil: os2 = [] /\ ds2 = []).
+      { inversion H10; subst; eauto. }
+      destruct Lnil; subst; simpl. rewrite app_nil_r.
+      destruct (st "b" =? 0)%nat eqn:Eqstb; simpl in *.
+      * destruct (beval st be) eqn:Eqbe;
+        inversion H12; subst; clear H12.
+        { assert(Hwhile: <(st'1, ast'1, b'1, ds2)> 
+              =[ ultimate_slh <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
+          { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
+            replace os2 with ([] ++ os2)%list by reflexivity.
+            eapply Spec_Seq; eassumption. }
+          clear H11; clear H10.
+          eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
+          replace (OBranch true) with (OBranch (negb b && beval st be))
+            by (rewrite Eqbe, Hbit; reflexivity).
+          apply Ideal_If. rewrite Eqbe; subst; simpl.
+          apply (Ideal_Seq _ _ _ _ _ ("b" !-> st "b"; st'1) ast'1 b'1 _ _ _ os1).
+          - inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
+            rewrite app_nil_r. rewrite Eqbe, Eqstb in H11; simpl in H11. 
+            rewrite t_update_same in H11. apply IH in H11; try tauto.
+            prog_size_auto.
+          - apply IH in Hwhile; try tauto.
+            + eapply ideal_unused_update_rev; eauto.
+            + prog_size_auto.
+            + eapply spec_eval_preserves_nonempty_arrs in H1; auto.
+            + auto.
+            + inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
+              rewrite Eqbe, Eqstb in H11; simpl in H11. rewrite t_update_same in H11.
+              apply ultimate_slh_flag in H11; try tauto. }
+        { eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
+          replace (OBranch false) with (OBranch (negb b'0 && beval st'0 be))
+            by (rewrite Hbit, Eqbe; reflexivity).
+          apply Ideal_If. rewrite Eqbe; subst; simpl.
+          inversion H10; subst; clear H10; simpl in *. rewrite Eqbe, Eqstb; simpl.
+          rewrite t_update_shadow. rewrite t_update_same. apply Ideal_Skip. }
+      * eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
+        replace (OBranch false) with (OBranch (negb b && beval st be))
+          by (rewrite Hbit; reflexivity).
+        apply Ideal_If. subst; simpl.  
+        inversion H12; subst; clear H12.
+        inversion H10; subst; clear H10; simpl in *.
+        rewrite Eqstb; simpl. rewrite t_update_shadow. rewrite t_update_same.
+        apply Ideal_Skip.
+    + (* non-speculative *)
+      assert(Lnil: os2 = [] /\ ds2 = []).
+      { inversion H10; subst; eauto. }
+      destruct Lnil; subst; simpl. rewrite app_nil_r.
+      destruct (st "b" =? 0)%nat eqn:Eqstb; simpl in *.
+      * destruct (beval st be) eqn:Eqbe;
+        inversion H12; subst; clear H12.
+        { eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
+          replace (OBranch true) with (OBranch (negb b && beval st'0 be))
+            by (rewrite Hbit, Eqbe; reflexivity).
+          apply Ideal_If_F. rewrite Eqbe; subst; simpl.  
+          inversion H10; subst; clear H10; simpl in *.
+          rewrite Eqstb; simpl. rewrite t_update_shadow. rewrite t_update_same.
+          apply Ideal_Skip. }
+        { assert(Hwhile: <(st'1, ast'1, b'1, ds2)> 
+              =[ ultimate_slh <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
+          { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
+            replace os2 with ([] ++ os2)%list by reflexivity.
+            eapply Spec_Seq; eassumption. }
+          clear H11; clear H10.
+          eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
+          replace (OBranch false) with (OBranch (negb b && beval st be))
+            by (rewrite Eqbe, Hbit; reflexivity).
+          apply Ideal_If_F. rewrite Eqbe; subst; simpl.
+          apply (Ideal_Seq _ _ _ _ _ ("b" !-> st "b"; st'1) ast'1 b'1 _ _ _ os1).
+          - inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
+            rewrite app_nil_r. rewrite Eqbe, Eqstb in H11; simpl in H11.
+            apply IH in H11; try tauto.
+            + eapply ideal_unused_update in H11; try tauto. 
+            + prog_size_auto.
+          - apply IH in Hwhile; try tauto.
+            + eapply ideal_unused_update_rev; eauto.
+            + prog_size_auto.
+            + eapply spec_eval_preserves_nonempty_arrs in H1; auto.
+            + auto.
+            + inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
+              rewrite Eqbe, Eqstb in H11; simpl in H11. 
+              apply ultimate_slh_flag in H11; try tauto. }
+      * inversion H12; subst; clear H12.
+        assert(Hwhile: <(st'1, ast'1, b'1, ds2)> 
+              =[ ultimate_slh <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
+          { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
+            replace os2 with ([] ++ os2)%list by reflexivity.
+            eapply Spec_Seq; eassumption. }
+          clear H11; clear H10.
+          eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
+          replace (OBranch false) with (OBranch (negb b && beval st be))
+            by (rewrite Hbit; reflexivity).
+          apply Ideal_If_F. subst; simpl.
+          apply (Ideal_Seq _ _ _ _ _ ("b" !-> st "b"; st'1) ast'1 b'1 _ _ _ os1).
+          { inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
+            rewrite app_nil_r. rewrite Eqstb in H11; simpl in H11. 
+            apply IH in H11; try tauto.
+            - rewrite t_update_eq in H11.
+              eapply ideal_unused_update in H11; try tauto. 
+            -  prog_size_auto. }
+          { apply IH in Hwhile; try tauto.
+            - eapply ideal_unused_update_rev; eauto.
+            - prog_size_auto.
+            - eapply spec_eval_preserves_nonempty_arrs in H1; auto.
+            - auto.
+            - inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
+              rewrite Eqstb in H11; simpl in H11.
+              apply ultimate_slh_flag in H11; try tauto. }
   - (* ARead *)
     simpl in H11. destruct (st "b" =? 1)%nat eqn:Eqstb;
     eapply flag_one_check_spec_bit in Hstb as Hbit; eauto; simpl in *;
@@ -350,7 +463,7 @@ Proof.
   - (* AWrite; contradiction *) simpl in H12. rewrite Hstb in H12; simpl in H12.
     specialize (Hast a). apply lt_neq in Hast. apply le_0_r in H12.
     exfalso; auto.
-Admitted.
+Qed.
 
 Theorem ultimate_slh_relative_secure :
   forall c st1 st2,
