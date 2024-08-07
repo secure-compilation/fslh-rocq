@@ -464,6 +464,21 @@ Proof.
     exfalso; auto.
 Qed.
 
+Conjecture ideal_eval_bit_deterministic : 
+  forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
+    |-i <(st1, ast1, b, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
+    |-i <(st2, ast2, b, ds)> =[ c ]=> <(stt2, astt2, bt2, os2 )> ->
+    bt1 = bt2.
+
+Conjecture ideal_eval_final_bit_false : forall c st ast ds stt astt os,
+  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, false, os)> ->
+  (forall d, In d ds -> d = DStep).
+
+Conjecture ideal_eval_no_spec : forall c st ast ds stt astt bt os,
+  (forall d, In d ds -> d = DStep) ->
+  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  <(st, ast )> =[ c ]=> <(stt, astt, os)>.
+
 Theorem ultimate_slh_relative_secure :
   forall c st1 st2 ast1 ast2,
     (* some extra assumptions needed by slh_bcc *)
@@ -474,4 +489,19 @@ Theorem ultimate_slh_relative_secure :
     nonempty_arrs ast1 ->
     nonempty_arrs ast2 ->
     relative_secure ultimate_slh c st1 st2 ast1 ast2.
+Proof.
+  unfold relative_secure, seq_obs_secure, spec_obs_secure.
+  intros c st1 st2 ast1 ast2 Hunused Hst1b Hst2b Hast1 Hast2 Hseq ds stt1 stt2 
+    astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2. Search In.
+  apply ultimate_slh_bcc in Hev1; try assumption.
+  apply ultimate_slh_bcc in Hev2; try assumption.
+  eapply ideal_eval_bit_deterministic in Hev1 as SameB; try eassumption. subst.
+  destruct bt1 eqn:Eqbt1.
+  - (* with speculation *) admit.
+  - (* without speculation *)
+    assert (Hds: forall d, In d ds -> d = DStep).
+    { intros; eapply ideal_eval_final_bit_false in Hev1; eauto. }
+    eapply ideal_eval_no_spec in Hev1; try assumption.
+    eapply ideal_eval_no_spec in Hev2; try assumption.
+    eauto.
 Admitted. (* from relative noninterference + bcc *)
