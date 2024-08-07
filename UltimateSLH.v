@@ -274,80 +274,59 @@ Proof.
       * eapply spec_eval_preserves_nonempty_arrs in H1; auto. 
   (* IF *)
   - (* non-speculative *)
-    simpl in H10. destruct (st "b" =? 0)%nat eqn:Eqstb; 
-    destruct (beval st be) eqn:Eqbe; inversion H10; inversion H1; subst;
-    clear H10; clear H1; simpl in *; rewrite Eqstb in *; rewrite Eqbe in *;
-    eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit;
-    rewrite t_update_same in H11; simpl in *.
-    + (* true; true *)  
-      apply IH in H11; try tauto.
+    simpl in *. destruct (st "b" =? 0)%nat eqn:Eqstb; simpl in *.
+    + (* true *)
+      destruct (beval st be) eqn:Eqbe; simpl in H10; 
+      inversion H10; inversion H1; subst; clear H10; clear H1; simpl in *;
+      eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.  
       * replace (OBranch true) with (OBranch (negb b'0 && beval st be))
           by (rewrite Eqbe; rewrite Hbit; reflexivity).
-        apply Ideal_If. rewrite Eqbe, Hbit; simpl.
-        rewrite app_nil_r. subst. apply H11.
-      * prog_size_auto.
-    + (* true; false *)
-      apply IH in H11; try tauto.
+        rewrite Eqbe, Eqstb in H11; simpl in H11. rewrite t_update_same in H11.
+        apply Ideal_If. rewrite app_nil_r. rewrite Eqbe; subst; simpl.
+        apply IH in H11; try tauto. prog_size_auto.
       * replace (OBranch false) with (OBranch (negb b'0 && beval st be))
-          by (rewrite Eqbe; rewrite Hbit; reflexivity).
-        apply Ideal_If. rewrite Eqbe, Hbit; simpl.
-        rewrite app_nil_r. subst. apply H11.
-      *  prog_size_auto.
-    + (* false; true *)
-      apply IH in H11; try tauto.
-      * replace (OBranch false) with (OBranch (negb b'0 && beval st be))
-          by (rewrite Eqbe; rewrite Hbit; reflexivity).
-        apply Ideal_If. rewrite Eqbe, Hbit; simpl.
-        rewrite app_nil_r. subst. apply H11.
-      *  prog_size_auto.
-    + apply IH in H11; try tauto.
-      * replace (OBranch false) with (OBranch (negb b'0 && beval st be))
-          by (rewrite Eqbe; rewrite Hbit; reflexivity).
-        apply Ideal_If. rewrite Eqbe, Hbit; simpl.
-        rewrite app_nil_r. subst. apply H11.
-      *  prog_size_auto.
+          by (rewrite Eqbe, Hbit; reflexivity).
+        rewrite Eqbe, Eqstb in H11; simpl in H11. rewrite t_update_same in H11.
+        apply Ideal_If. rewrite app_nil_r. rewrite Eqbe; subst; simpl.
+        apply IH in H11; try tauto. prog_size_auto.
+    + (* false *)
+      inversion H10; inversion H1; subst; clear H10; clear H1; simpl in *.
+      rewrite Eqstb in H11; simpl in H11. rewrite t_update_same in H11.
+      eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit. 
+      replace (OBranch false) with (OBranch (negb b'0 && beval st be))
+        by (rewrite Hbit; reflexivity). 
+      apply Ideal_If. rewrite app_nil_r. subst; simpl.
+      apply IH in H11; try tauto. prog_size_auto.
   - (* speculative *)
-    simpl in H10. destruct (st "b" =? 0)%nat eqn:Eqstb; 
-    destruct (beval st be) eqn:Eqbe; inversion H10; inversion H1; subst;
-    clear H10; clear H1; simpl in *; rewrite Eqstb in *; rewrite Eqbe in *;
-    eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit;
-    simpl in *.
-    + (* true; true *)  
-      apply IH in H11; try tauto.
-      * rewrite t_update_eq in H11.
-        apply ideal_unused_update in H11; try tauto.
-        replace (OBranch true) with (OBranch (negb b && beval st be))
+    simpl in *. destruct (st "b" =? 0)%nat eqn:Eqstb; simpl in *.
+    + (* true *)
+      destruct (beval st be) eqn:Eqbe; simpl in H10; 
+      inversion H10; inversion H1; subst; clear H10; clear H1; simpl in *;
+      eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.  
+      * replace (OBranch true) with (OBranch (negb b && beval st be))
           by (rewrite Eqbe; rewrite Hbit; reflexivity).
-        apply Ideal_If_F. rewrite Eqbe, Hbit; simpl.
-        rewrite app_nil_r. apply H11.
-      * prog_size_auto.
-    + (* true; false *)  
+        rewrite Eqbe, Eqstb in H11; simpl in H11. 
+        apply Ideal_If_F. rewrite app_nil_r. rewrite Eqbe; subst; simpl.
+        apply IH in H11; try tauto.
+        { rewrite t_update_eq in H11. apply ideal_unused_update in H11; try tauto. }
+        { prog_size_auto. }
+      * replace (OBranch false) with (OBranch (negb b && beval st be))
+          by (rewrite Eqbe, Hbit; reflexivity).
+        rewrite Eqbe, Eqstb in H11; simpl in H11.
+        apply Ideal_If_F. rewrite app_nil_r. rewrite Eqbe; subst; simpl.
+        apply IH in H11; try tauto.
+        { rewrite t_update_eq in H11. apply ideal_unused_update in H11; try tauto. }
+        { prog_size_auto. }
+    + (* false *)
+      inversion H10; inversion H1; subst; clear H10; clear H1; simpl in *.
+      rewrite Eqstb in H11; simpl in H11. 
+      eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit. 
+      replace (OBranch false) with (OBranch (negb b && beval st be))
+        by (rewrite Hbit; reflexivity). 
+      apply Ideal_If_F. rewrite app_nil_r. subst; simpl.
       apply IH in H11; try tauto.
-      * rewrite t_update_eq in H11.
-        apply ideal_unused_update in H11; try tauto.
-        replace (OBranch false) with (OBranch (negb b && beval st be))
-          by (rewrite Eqbe; rewrite Hbit; reflexivity).
-        apply Ideal_If_F. rewrite Eqbe, Hbit; simpl.
-        rewrite app_nil_r. apply H11.
-      * prog_size_auto.
-    + (* false; true *)  
-      apply IH in H11; try tauto.
-      * rewrite t_update_eq in H11.
-        apply ideal_unused_update in H11; try tauto.
-        replace (OBranch false) with (OBranch (negb b && beval st be))
-          by (rewrite Eqbe; rewrite Hbit; reflexivity).
-        apply Ideal_If_F. rewrite Eqbe, Hbit; simpl.
-        rewrite app_nil_r. apply H11.
-      * prog_size_auto.
-    + (* false; false *)
-      apply IH in H11; try tauto.
-      * rewrite t_update_eq in H11.
-        apply ideal_unused_update in H11; try tauto.
-        replace (OBranch false) with (OBranch (negb b && beval st be))
-          by (rewrite Eqbe; rewrite Hbit; reflexivity).
-        apply Ideal_If_F. rewrite Eqbe, Hbit; simpl.
-        rewrite app_nil_r. apply H11.
-      * prog_size_auto.
+      { rewrite t_update_eq in H11. apply ideal_unused_update in H11; try tauto. }
+      { prog_size_auto. }
   - (* While *) admit.
   - (* ARead *)
     simpl in H11. destruct (st "b" =? 1)%nat eqn:Eqstb;
