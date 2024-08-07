@@ -40,8 +40,7 @@ Definition spec_obs_secure c st1 st2 ast1 ast2 : Prop :=
     <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
     os1 = os2.
 
-Definition relative_secure (trans : com -> com) (c:com) (st1 st2:state) : Prop :=
-  forall ast1 ast2,
+Definition relative_secure (trans : com -> com) (c:com) (st1 st2 :state) (ast1 ast2 :astate): Prop :=
     seq_obs_secure c st1 st2 ast1 ast2 ->
     spec_obs_secure (trans c) st1 st2 ast1 ast2.
 
@@ -466,10 +465,13 @@ Proof.
 Qed.
 
 Theorem ultimate_slh_relative_secure :
-  forall c st1 st2,
+  forall c st1 st2 ast1 ast2,
     (* some extra assumptions needed by slh_bcc *)
     unused "b" c ->
     st1 "b" = 0 ->
     st2 "b" = 0 ->
-    relative_secure ultimate_slh c st1 st2.
+    (* extra assumptions on astates *)
+    nonempty_arrs ast1 ->
+    nonempty_arrs ast2 ->
+    relative_secure ultimate_slh c st1 st2 ast1 ast2.
 Admitted. (* from relative noninterference + bcc *)
