@@ -115,6 +115,12 @@ Inductive ideal_eval :
   where "|-i <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
     (ideal_eval c st ast b ds stt astt bb os).
 
+Definition ideal_obs_secure c st1 st2 ast1 ast2 : Prop :=
+  forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
+    |-i <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
+    |-i <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
+    os1 = os2.
+
 Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
   match c with
   | <{{skip}}> => Some ([],ds)
@@ -175,21 +181,6 @@ Proof.
   apply observations_fixed in H1; try auto.
   apply observations_fixed in H2; try auto. congruence.
 Qed.
-
-Definition ideal_obs_secure c st1 st2 ast1 ast2 : Prop :=
-  forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
-    |-i <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
-    |-i <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
-    os1 = os2.
-
-Lemma relative_noninterference : forall c st1 st2 ast1 ast2,
-  unused "b" c ->
-  st1 "b" = 0 ->
-  st2 "b" = 0 ->
-  seq_obs_secure c st1 st2 ast1 ast2 ->
-  ideal_obs_secure c st1 st2 ast1 ast2.
-Proof.
-Admitted.
 
 Lemma ideal_unused_update : forall st ast b ds c st' ast' b' os X n,
   unused X c ->
@@ -479,6 +470,61 @@ Conjecture ideal_eval_no_spec : forall c st ast ds stt astt bt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   <(st, ast )> =[ c ]=> <(stt, astt, os)>.
 
+Conjecture ideal_prefix_dirs : 
+  forall c st1 st2 ast1 ast2 b1 b2 ds1 ds2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
+  prefix ds1 ds2 ->
+  |-i <(st1, ast1, b1, ds1)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
+  |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
+  ds1 = ds2.
+
+Lemma relative_noninterference : forall c st1 st2 ast1 ast2,
+  unused "b" c ->
+  st1 "b" = 0 ->
+  st2 "b" = 0 ->
+  seq_obs_secure c st1 st2 ast1 ast2 ->
+  ideal_obs_secure c st1 st2 ast1 ast2.
+Proof.
+  unfold ideal_obs_secure. intros c st1 st2 ast1 ast2 Hunused 
+  Hst1b Hst2b Hsec ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
+  eapply ideal_eval_bit_deterministic in Hev1 as SameB; try eassumption. subst.
+  destruct bt1 eqn:Eqbt1.
+  - (* with speculation *)
+    destruct c as [| X e | c1 c2 | be ct cf | be cw | X a ie | a ie e ] eqn:Eqnc;
+    try (now inversion Hev1).
+    + (* Seq *)
+      inversion Hev1; subst; clear Hev1; inversion Hev2; subst; clear Hev2.
+      assert (Hdirs: ds0 = ds1 /\ ds3 = ds2).
+      { assert (L: prefix (ds0 ++ ds3) (ds1++ds2)) by (rewrite H2; apply prefix_refl).
+        apply prefix_app in L. destruct L as [Hdir | Hdir].
+        - eapply ideal_prefix_dirs in H1; eauto. subst.
+          apply app_inv_head_iff in H2. subst. auto.
+        - eapply ideal_prefix_dirs in H6; eauto. subst.
+          apply app_inv_head_iff in H2. subst. auto. }
+      destruct Hdirs; subst.
+      eapply ideal_eval_bit_deterministic in H1 as SameB; try eassumption. subst.
+      destruct b' eqn:Eqb'.
+      (* HIDE: Analog cases to the destruct of bt1. Therefore same issues with using
+         <(_, _, false, _)> =[c]=> <(_, _, true, _)> . *)
+      * admit.
+      * admit.
+    + (* If *)
+      inversion Hev1; subst; clear Hev1; inversion Hev2; subst; clear Hev2.
+      * destruct (beval st1 be) eqn:Eqst1be; destruct (beval st2 be) eqn:Eqst2be; simpl in *.
+        { (* HIDE: Hard to relate ideal to sequential execution. But without relating, how
+             to use seq_obs_sec. *) admit. }
+        { admit. }
+        { admit. }
+        { admit. }
+      * admit.
+    + (* While *) admit. 
+  - (* without speculation *)
+    assert (Hds: forall d, In d ds -> d = DStep).
+    { intros; eapply ideal_eval_final_bit_false in Hev1; eauto. }
+    eapply ideal_eval_no_spec in Hev1; try assumption.
+    eapply ideal_eval_no_spec in Hev2; try assumption.
+    eauto.
+Admitted.
+
 Theorem ultimate_slh_relative_secure :
   forall c st1 st2 ast1 ast2,
     (* some extra assumptions needed by slh_bcc *)
@@ -492,20 +538,8 @@ Theorem ultimate_slh_relative_secure :
 Proof. (* from relative noninterference + bcc *)
   unfold relative_secure.
   intros c st1 st2 ast1 ast2 Hunused Hst1b Hst2b Hast1 Hast2 Hseq ds stt1 stt2 
-    astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2. Search In.
+    astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
   apply ultimate_slh_bcc in Hev1; try assumption.
   apply ultimate_slh_bcc in Hev2; try assumption.
   eapply (relative_noninterference c st1 st2); eassumption.
 Qed.
-(* CH: The rest may still be helpful for the proof of relative_noninterference
-  eapply ideal_eval_bit_deterministic in Hev1 as SameB; try eassumption. subst.
-  destruct bt1 eqn:Eqbt1.
-  - (* with speculation *) admit.
-  - (* without speculation *)
-    assert (Hds: forall d, In d ds -> d = DStep).
-    { intros; eapply ideal_eval_final_bit_false in Hev1; eauto. }
-    eapply ideal_eval_no_spec in Hev1; try assumption.
-    eapply ideal_eval_no_spec in Hev2; try assumption.
-    eauto.
-Admitted.
-*)
