@@ -184,8 +184,8 @@ Definition ideal_obs_secure c st1 st2 ast1 ast2 : Prop :=
 
 Lemma relative_noninterference : forall c st1 st2 ast1 ast2,
   unused "b" c ->
-  st1 "b" = 1 ->
-  st2 "b" = 1 ->
+  st1 "b" = 0 ->
+  st2 "b" = 0 ->
   seq_obs_secure c st1 st2 ast1 ast2 ->
   ideal_obs_secure c st1 st2 ast1 ast2.
 Proof.
@@ -489,12 +489,15 @@ Theorem ultimate_slh_relative_secure :
     nonempty_arrs ast1 ->
     nonempty_arrs ast2 ->
     relative_secure ultimate_slh c st1 st2 ast1 ast2.
-Proof.
-  unfold relative_secure, seq_obs_secure, spec_obs_secure.
+Proof. (* from relative noninterference + bcc *)
+  unfold relative_secure.
   intros c st1 st2 ast1 ast2 Hunused Hst1b Hst2b Hast1 Hast2 Hseq ds stt1 stt2 
     astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2. Search In.
   apply ultimate_slh_bcc in Hev1; try assumption.
   apply ultimate_slh_bcc in Hev2; try assumption.
+  eapply (relative_noninterference c st1 st2); eassumption.
+Qed.
+(* CH: The rest may still be helpful for the proof of relative_noninterference
   eapply ideal_eval_bit_deterministic in Hev1 as SameB; try eassumption. subst.
   destruct bt1 eqn:Eqbt1.
   - (* with speculation *) admit.
@@ -504,4 +507,5 @@ Proof.
     eapply ideal_eval_no_spec in Hev1; try assumption.
     eapply ideal_eval_no_spec in Hev2; try assumption.
     eauto.
-Admitted. (* from relative noninterference + bcc *)
+Admitted.
+*)
