@@ -1721,6 +1721,7 @@ Fixpoint gen_com_rec (gen_asgn : pub_vars -> G com)
                     (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b)) sz' P)
                     (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b)) sz' P));
              (sz, b <- arbitrary;;
+                  liftM2 CWhile (ret b)
                     (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b)) sz' P))]
   end.
 
