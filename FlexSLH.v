@@ -178,54 +178,130 @@ Definition gen_secure_asgn (P:pub_vars) : G com :=
   a <- (if apply P x then gen_pub_aexp 1 P else arbitrary);;
   ret <{ x := a }>.
 
+Definition gen_name (P:pub_vars) (label:bool) : G (option string) :=
+  let privs := filter (fun x => Bool.eqb label (apply P x))
+                      (map_dom (snd P)) in
+  match privs with
+  | x0 :: _ => liftM Some (elems_ x0 privs)
+  | [] => ret None
+  end.
+
 Definition gen_asgn_in_ctx (gen_asgn : pub_vars -> G com)
     (pc:label) (P:pub_vars) : G com :=
   if pc then gen_asgn P
   else
-    let privs := filter (fun x => negb (apply P x))
-                        (map_dom (snd P)) in
-    match privs with
-    | x0 :: _ =>
-      x <- elems_ x0 privs;;
+    x <- gen_name P secret;; (* secret var *)
+    match x with
+    | Some x =>
       a <- arbitrary;;
       ret <{ x := a }>
-    | [] => ret <{ skip }>
-      (* generates skip if there no secure assignements possible *)
+    | None => ret <{ skip }>
+    end.
+
+Definition gen_secure_aread (P:pub_vars) (PA:pub_arrs) : G com :=
+  let vars := map_dom (snd P) in
+  x <- elems_ "X0"%string vars;;
+  if apply P x then
+    a <- gen_name PA public;; (* public array *)
+    match a with
+    | Some a =>
+        i <- gen_pub_aexp 1 P;; (* public index *)
+        ret <{ x <- a[[i]] }>
+    | None => ret <{ skip }>
+    end
+  else
+    a <- arbitrary;;
+    i <- arbitrary;;
+    ret <{ x <- a[[i]] }>.
+
+Definition gen_aread_in_ctx (gen_aread : pub_vars -> pub_arrs -> G com)
+    (pc:label) (P:pub_vars) (PA:pub_arrs) : G com :=
+  if pc then gen_aread P PA
+  else
+    x <- gen_name P secret;; (* secret var *)
+    match x with
+    | Some x =>
+      a <- arbitrary;;
+      i <- arbitrary;;
+      ret <{ x <- a[[i]] }>
+    | None => ret <{ skip }>
+    end.
+
+Definition gen_secure_awrite (P:pub_vars) (PA:pub_arrs) : G com :=
+  let arrs := map_dom (snd P) in
+  a <- elems_ "A0"%string arrs;;
+  if apply PA a then
+    i <- gen_pub_aexp 1 P;; (* public index *)
+    e <- gen_pub_aexp 1 P;; (* public expression *)
+    ret <{ a[i] <- e }>
+  else
+    i <- arbitrary;;
+    e <- arbitrary;;
+    ret <{ a[i] <- e }>.
+
+Definition gen_awrite_in_ctx (gen_awrite : pub_vars -> pub_arrs -> G com)
+    (pc:label) (P:pub_vars) (PA:pub_arrs) : G com :=
+  if pc then gen_awrite P PA
+  else
+    a <- gen_name PA secret;; (* secret array *)
+    match a with
+    | Some a =>
+      i <- arbitrary;;
+      e <- arbitrary;;
+      ret <{ a[i] <- e }>
+    | None => ret <{ skip }>
     end.
 
 Fixpoint gen_com_rec (gen_asgn : pub_vars -> G com)
-                     (sz:nat) (P:pub_vars) : G com :=
+                     (gen_aread : pub_vars -> pub_arrs -> G com)
+                     (gen_awrite : pub_vars -> pub_arrs -> G com)
+                     (sz:nat) (P:pub_vars) (PA:pub_arrs) : G com :=
   match sz with
-  | O => oneOf [ret Skip ; gen_asgn P ]
+  | O => oneOf [ret Skip ; gen_asgn P ; gen_aread P PA ; gen_awrite P PA ]
   | S sz' =>
       freq [ (1, ret Skip);
              (sz, gen_asgn P);
-             (sz, liftM2 Seq (gen_com_rec gen_asgn sz' P)
-                              (gen_com_rec gen_asgn sz' P));
+             (sz, gen_aread P PA);
+             (sz, gen_awrite P PA);
+             (sz, liftM2 Seq (gen_com_rec gen_asgn gen_aread gen_awrite sz' P PA)
+                             (gen_com_rec gen_asgn gen_aread gen_awrite sz' P PA));
              (sz, b <- arbitrary;;
                   liftM3 If (ret b)
-                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b)) sz' P)
-                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b)) sz' P));
+                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
+                                 (gen_aread_in_ctx gen_aread (label_of_bexp P b))
+                                 (gen_awrite_in_ctx gen_awrite (label_of_bexp P b))
+                                 sz' P PA)
+                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
+                                 (gen_aread_in_ctx gen_aread (label_of_bexp P b))
+                                 (gen_awrite_in_ctx gen_awrite (label_of_bexp P b))
+                                 sz' P PA));
              (sz, b <- arbitrary;;
                   liftM2 While (ret b)
-                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b)) sz' P))]
-             (* TODO: need to add array accesses *)
+                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
+                                 (gen_aread_in_ctx gen_aread (label_of_bexp P b))
+                                 (gen_awrite_in_ctx gen_aread (label_of_bexp P b))
+                       sz' P PA))]
   end.
 
-Definition gen_wt_com := gen_com_rec gen_secure_asgn.
+Definition gen_wt_com := gen_com_rec gen_secure_asgn gen_secure_aread gen_secure_awrite.
 
 Sample gen_pub_vars.
 
 Definition someP := (false, [("X0", false); ("X1", true); ("X2", true);
                            ("X3", true); ("X4", false); ("X5", false)])%string.
 
-Sample (gen_wt_com 2 someP).
+Sample gen_pub_arrs.
+
+Definition somePA := (true, [("A0", true); ("A1", true); ("A2", false)])%string.
+
+Sample (gen_wt_com 2 someP somePA).
 
 Definition gen_wt_com_pc_secret :=
-  gen_com_rec (gen_asgn_in_ctx gen_secure_asgn secret).
+  gen_com_rec (gen_asgn_in_ctx gen_secure_asgn secret)
+              (gen_aread_in_ctx gen_secure_aread secret)
+              (gen_awrite_in_ctx gen_secure_awrite secret).
 
-(* Need to prevent empty arrays *)
-
+(* Preventing empty arrays *)
 Definition gen_astate : G astate :=
   ld <- choose (1,10);;
   d <- vectorOf ld arbitrary;;
@@ -237,11 +313,12 @@ Definition gen_astate : G astate :=
   v2 <- vectorOf l2 arbitrary;;
   ret (d, [("A0",v0); ("A1",v1); ("A2",v2)]) % string.
 
-(* WAS: Test that spec_ct holds for sel_slh *)
+(* Testing flex_slh_relative_secure *)
+Extract Constant defNumTests => "100000".
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
 
-    forAll (gen_wt_com 3 P) (fun c =>
+    forAll (gen_wt_com 3 P PA) (fun c =>
     let hardened := flex_slh P c in
 
     forAll gen_state (fun s1 =>
@@ -255,13 +332,14 @@ QuickChick (forAll gen_pub_vars (fun P =>
     let r2 := cteval_engine 1000 c s2 a2 in
     match (r1, r2) with
     | (Some (s1', a1', os1'), Some (s2', a2', os2')) =>
+        collect (show (List.length os1')) (
         implication (obs_eqb os1' os2')
           (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
              (fun '(ds, s1', a1', b', os1) =>
                 match spec_eval_engine hardened s2 a2 false ds with
                 | Some (s2', a2', b'', os2) => checker (obs_eqb os1 os2)
                 | None => checker tt (* If the second execution crashes, this isn't a counterexample *)
-                end))
+                end)))
     | _ => (* discard *)
         checker tt
     end)))))))).
