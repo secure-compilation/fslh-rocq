@@ -100,12 +100,12 @@ Inductive well_typed (P PA : pub_vars) : label -> com -> Prop :=
       P & PA, pc |-- <{ while b do c1 end }>
   | WT_ARead : forall pc x a i li,
       P |-a- i \in li ->
-      can_flow (join li (PA a)) (P x) = true ->
+      can_flow (join pc (join li (PA a))) (P x) = true ->
       P & PA, pc |-- <{{ x <- a[[i]] }}>
   | WT_AWrite : forall pc a i e li l,
       P |-a- i \in li ->
       P |-a- e \in l ->
-      can_flow (join li l) (PA a) = true ->
+      can_flow (join pc (join li l)) (PA a) = true ->
       P & PA, pc |-- <{{ a[i] <- e }}>
 where "P '&' PA ',' pc '|--' c" := (well_typed P PA pc c).
 
@@ -123,3 +123,4 @@ Conjecture flex_slh_relative_secure :
     nonempty_arrs ast1 ->
     nonempty_arrs ast2 ->
     relative_secure (flex_slh P) c st1 st2 ast1 ast2.
+
