@@ -28,21 +28,21 @@ Set Default Goal Selector "!".
 (** We formalize this as a relative security property that doesn't label data at
     all as public or secret. *)
 
-Definition seq_obs_secure c st1 st2 ast1 ast2 : Prop :=
+Definition seq_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall stt1 stt2 astt1 astt2 os1 os2,
     <(st1, ast1)> =[ c ]=> <(stt1, astt1, os1)> ->
     <(st2, ast2)> =[ c ]=> <(stt2, astt2, os2)> ->
     os1 = os2.
 
-Definition spec_obs_secure c st1 st2 ast1 ast2 : Prop :=
+Definition spec_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
     <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
     <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
     os1 = os2.
 
 Definition relative_secure (trans : com -> com) (c:com) (st1 st2 :state) (ast1 ast2 :astate): Prop :=
-    seq_obs_secure c st1 st2 ast1 ast2 ->
-    spec_obs_secure (trans c) st1 st2 ast1 ast2.
+  seq_same_obs c st1 st2 ast1 ast2 ->
+  spec_same_obs (trans c) st1 st2 ast1 ast2.
 
 (** Additional Property on [astaste]'s *)
 
@@ -115,12 +115,14 @@ Inductive ideal_eval :
   where "|-i <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
     (ideal_eval c st ast b ds stt astt bb os).
 
-Definition ideal_obs_secure c st1 st2 ast1 ast2 : Prop :=
+Definition ideal_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
     |-i <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
     |-i <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
     os1 = os2.
 
+(* HIDE *)
+(* Some intuition about Gilles lemma, but now we plan to prove it directly, like determinism *)
 Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
   match c with
   | <{{skip}}> => Some ([],ds)
@@ -169,7 +171,7 @@ Lemma observations_fixed : forall c st ast ds stt astt os,
   Some (os,[]) = observations c ds.
 Admitted.
 
-Lemma gilles_lemma : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
+Lemma gilles_lemma_follows : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
   unused "b" c ->
   st1 "b" = 1 ->
   st2 "b" = 1 ->
@@ -181,6 +183,16 @@ Proof.
   apply observations_fixed in H1; try auto.
   apply observations_fixed in H2; try auto. congruence.
 Qed.
+(* /HIDE *)
+
+Lemma gilles_lemma : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
+  unused "b" c ->
+  st1 "b" = 1 ->
+  st2 "b" = 1 ->
+  |-i <(st1, ast1, true, ds)> =[ c ]=> <(stt1, astt1, true, os1)> ->
+  |-i <(st2, ast2, true, ds)> =[ c ]=> <(stt2, astt2, true, os2)> ->
+  os1 = os2.
+Admitted.
 
 Lemma ideal_unused_update : forall st ast b ds c st' ast' b' os X n,
   unused X c ->
@@ -477,14 +489,14 @@ Conjecture ideal_prefix_dirs :
   |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
   ds1 = ds2.
 
-Lemma relative_noninterference : forall c st1 st2 ast1 ast2,
+Lemma ideal_relative_secure : forall c st1 st2 ast1 ast2,
   unused "b" c ->
   st1 "b" = 0 ->
   st2 "b" = 0 ->
-  seq_obs_secure c st1 st2 ast1 ast2 ->
-  ideal_obs_secure c st1 st2 ast1 ast2.
+  seq_same_obs c st1 st2 ast1 ast2 ->
+  ideal_same_obs c st1 st2 ast1 ast2.
 Proof.
-  unfold ideal_obs_secure. intros c st1 st2 ast1 ast2 Hunused 
+  unfold ideal_same_obs. intros c st1 st2 ast1 ast2 Hunused 
   Hst1b Hst2b Hsec ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
   eapply ideal_eval_bit_deterministic in Hev1 as SameB; try eassumption. subst.
   destruct bt1 eqn:Eqbt1.
@@ -535,11 +547,11 @@ Theorem ultimate_slh_relative_secure :
     nonempty_arrs ast1 ->
     nonempty_arrs ast2 ->
     relative_secure ultimate_slh c st1 st2 ast1 ast2.
-Proof. (* from relative noninterference + bcc *)
+Proof. (* from bcc + ideal_relative_secure *)
   unfold relative_secure.
   intros c st1 st2 ast1 ast2 Hunused Hst1b Hst2b Hast1 Hast2 Hseq ds stt1 stt2 
     astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
   apply ultimate_slh_bcc in Hev1; try assumption.
   apply ultimate_slh_bcc in Hev2; try assumption.
-  eapply (relative_noninterference c st1 st2); eassumption.
+  eapply (ideal_relative_secure c st1 st2); eassumption.
 Qed.

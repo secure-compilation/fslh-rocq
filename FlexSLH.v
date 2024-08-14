@@ -447,7 +447,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
          end))))))))).
 
 (* Directly testing also the top-level statement for Ultimate SLH,
-   even if it is just special cases where all things are private.  *)
+   even if it is just a special case where all things are private.  *)
 
 (* TODO: Discards are the biggest problem for this one, but there is hope of improving this later:
    https://secure-compilation.zulipchat.com/#narrow/stream/436285-speculation/topic/Testing.20Ultimate.20SLH *)
