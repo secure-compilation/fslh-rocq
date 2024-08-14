@@ -112,21 +112,21 @@ where "P '&' PA ',' pc '|--' c" := (well_typed P PA pc c).
 Definition nonempty_arrs (ast :astate) :Prop :=
   forall a, 0 < length (apply ast a).
 
-Definition seq_obs_secure c st1 st2 ast1 ast2 : Prop :=
+Definition seq_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall stt1 stt2 astt1 astt2 os1 os2,
     <(st1, ast1)> =[ c ]=> <(stt1, astt1, os1)> ->
     <(st2, ast2)> =[ c ]=> <(stt2, astt2, os2)> ->
     os1 = os2.
 
-Definition spec_obs_secure c st1 st2 ast1 ast2 : Prop :=
+Definition spec_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
     <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
     <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
     os1 = os2.
 
 Definition relative_secure (trans : com -> com) (c:com) (st1 st2 :state) (ast1 ast2 :astate): Prop :=
-    seq_obs_secure c st1 st2 ast1 ast2 ->
-    spec_obs_secure (trans c) st1 st2 ast1 ast2.
+  seq_same_obs c st1 st2 ast1 ast2 ->
+  spec_same_obs (trans c) st1 st2 ast1 ast2.
 
 Conjecture flex_slh_relative_secure :
   forall P PA c st1 st2 ast1 ast2,
