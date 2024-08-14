@@ -360,7 +360,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
 (* Noninterference for target speculative execution *)
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
-    forAllShrink (gen_wt_com 3 P PA) shrink (fun c =>
+    forAll (gen_wt_com 3 P PA) (fun c =>
     let hardened := flex_slh P c in
     forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
@@ -378,7 +378,8 @@ QuickChick (forAll gen_pub_vars (fun P =>
                match spec_eval_engine hardened s2 a2 false ds with
                | Some (s2', a2', b'', os2) =>
                    conjoin [checker (Bool.eqb b' b'' && (pub_equivb P s1' s2'));
-                            implication (Bool.eqb b' false) (pub_equivb_astate PA a1' a2')]
+                            implication (Bool.eqb b' false) (* <-- needed since we don't (yet) mask all stores *)
+                                        (pub_equivb_astate PA a1' a2')]
                | None => checker tt (* discard *)
                end))
     | _ => checker tt (* discard *)
@@ -419,8 +420,92 @@ QuickChick (forAll gen_pub_vars (fun P =>
              (fun '(ds, s1', a1', b', os1) =>
                 match spec_eval_engine hardened s2 a2 false ds with
                 | Some (s2', a2', b'', os2) => checker (obs_eqb os1 os2)
-                | None => checker tt (* If the second execution crashes, this isn't a counterexample *)
+                | None => checker tt (* discard *)
                 end)))
-    | _ => (* discard *)
-        checker tt
+    | _ => checker tt (* discard *)
     end)))))))).
+
+(* Also testing Gilles' lemma here, not for ideal semantics, but for the translation *)
+
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
+
+    forAll (gen_wt_com 3 P PA) (fun c =>
+    let hardened := flex_slh P c in
+
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+    let s1 := ("b" !-> 1; s1) in
+    let s2 := ("b" !-> 1; s2) in
+    forAll gen_astate (fun a1 =>
+    forAll gen_astate (fun a2 => (* same length not needed? *)
+    forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
+      (fun '(ds, s1', a1', b', os1) =>
+         match spec_eval_engine hardened s2 a2 false ds with
+         | Some (s2', a2', b'', os2) => checker (obs_eqb os1 os2)
+         | None => checker tt (* discard *)
+         end))))))))).
+
+(* Directly testing also the top-level statement for Ultimate SLH,
+   even if it is just special cases where all things are private.  *)
+
+(* TODO: Discards are the biggest problem for this one, but there is hope of improving this later:
+   https://secure-compilation.zulipchat.com/#narrow/stream/436285-speculation/topic/Testing.20Ultimate.20SLH *)
+
+Fixpoint ultimate_slh (c:com) :=
+  (match c with
+  | <{{skip}}> => <{{skip}}>
+  | <{{x := e}}> => <{{x := e}}>
+  | <{{c1; c2}}> => <{{ ultimate_slh c1; ultimate_slh c2}}>
+  | <{{if be then c1 else c2 end}}> =>
+      <{{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c1
+                          else "b" := ("b" = 0 && be) ? 1 : "b"; ultimate_slh c2 end}}>
+  | <{{while be do c end}}> =>
+      <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c end;
+         "b" := ("b" = 0 && be) ? 1 : "b"}}>
+  | <{{x <- a[[i]]}}> =>
+    <{{x <- a[[("b" = 1) ? 0 : i]] }}>
+  | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
+  end)%string.
+
+QuickChick (
+    forAll arbitrary (fun c =>
+    let hardened := ultimate_slh c in
+    forAll gen_state (fun s1 =>
+    forAll gen_state (fun s2 =>
+    let s1 := ("b" !-> 0; s1) in
+    let s2 := ("b" !-> 0; s2) in
+    forAll gen_astate (fun a1 =>
+    forAll gen_astate (fun a2 => (* same length not needed? *)
+    let r1 := cteval_engine 1000 c s1 a1 in
+    let r2 := cteval_engine 1000 c s2 a2 in
+    match (r1, r2) with
+    | (Some (s1', a1', os1'), Some (s2', a2', os2')) =>
+        collect (show (List.length os1')) (
+        implication (obs_eqb os1' os2')
+          (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
+             (fun '(ds, s1', a1', b', os1) =>
+                match spec_eval_engine hardened s2 a2 false ds with
+                | Some (s2', a2', b'', os2) => checker (obs_eqb os1 os2)
+                | None => checker tt (* discard *)
+                end)))
+    | _ => checker tt (* discard *)
+    end)))))).
+
+(* Also testing Gilles' lemma, not for ideal semantics, but for the translation *)
+
+QuickChick (
+    forAll arbitrary (fun c =>
+    let hardened := ultimate_slh c in
+    forAll gen_state (fun s1 =>
+    forAll gen_state (fun s2 =>
+    let s1 := ("b" !-> 1; s1) in
+    let s2 := ("b" !-> 1; s2) in
+    forAll gen_astate (fun a1 =>
+    forAll gen_astate (fun a2 => (* same length not needed? *)
+    forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
+      (fun '(ds, s1', a1', b', os1) =>
+         match spec_eval_engine hardened s2 a2 false ds with
+         | Some (s2', a2', b'', os2) => checker (obs_eqb os1 os2)
+         | None => checker tt (* discard *)
+         end))))))).
