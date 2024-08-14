@@ -152,6 +152,23 @@ From Coq Require Import String.
 
 Notation label := TestingSpecCT.label.
 Notation apply := TestingSpecCT.apply.
+Notation join := TestingSpecCT.join.
+
+Fixpoint wt_typechecker (P PA:pub_vars) (pc:label) (c:com) : bool :=
+  match c with
+  | <{ skip }> => true
+  | <{ X := a }> => can_flow (join pc (label_of_aexp P a)) (apply P X)
+  | <{ c1 ; c2 }> => wt_typechecker P PA pc c1 && wt_typechecker P PA pc c2
+  | <{ if b then c1 else c2 end }> =>
+      wt_typechecker P PA (join pc (label_of_bexp P b)) c1 &&
+      wt_typechecker P PA (join pc (label_of_bexp P b)) c2
+  | <{ while b do c1 end }> =>
+      wt_typechecker P PA (join pc (label_of_bexp P b)) c1
+  | <{{ x <- a[[i]] }}> =>
+      can_flow (join pc (join (label_of_aexp P i) (apply PA a))) (apply P x)
+  | <{{ a[i] <- e }}> =>
+      can_flow (join pc (join (label_of_aexp P i) (label_of_aexp P e))) (apply PA a)
+  end.
 
 Notation " 'oneOf' ( x ;;; l ) " :=
   (oneOf_ x (cons x l))  (at level 1, no associativity) : qc_scope.
@@ -313,8 +330,72 @@ Definition gen_astate : G astate :=
   v2 <- vectorOf l2 arbitrary;;
   ret (d, [("A0",v0); ("A1",v1); ("A2",v2)]) % string.
 
+(* Extract Constant defNumTests => "100000". *)
+
+(* We first validate that our generator produces well-typed terms *)
+
+QuickChick (forAll gen_pub_vars (fun P =>
+           (forAll gen_pub_arrs (fun PA =>
+           (forAll (gen_wt_com 1 P PA) (fun (c:com) =>
+             wt_typechecker P PA public c)))))).
+
+(* Noninterference for source sequential execution *)
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
+    forAll (gen_wt_com 3 P PA) (fun c =>
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+    forAll gen_astate (fun a1 =>
+    forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
+      let r1 := cteval_engine 1000 c s1 a1 in
+      let r2 := cteval_engine 1000 c s2 a2 in
+      match (r1, r2) with
+      | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
+          checker ((pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2'))
+      | _ => (* discard *)
+          checker tt
+      end
+  )))))))).
+
+(* Noninterference for target speculative execution *)
+QuickChick (forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
+    forAllShrink (gen_wt_com 3 P PA) shrink (fun c =>
+    let hardened := flex_slh P c in
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+    let s1 := ("b" !-> 0; s1) in
+    let s2 := ("b" !-> 0; s2) in
+    forAll gen_astate (fun a1 =>
+    forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
+    let r1 := cteval_engine 1000 c s1 a1 in
+    let r2 := cteval_engine 1000 c s2 a2 in
+    match (r1, r2) with
+    | (Some (s1', a1', os1'), Some (s2', a2', os2')) =>
+        implication (obs_eqb os1' os2') (* <-- this is needed here; otherwise see counterexample below *)
+          (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
+            (fun '(ds, s1', a1', b', os1) =>
+               match spec_eval_engine hardened s2 a2 false ds with
+               | Some (s2', a2', b'', os2) =>
+                   conjoin [checker (Bool.eqb b' b'' && (pub_equivb P s1' s2'));
+                            implication (Bool.eqb b' false) (pub_equivb_astate PA a1' a2')]
+               | None => checker tt (* discard *)
+               end))
+    | _ => checker tt (* discard *)
+    end)))))))).
+
+(* Counterexample without implication (obs_eqb os1' os2') ... *)
+(* (true, [("X0", true); ("X1", false); ("X2", false); ("X3", true); ("X4", true); ("X5", false)]) *)
+(* (false, [("A0", true); ("A1", false); ("A2", true)]) *)
+(* (while (~ (X1 > (0 - 1))) do (if true then skip else ((X0 <- A2[[4]]) ; skip) end) end) *)
+(* (0, [("X0", 2); ("X1", 1); ("X2", 1); ("X3", 0); ("X4", 4); ("X5", 2)]) *)
+(* (0, [("X5", 0); ("X4", 4); ("X3", 0); ("X2", 3); ("X1", 0); ("X0", 2)]) *)
+(* ([0; 3; 4; 2; 1], [("A0", [3; 3; 2; 2; 1; 1]); ("A1", [2; 1]); ("A2", [1; 2; 4; 2; 2; 3; 4; 1; 3])]) *)
+(* ([0; 3; 4; 2; 1], [("A2", [1; 2; 4; 2; 2; 3; 4; 1; 3]); ("A1", [3; 3]); ("A0", [3; 3; 2; 2; 1; 1])]) *)
+(* (((([force; force; step; step], (0, [("b", 1); ("X0", 0); ("X0", 2); ("b", 1); ("b", 1); ("b", 0); ("X0", 2); ("X1", 1); ("X2", 1); ("X3", 0); ("X4", 4); ("X5", 2)])), ([0; 3; 4; 2; 1], [("A0", [3; 3; 2; 2; 1; 1]); ("A1", [2; 1]); ("A2", [1; 2; 4; 2; 2; 3; 4; 1; 3])])), true), [branch false; branch true; aread A2 4; branch false]) *)
+(* *** Failed after 67 tests and 5 shrinks. (12 discards) *)
+
 (* Testing flex_slh_relative_secure *)
-Extract Constant defNumTests => "100000".
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
 
