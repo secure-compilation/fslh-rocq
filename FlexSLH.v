@@ -196,10 +196,10 @@ Definition gen_secure_asgn (P:pub_vars) : G com :=
   ret <{ x := e }>.
 
 Definition gen_name (P:pub_vars) (label:bool) : G (option string) :=
-  let privs := filter (fun x => Bool.eqb label (apply P x))
+  let names := filter (fun x => Bool.eqb label (apply P x))
                       (map_dom (snd P)) in
-  match privs with
-  | x0 :: _ => liftM Some (elems_ x0 privs)
+  match names with
+  | x0 :: _ => liftM Some (elems_ x0 names)
   | [] => ret None
   end.
 
@@ -308,10 +308,6 @@ Fixpoint gen_com_rec (gen_asgn : pub_vars -> G com)
 
 Definition gen_wt_com := gen_com_rec gen_secure_asgn gen_secure_aread gen_secure_awrite.
 
-Definition AllPub : pub_vars := (_!-> true).
-
-Definition gen_com := gen_wt_com AllPub AllPub.
-
 Sample gen_pub_vars.
 
 Definition someP := (false, [("X0", false); ("X1", true); ("X2", true);
@@ -322,6 +318,15 @@ Sample gen_pub_arrs.
 Definition somePA := (true, [("A0", true); ("A1", true); ("A2", false)])%string.
 
 Sample (sized (gen_wt_com someP somePA)).
+
+Definition AllPub : pub_vars := (_!-> true).
+
+(* TODO: Strange that we need such a big hack here,
+   but if we use AllPub we don't get public variables/arrays generated *)
+Definition gen_com := gen_wt_com
+                        (true, [("X0", true); ("X1", true); ("X2", true);
+                          ("X3", true); ("X4", true); ("X5", true)])%string
+                        (true, [("A0", true); ("A1", true); ("A2", true)])%string.
 
 Sample (sized gen_com).
 
@@ -363,34 +368,294 @@ QuickChick (forAll gen_pub_vars (fun P =>
       end
   )))))))).
 
+(* Taint tracking sequential executions (variant of Lucie's interpreter) *)
+
+Definition taint : Type := list (var_id + arr_id).
+
+#[export] Instance showTaint : Show (var_id + arr_id) :=
+  {show := fun x =>
+     match x with
+     | inl x => show x
+     | inr a => show a
+     end}.
+
+Module TaintTracking.
+
+Fixpoint vars_aexp (a:aexp) : list string :=
+  match a with
+  | AId (Var i) => [i]
+  | ANum n => []
+  | <{x + y}>
+  | <{x - y}>
+  | <{x * y}> => vars_aexp x ++ vars_aexp y
+  | <{ b ? t : f }> => vars_bexp b ++ vars_aexp t ++ vars_aexp f
+  end
+with vars_bexp (a:bexp) : list string :=
+  match a with
+  | <{true}>
+  | <{false}> => []
+  | <{x <= y}>
+  | <{x > y}>
+  | <{x = y}>
+  | <{x <> y}> => vars_aexp x ++ vars_aexp y
+  | <{~b}> => vars_bexp b
+  | <{b1 && b2}> => vars_bexp b1 ++ vars_bexp b2
+  end.
+
+Definition tstate := total_map taint.
+Definition tastate := total_map taint.
+
+Definition input_st : Type := state * astate * tstate * tastate.
+Inductive output_st (A : Type) : Type :=
+  | ROutOfFuel : output_st A
+  | ROutOfBounds : output_st A
+  | ROk : A -> obs -> input_st -> output_st A.
+
+(* An 'evaluator A'. This is the monad.
+   It transforms an input state into an output state, returning an A. *)
+Record evaluator (A : Type) : Type := mkEvaluator
+  { evaluate : input_st -> output_st A }.
+(* An interpreter is a special kind of evaluator *)
+Definition interpreter: Type := evaluator unit.
+
+(* Generic monad operators *)
+#[export] Instance monadEvaluator: Monad evaluator :=
+  { ret := fun A value => mkEvaluator A (fun (ist : input_st) => ROk A value [] ist);
+    bind := fun A B e f =>
+      mkEvaluator B (fun (ist : input_st) =>
+        match evaluate A e ist with
+        | ROk _ value os1 ist'  =>
+            match evaluate B (f value) ist' with
+            | ROk _ value os2 ist'' => ROk B value (os1 ++ os2) ist''
+            | ret => ret
+            end
+        | ROutOfBounds _ => ROutOfBounds B
+        | ROutOfFuel _ => ROutOfFuel B
+        end
+      )
+   }.
+
+(* specialized operators *)
+Definition finish : interpreter := ret tt.
+
+Definition get_var (name : string): evaluator nat :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, _, _, _) := ist in
+    evaluate _ (ret (apply st name)) ist
+  ).
+Definition get_arr (name : string): evaluator (list nat) :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(_, ast, _, _) := ist in
+    evaluate _ (ret (apply ast name)) ist
+  ).
+Definition set_var (name : string) (value : nat) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, ast, tst, tast) := ist in
+    let new_st := (name !-> value ; st) in
+    evaluate _ finish (new_st, ast, tst, tast)
+  ).
+Definition set_arr (name : string) (value : list nat) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, ast, tst, tast) := ist in
+    let new_ast := (name !-> value ; ast) in
+    evaluate _ finish (st, new_ast, tst, tast)
+  ).
+Definition eval_aexp (a : aexp) : evaluator nat :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, _, _, _) := ist in
+    let v := aeval st a in
+    evaluate _ (ret v) ist
+  ).
+Definition eval_bexp (b : bexp) : evaluator bool :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, _, _, _) := ist in
+    let v := beval st b in
+    evaluate _ (ret v) ist
+  ).
+Definition raise_out_of_bounds {a:Type} : evaluator a :=
+  mkEvaluator _ (fun _ =>
+    ROutOfBounds _
+  ).
+Definition raise_out_of_fuel {a:Type} : evaluator a :=
+  mkEvaluator _ (fun _ =>
+    ROutOfFuel _
+  ).
+Definition observe (o : observation) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    ROk _ tt [o] ist
+  ).
+
+Definition get_taint_of_vars (xs:list string) : evaluator taint :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(_, _, tst, _) := ist in
+    evaluate _ (ret (List.concat (map (apply tst) xs))) ist).
+
+Definition get_taint_of_arr (a:string) : evaluator taint :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(_, _, _, tast) := ist in
+    evaluate _ (ret (apply tast a)) ist).
+
+Definition set_var_taint (x : string) (t : taint) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, ast, tst, tast) := ist in
+    let new_tst := (x !-> t ; tst) in
+    evaluate _ finish (st, ast, new_tst, tast)).
+
+Definition add_arr_taint (a : string) (t : taint) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    let '(st, ast, tst, tast) := ist in
+    let new_tast := (a !-> (t ++ apply tast a) ; tast) in
+    evaluate _ finish (st, ast, tst, new_tast)).
+
+Fixpoint taint_track (f : nat) (c : com) : evaluator taint :=
+  match f with
+  | O => raise_out_of_fuel
+  | S f =>
+
+  match c with
+  | <{ skip }> =>
+      ret []
+  | <{ x := e }> =>
+      v <- eval_aexp e;;
+      set_var x v;;
+      t <- get_taint_of_vars (vars_aexp e);;
+      set_var_taint x t;;
+      ret []
+  | <{ c1 ; c2 }> =>
+      t1 <- taint_track f c1;;
+      t2 <- taint_track f c2;;
+      ret (t1 ++ t2)
+  | <{ if b then ct else cf end }> =>
+      condition <- eval_bexp b;;
+      let next_c := if Bool.eqb condition true then ct else cf in
+      observe (OBranch condition);;
+      tb <- get_taint_of_vars (vars_bexp b);;
+      t <- taint_track f next_c;;
+      ret (tb ++ t)
+  | <{ while be do c end }> =>
+    taint_track f <{
+      if be then
+        c;
+        while be do c end
+      else
+        skip
+      end
+    }>
+  | <{ x <- a[[ie]] }> =>
+      i <- eval_aexp ie;;
+      l <- get_arr a;;
+      if (i <? List.length l) then
+        observe (OARead a i);;
+        set_var x (nth i l 0);;
+        ti <- get_taint_of_vars (vars_aexp ie);;
+        ta <- get_taint_of_arr a;;
+        set_var_taint x (ti ++ ta);;
+        (ret ti)
+      else
+        raise_out_of_bounds
+  | <{ a[ie] <- e }> =>
+      n <- eval_aexp e;;
+      i <- eval_aexp ie;;
+      l <- get_arr a;;
+      if (i <? List.length l) then
+        observe (OAWrite a i);;
+        set_arr a (upd i l n);;
+        ti <- get_taint_of_vars (vars_aexp ie);;
+        te <- get_taint_of_vars (vars_aexp e);;
+        add_arr_taint a (ti ++ te);;
+        (ret ti)
+      else
+        raise_out_of_bounds
+  end
+  end.
+
+End TaintTracking.
+
+Fixpoint remove_duplicates (t : list string) : list string :=
+  match t with
+  | [] => []
+  | x :: xs => if existsb (String.eqb x) xs
+               then      remove_duplicates xs
+               else x :: remove_duplicates xs
+  end.
+
+Fixpoint split_sum_list {A B : Type} (l : list (A + B)) : (list A * list B) :=
+  match l with
+  | [] => ([], [])
+  | inl a :: xs => let (la, lb) := split_sum_list xs in (a :: la, lb)
+  | inr b :: xs => let (la, lb) := split_sum_list xs in (la, b :: lb)
+  end.
+
+Definition taint_tracking (f : nat) (c : com) (st : state) (ast : astate)
+    : option (state * astate * obs * list string * list string) :=
+  let tst := ([], map (fun x => (x,[@inl var_id arr_id (Var x)])) (map_dom (snd st))) in
+  let tast := ([], map (fun a => (a,[@inr var_id arr_id (Arr a)])) (map_dom (snd ast))) in
+  let ist := (st, ast, tst, tast) in
+  match TaintTracking.evaluate _ (TaintTracking.taint_track f c) ist with
+  | TaintTracking.ROk _ t os (st', ast', _, _) =>
+      let (vars, arrs) := split_sum_list t in
+      Some (st', ast', os, remove_duplicates (map var_id_to_string vars),
+                           remove_duplicates (map arr_id_to_string arrs))
+  | _ => None
+  end.
+
+QuickChick(
+  forAllShrink (sized gen_com) shrink (fun c =>
+  forAll gen_state (fun s1 =>
+  forAll gen_astate (fun a1 =>
+  let r1 := taint_tracking 10 c s1 a1 in
+  match r1 with
+  | Some (s1', a1', os1', tvars, tarrs) =>
+      (* trace ("Leaked vars: " ++ show tvars ++ " arrs: " ++ show tarrs ++ nl) ( *)
+      let P := (false, map (fun x => (x,true)) tvars) in
+      let PA := (false, map (fun a => (a,true)) tarrs) in
+      forAll (gen_pub_equiv P s1) (fun s2 =>
+      forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
+      let r2 := cteval_engine 10 c s2 a2 in
+      match r2 with
+      | Some (s2', a2', os2') => checker (obs_eqb os1' os2')
+      | None => checker tt (* discard *)
+      end))
+   | None => checker tt (* discard *)
+   end)))).
+
+Definition extend_pub (P:pub_vars) (xs:list string) :=
+  fold_left (fun P x => x !-> public; P) xs P.
+
 (* Noninterference for target speculative execution *)
 Definition check_speculative_noninterference trans : Checker :=
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
   forAll (sized (gen_wt_com P PA)) (fun c =>
-  let hardened := trans P c in
   forAll gen_state (fun s1 =>
-  forAll (gen_pub_equiv P s1) (fun s2 =>
   let s1 := ("b" !-> 0; s1) in
-  let s2 := ("b" !-> 0; s2) in
   forAll gen_astate (fun a1 =>
-  forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
-  let r1 := cteval_engine 10 c s1 a1 in
-  let r2 := cteval_engine 10 c s2 a2 in
-  match (r1, r2) with
-  | (Some (s1', a1', os1'), Some (s2', a2', os2')) =>
-      implication (obs_eqb os1' os2') (* <-- this is needed here; otherwise see counterexample below *)
-        (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
-          (fun '(ds, s1', a1', b', os1) =>
-             match spec_eval_engine hardened s2 a2 false ds with
-             | Some (s2', a2', b'', os2) =>
-                 checker (Bool.eqb b' b'' && (pub_equivb P s1' s2') &&
-                            (Bool.eqb b' true || (* <-- needed since we don't (yet) mask all stores *)
-                               pub_equivb_astate PA a1' a2'))
-             | None => checker tt (* discard *)
-             end))
-  | _ => checker tt (* discard *)
-  end))))))).
+  let r1 := taint_tracking 10 c s1 a1 in
+  match r1 with
+  | Some (s1', a1', os1', tvars, tarrs) =>
+      collect (show (List.length os1')) (
+      (* collect (show (List.length (tvars ++ tarrs))) ( *)
+      forAll (gen_pub_equiv (extend_pub P tvars) s1) (fun s2 =>
+      let s2 := ("b" !-> 0; s2) in
+      forAll (gen_pub_equiv_and_same_length (extend_pub PA tarrs) a1) (fun a2 =>
+      let r2 := cteval_engine 10 c s2 a2 in
+      match r2 with
+      | Some (s2', a2', os2') =>
+          (* implication (obs_eqb os1' os2') ( -- no longer needed *)
+          let hardened := trans P c in
+          (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
+             (fun '(ds, s1', a1', b', os1) =>
+                match spec_eval_engine hardened s2 a2 false ds with
+                | Some (s2', a2', b'', os2) =>
+                    checker (Bool.eqb b' b'' && (pub_equivb P s1' s2') &&
+                               (Bool.eqb b' true || (* <-- needed since we don't (yet) mask all stores *)
+                                  pub_equivb_astate PA a1' a2'))
+                | None => checker tt (* discard -- doesn't seem to happen *)
+                end))
+      | None => checker tt (* discard -- doesn't seem to happen *)
+      end)))
+  | None => checker tt (* discard *)
+  end))))).
 
 QuickChick (check_speculative_noninterference flex_slh).
 
