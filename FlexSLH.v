@@ -384,9 +384,9 @@ Definition check_speculative_noninterference trans : Checker :=
           (fun '(ds, s1', a1', b', os1) =>
              match spec_eval_engine hardened s2 a2 false ds with
              | Some (s2', a2', b'', os2) =>
-                 conjoin [checker (Bool.eqb b' b'' && (pub_equivb P s1' s2'));
-                          implication (Bool.eqb b' false) (* <-- needed since we don't (yet) mask all stores *)
-                                      (pub_equivb_astate PA a1' a2')]
+                 checker (Bool.eqb b' b'' && (pub_equivb P s1' s2') &&
+                            (Bool.eqb b' true || (* <-- needed since we don't (yet) mask all stores *)
+                               pub_equivb_astate PA a1' a2'))
              | None => checker tt (* discard *)
              end))
   | _ => checker tt (* discard *)
