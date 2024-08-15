@@ -497,3 +497,24 @@ QuickChick (check_relative_security (fun _ => slh)).
 QuickChick (check_gilles_lemma (fun _ => slh)).
 
 (** * Exorcising Spectre SLH -- INSECURE! SHOULD FAIL! *)
+
+Fixpoint exorcised_slh (c:com) :=
+  (match c with
+  | <{{skip}}> => <{{skip}}>
+  | <{{x := e}}> => <{{x := e}}>
+  | <{{c1; c2}}> => <{{ exorcised_slh c1; exorcised_slh c2}}>
+  | <{{if be then c1 else c2 end}}> =>
+      <{{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; exorcised_slh c1
+                          else "b" := ("b" = 0 && be) ? 1 : "b"; exorcised_slh c2 end}}>
+  | <{{while be do c end}}> =>
+      <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; exorcised_slh c end;
+         "b" := ("b" = 0 && be) ? 1 : "b"}}>
+  | <{{x <- a[[i]]}}> => (* only masking output, this is wrong! *)
+      <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
+  | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
+  end)%string.
+
+QuickChick (check_relative_security (fun _ => exorcised_slh)).
+
+(* Also testing Gilles' lemma -- SHOULD FAIL! *)
+QuickChick (check_gilles_lemma (fun _ => exorcised_slh)).
