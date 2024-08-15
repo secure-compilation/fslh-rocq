@@ -245,7 +245,7 @@ Definition gen_aread_in_ctx (gen_aread : pub_vars -> pub_arrs -> G com)
     end.
 
 Definition gen_secure_awrite (P:pub_vars) (PA:pub_arrs) : G com :=
-  let arrs := map_dom (snd P) in
+  let arrs := map_dom (snd PA) in
   a <- elems_ "A0"%string arrs;;
   if apply PA a then
     i <- gen_pub_aexp 1 P;; (* public index *)
