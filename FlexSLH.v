@@ -308,6 +308,10 @@ Fixpoint gen_com_rec (gen_asgn : pub_vars -> G com)
 
 Definition gen_wt_com := gen_com_rec gen_secure_asgn gen_secure_aread gen_secure_awrite.
 
+Definition AllPub : pub_vars := (_!-> true).
+
+Definition gen_com := gen_wt_com AllPub AllPub.
+
 Sample gen_pub_vars.
 
 Definition someP := (false, [("X0", false); ("X1", true); ("X2", true);
@@ -318,6 +322,8 @@ Sample gen_pub_arrs.
 Definition somePA := (true, [("A0", true); ("A1", true); ("A2", false)])%string.
 
 Sample (sized (gen_wt_com someP somePA)).
+
+Sample (sized gen_com).
 
 (* Preventing empty arrays *)
 Definition gen_astate : G astate :=
@@ -469,7 +475,7 @@ Fixpoint ultimate_slh (c:com) :=
   end)%string.
 
 QuickChick (
-    forAll arbitrary (fun c =>
+    forAll (sized gen_com) (fun c =>
     let hardened := ultimate_slh c in
     forAll gen_state (fun s1 =>
     forAll gen_state (fun s2 =>
@@ -495,7 +501,7 @@ QuickChick (
 (* Also testing Gilles' lemma, not for ideal semantics, but for the translation *)
 
 QuickChick (
-    forAll arbitrary (fun c =>
+    forAll (sized gen_com) (fun c =>
     let hardened := ultimate_slh c in
     forAll gen_state (fun s1 =>
     forAll gen_state (fun s2 =>
@@ -512,10 +518,10 @@ QuickChick (
 
 (** * Standard Speculative Load Hardening (SLH, not selective) -- INSECURE! SHOULD FAIL! *)
 
-Definition slh := sel_slh (_!-> true).
+Definition slh := sel_slh AllPub.
 
 QuickChick (
-    forAllShrink arbitrary shrink (fun c =>
+    forAllShrink (sized gen_com) shrink (fun c =>
     let hardened := slh c in
     forAll gen_state (fun s1 =>
     forAll gen_state (fun s2 =>
@@ -541,7 +547,7 @@ QuickChick (
 (* Also testing Gilles' lemma -- SHOULD FAIL! *)
 
 QuickChick (
-    forAllShrink arbitrary shrink (fun c =>
+    forAllShrink (sized gen_com) shrink (fun c =>
     let hardened := slh c in
     forAll gen_state (fun s1 =>
     forAll gen_state (fun s2 =>
