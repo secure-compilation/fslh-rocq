@@ -181,19 +181,19 @@ Definition gen_pub_aexp_leaf (P : pub_vars) : G aexp :=
 
 Fixpoint gen_pub_aexp (sz:nat) (P:pub_vars) : G aexp :=
   match sz with
-  | O => gen_pub_aexp_leaf P
+  | O => thunkGen (fun _ => gen_pub_aexp_leaf P)
   | S sz' =>
-      freq [ (3, gen_pub_aexp_leaf P);
-             (sz, liftM2 APlus (gen_pub_aexp sz' P) (gen_pub_aexp sz' P));
-             (sz, liftM2 AMinus (gen_pub_aexp sz' P) (gen_pub_aexp sz' P));
-             (sz, liftM2 AMult (gen_pub_aexp sz' P) (gen_pub_aexp sz' P))]
+      freq [ (3, thunkGen (fun _ => gen_pub_aexp_leaf P));
+             (sz, thunkGen (fun _ => liftM2 APlus (gen_pub_aexp sz' P) (gen_pub_aexp sz' P)));
+             (sz, thunkGen (fun _ => liftM2 AMinus (gen_pub_aexp sz' P) (gen_pub_aexp sz' P)));
+             (sz, thunkGen (fun _ => liftM2 AMult (gen_pub_aexp sz' P) (gen_pub_aexp sz' P)))]
   end.
 
 Definition gen_secure_asgn (P:pub_vars) : G com :=
   let vars := map_dom (snd P) in
   x <- elems_ "X0"%string vars;;
-  a <- (if apply P x then gen_pub_aexp 1 P else arbitrary);;
-  ret <{ x := a }>.
+  e <- (if apply P x then gen_pub_aexp 1 P else arbitrarySized 1);;
+  ret <{ x := e }>.
 
 Definition gen_name (P:pub_vars) (label:bool) : G (option string) :=
   let privs := filter (fun x => Bool.eqb label (apply P x))
@@ -210,8 +210,8 @@ Definition gen_asgn_in_ctx (gen_asgn : pub_vars -> G com)
     x <- gen_name P secret;; (* secret var *)
     match x with
     | Some x =>
-      a <- arbitrary;;
-      ret <{ x := a }>
+      e <- arbitrarySized 1;;
+      ret <{ x := e }>
     | None => ret <{ skip }>
     end.
 
@@ -228,7 +228,7 @@ Definition gen_secure_aread (P:pub_vars) (PA:pub_arrs) : G com :=
     end
   else
     a <- arbitrary;;
-    i <- arbitrary;;
+    i <- arbitrarySized 1;;
     ret <{ x <- a[[i]] }>.
 
 Definition gen_aread_in_ctx (gen_aread : pub_vars -> pub_arrs -> G com)
@@ -239,7 +239,7 @@ Definition gen_aread_in_ctx (gen_aread : pub_vars -> pub_arrs -> G com)
     match x with
     | Some x =>
       a <- arbitrary;;
-      i <- arbitrary;;
+      i <- arbitrarySized 1;;
       ret <{ x <- a[[i]] }>
     | None => ret <{ skip }>
     end.
@@ -252,8 +252,8 @@ Definition gen_secure_awrite (P:pub_vars) (PA:pub_arrs) : G com :=
     e <- gen_pub_aexp 1 P;; (* public expression *)
     ret <{ a[i] <- e }>
   else
-    i <- arbitrary;;
-    e <- arbitrary;;
+    i <- arbitrarySized 1;;
+    e <- arbitrarySized 1;;
     ret <{ a[i] <- e }>.
 
 Definition gen_awrite_in_ctx (gen_awrite : pub_vars -> pub_arrs -> G com)
@@ -263,8 +263,8 @@ Definition gen_awrite_in_ctx (gen_awrite : pub_vars -> pub_arrs -> G com)
     a <- gen_name PA secret;; (* secret array *)
     match a with
     | Some a =>
-      i <- arbitrary;;
-      e <- arbitrary;;
+      i <- arbitrarySized 1;;
+      e <- arbitrarySized 1;;
       ret <{ a[i] <- e }>
     | None => ret <{ skip }>
     end.
@@ -272,32 +272,38 @@ Definition gen_awrite_in_ctx (gen_awrite : pub_vars -> pub_arrs -> G com)
 Fixpoint gen_com_rec (gen_asgn : pub_vars -> G com)
                      (gen_aread : pub_vars -> pub_arrs -> G com)
                      (gen_awrite : pub_vars -> pub_arrs -> G com)
-                     (sz:nat) (P:pub_vars) (PA:pub_arrs) : G com :=
+                     (P:pub_vars) (PA:pub_arrs) (sz:nat) : G com :=
   match sz with
-  | O => oneOf [ret Skip ; gen_asgn P ; gen_aread P PA ; gen_awrite P PA ]
+  | O => freq [(1, ret Skip);
+               (4, thunkGen (fun _ => gen_asgn P));
+               (4, thunkGen (fun _ => gen_aread P PA));
+               (4, thunkGen (fun _ => gen_awrite P PA))]
   | S sz' =>
       freq [ (1, ret Skip);
-             (sz, gen_asgn P);
-             (sz, gen_aread P PA);
-             (sz, gen_awrite P PA);
-             (sz, liftM2 Seq (gen_com_rec gen_asgn gen_aread gen_awrite sz' P PA)
-                             (gen_com_rec gen_asgn gen_aread gen_awrite sz' P PA));
-             (sz, b <- arbitrary;;
+             (sz, thunkGen (fun _ => gen_asgn P));
+             (sz, thunkGen (fun _ => gen_aread P PA));
+             (sz, thunkGen (fun _ => gen_awrite P PA));
+             (2*sz, thunkGen (fun _ =>
+                    liftM2 Seq (gen_com_rec gen_asgn gen_aread gen_awrite P PA sz')
+                               (gen_com_rec gen_asgn gen_aread gen_awrite P PA sz')));
+             (sz, thunkGen (fun _ =>
+                  b <- arbitrarySized 1;;
                   liftM3 If (ret b)
                     (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
                                  (gen_aread_in_ctx gen_aread (label_of_bexp P b))
                                  (gen_awrite_in_ctx gen_awrite (label_of_bexp P b))
-                                 sz' P PA)
+                                 P PA sz')
                     (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
                                  (gen_aread_in_ctx gen_aread (label_of_bexp P b))
                                  (gen_awrite_in_ctx gen_awrite (label_of_bexp P b))
-                                 sz' P PA));
-             (sz, b <- arbitrary;;
+                                 P PA sz')));
+             (div sz 2, thunkGen (fun _ =>
+                  b <- arbitrarySized 1;;
                   liftM2 While (ret b)
                     (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
                                  (gen_aread_in_ctx gen_aread (label_of_bexp P b))
                                  (gen_awrite_in_ctx gen_aread (label_of_bexp P b))
-                       sz' P PA))]
+                       P PA sz')))]
   end.
 
 Definition gen_wt_com := gen_com_rec gen_secure_asgn gen_secure_aread gen_secure_awrite.
@@ -305,18 +311,13 @@ Definition gen_wt_com := gen_com_rec gen_secure_asgn gen_secure_aread gen_secure
 Sample gen_pub_vars.
 
 Definition someP := (false, [("X0", false); ("X1", true); ("X2", true);
-                           ("X3", true); ("X4", false); ("X5", false)])%string.
+                             ("X3", true); ("X4", false); ("X5", false)])%string.
 
 Sample gen_pub_arrs.
 
 Definition somePA := (true, [("A0", true); ("A1", true); ("A2", false)])%string.
 
-Sample (gen_wt_com 2 someP somePA).
-
-Definition gen_wt_com_pc_secret :=
-  gen_com_rec (gen_asgn_in_ctx gen_secure_asgn secret)
-              (gen_aread_in_ctx gen_secure_aread secret)
-              (gen_awrite_in_ctx gen_secure_awrite secret).
+Sample (sized (gen_wt_com someP somePA)).
 
 (* Preventing empty arrays *)
 Definition gen_astate : G astate :=
@@ -330,37 +331,36 @@ Definition gen_astate : G astate :=
   v2 <- vectorOf l2 arbitrary;;
   ret (d, [("A0",v0); ("A1",v1); ("A2",v2)]) % string.
 
-(* Extract Constant defNumTests => "100000". *)
+(* Extract Constant defNumTests => "1000000". *)
 
 (* We first validate that our generator produces well-typed terms *)
 
 QuickChick (forAll gen_pub_vars (fun P =>
            (forAll gen_pub_arrs (fun PA =>
-           (forAll (gen_wt_com 1 P PA) (fun (c:com) =>
+           (forAll (sized (gen_wt_com P PA)) (fun (c:com) =>
              wt_typechecker P PA public c)))))).
 
 (* Noninterference for source sequential execution *)
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
-    forAll (gen_wt_com 3 P PA) (fun c =>
+    forAll (sized (gen_wt_com P PA)) (fun c =>
     forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
     forAll gen_astate (fun a1 =>
     forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
-      let r1 := cteval_engine 1000 c s1 a1 in
-      let r2 := cteval_engine 1000 c s2 a2 in
+      let r1 := cteval_engine 10 c s1 a1 in
+      let r2 := cteval_engine 10 c s2 a2 in
       match (r1, r2) with
       | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
           checker ((pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2'))
-      | _ => (* discard *)
-          checker tt
+      | _ => checker tt (* discard *)
       end
   )))))))).
 
 (* Noninterference for target speculative execution *)
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
-    forAll (gen_wt_com 3 P PA) (fun c =>
+    forAll (sized (gen_wt_com P PA)) (fun c =>
     let hardened := flex_slh P c in
     forAll gen_state (fun s1 =>
     forAll (gen_pub_equiv P s1) (fun s2 =>
@@ -368,8 +368,8 @@ QuickChick (forAll gen_pub_vars (fun P =>
     let s2 := ("b" !-> 0; s2) in
     forAll gen_astate (fun a1 =>
     forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
-    let r1 := cteval_engine 1000 c s1 a1 in
-    let r2 := cteval_engine 1000 c s2 a2 in
+    let r1 := cteval_engine 10 c s1 a1 in
+    let r2 := cteval_engine 10 c s2 a2 in
     match (r1, r2) with
     | (Some (s1', a1', os1'), Some (s2', a2', os2')) =>
         implication (obs_eqb os1' os2') (* <-- this is needed here; otherwise see counterexample below *)
@@ -400,7 +400,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
 
-    forAll (gen_wt_com 3 P PA) (fun c =>
+    forAll (sized (gen_wt_com P PA)) (fun c =>
     let hardened := flex_slh P c in
 
     forAll gen_state (fun s1 =>
@@ -410,8 +410,8 @@ QuickChick (forAll gen_pub_vars (fun P =>
 
     forAll gen_astate (fun a1 =>
     forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
-    let r1 := cteval_engine 1000 c s1 a1 in
-    let r2 := cteval_engine 1000 c s2 a2 in
+    let r1 := cteval_engine 10 c s1 a1 in
+    let r2 := cteval_engine 10 c s2 a2 in
     match (r1, r2) with
     | (Some (s1', a1', os1'), Some (s2', a2', os2')) =>
         collect (show (List.length os1')) (
@@ -430,7 +430,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
 QuickChick (forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
 
-    forAll (gen_wt_com 3 P PA) (fun c =>
+    forAll (sized (gen_wt_com P PA)) (fun c =>
     let hardened := flex_slh P c in
 
     forAll gen_state (fun s1 =>
@@ -477,8 +477,8 @@ QuickChick (
     let s2 := ("b" !-> 0; s2) in
     forAll gen_astate (fun a1 =>
     forAll gen_astate (fun a2 => (* same length not needed? *)
-    let r1 := cteval_engine 1000 c s1 a1 in
-    let r2 := cteval_engine 1000 c s2 a2 in
+    let r1 := cteval_engine 10 c s1 a1 in
+    let r2 := cteval_engine 10 c s2 a2 in
     match (r1, r2) with
     | (Some (s1', a1', os1'), Some (s2', a2', os2')) =>
         collect (show (List.length os1')) (
@@ -497,6 +497,52 @@ QuickChick (
 QuickChick (
     forAll arbitrary (fun c =>
     let hardened := ultimate_slh c in
+    forAll gen_state (fun s1 =>
+    forAll gen_state (fun s2 =>
+    let s1 := ("b" !-> 1; s1) in
+    let s2 := ("b" !-> 1; s2) in
+    forAll gen_astate (fun a1 =>
+    forAll gen_astate (fun a2 => (* same length not needed? *)
+    forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
+      (fun '(ds, s1', a1', b', os1) =>
+         match spec_eval_engine hardened s2 a2 false ds with
+         | Some (s2', a2', b'', os2) => checker (obs_eqb os1 os2)
+         | None => checker tt (* discard *)
+         end))))))).
+
+(** * Standard Speculative Load Hardening (SLH, not selective) -- INSECURE! SHOULD FAIL! *)
+
+Definition slh := sel_slh (_!-> true).
+
+QuickChick (
+    forAllShrink arbitrary shrink (fun c =>
+    let hardened := slh c in
+    forAll gen_state (fun s1 =>
+    forAll gen_state (fun s2 =>
+    let s1 := ("b" !-> 0; s1) in
+    let s2 := ("b" !-> 0; s2) in
+    forAll gen_astate (fun a1 =>
+    forAll gen_astate (fun a2 => (* same length not needed? *)
+    let r1 := cteval_engine 10 c s1 a1 in
+    let r2 := cteval_engine 10 c s2 a2 in
+    match (r1, r2) with
+    | (Some (s1', a1', os1'), Some (s2', a2', os2')) =>
+        collect (show (List.length os1')) (
+        implication (obs_eqb os1' os2')
+          (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
+             (fun '(ds, s1', a1', b', os1) =>
+                match spec_eval_engine hardened s2 a2 false ds with
+                | Some (s2', a2', b'', os2) => checker (obs_eqb os1 os2)
+                | None => checker tt (* discard *)
+                end)))
+    | _ => checker tt (* discard *)
+    end)))))).
+
+(* Also testing Gilles' lemma -- SHOULD FAIL! *)
+
+QuickChick (
+    forAllShrink arbitrary shrink (fun c =>
+    let hardened := slh c in
     forAll gen_state (fun s1 =>
     forAll gen_state (fun s2 =>
     let s1 := ("b" !-> 1; s1) in
