@@ -81,26 +81,26 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
   | <{{c1; c2}}> => <{{ flex_slh P c1; flex_slh P c2}}>
   | <{{if be then c1 else c2 end}}> =>
       if label_of_bexp P be
-      then (* Selective SLH *)
+      then (* Selective SLH -- tracking speculation, but not masking *)
         <{{if be then "b" := be ? "b" : 1; flex_slh P c1
                  else "b" := be ? 1 : "b"; flex_slh P c2 end}}>
-      else (* Ultimate SLH *)
+      else (* Ultimate SLH -- tracking speculation and also masking *)
         <{{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; flex_slh P c1
                             else "b" := ("b" = 0 && be) ? 1 : "b"; flex_slh P c2 end}}>
   | <{{while be do c end}}> =>
       if label_of_bexp P be
-      then (* Selective SLH *)
+      then (* Selective SLH -- tracking speculation, but not masking *)
         <{{while be do "b" := be ? "b" : 1; flex_slh P c end;
            "b" := be ? 1 : "b"}}>
-      else (* Ultimate SLH *)
+      else (* Ultimate SLH -- tracking speculation and also masking *)
         <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; flex_slh P c end;
            "b" := ("b" = 0 && be) ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
     if label_of_aexp P i
-    then (* Selective SLH *)
+    then (* Selective SLH -- mask the value of public loads *)
       if apply P x then <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
                    else <{{x <- a[[i]]}}>
-    else (* Ultimate SLH *)
+    else (* Ultimate SLH -- mask private address of load *)
       <{{x <- a[[("b" = 1) ? 0 : i]] }}>
   | <{{a[i] <- e}}> =>
     if label_of_aexp P i
@@ -154,8 +154,8 @@ Module RelatingSelSLH.
 End RelatingSelSLH.
 
 (* The following type system that just tracks explicit and implicit flows seems
-   good enough for what we need. Most importantly, it works gives us
-   noninterference both sequentially and speculatively (see testing below). *)
+   good enough for what we need. Most importantly, it gives us noninterference
+   both sequentially and speculatively post flex_slh (see testing below). *)
 
 Reserved Notation "P '&' PA ',' pc '|--' c" (at level 40).
 
@@ -205,7 +205,7 @@ Definition spec_same_obs c st1 st2 ast1 ast2 : Prop :=
     <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
     os1 = os2.
 
-Definition relative_secure (trans : com -> com) (c:com) (st1 st2 :state) (ast1 ast2 :astate): Prop :=
+Definition relative_secure trans c st1 st2 ast1 ast2 : Prop :=
   seq_same_obs c st1 st2 ast1 ast2 ->
   spec_same_obs (trans c) st1 st2 ast1 ast2.
 
@@ -447,7 +447,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
       end
   )))))))).
 
-(* For relative security we do taint tracking of sequential executions
+(* For testing relative security we do taint tracking of sequential executions
    (as a variant of Lucie's interpreter) *)
 
 Definition taint : Type := list (var_id + arr_id).
