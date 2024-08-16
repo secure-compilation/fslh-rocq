@@ -36,6 +36,26 @@ with label_of_bexp (P:pub_vars) (a:bexp) : label :=
   | <{ b1 && b2 }> => join (label_of_bexp P b1) (label_of_bexp P b2)
   end.
 
+Fixpoint vars_aexp (a:aexp) : list string :=
+  match a with
+  | ANum n => []
+  | AId (Var i) => [i]
+  | <{ a1 + a2 }>
+  | <{ a1 - a2 }>
+  | <{ a1 * a2 }> => vars_aexp a1 ++ vars_aexp a2
+  | <{ be ? a1 : a2 }> => vars_bexp be ++ vars_aexp a1 ++ vars_aexp a2
+  end
+with vars_bexp (a:bexp) : list string :=
+  match a with
+  | <{ true }> | <{ false }> => []
+  | <{ a1 = a2 }>
+  | <{ a1 <> a2 }>
+  | <{ a1 <= a2 }>
+  | <{ a1 > a2 }> => vars_aexp a1 ++ vars_aexp a2
+  | <{ ~b }> => vars_bexp b
+  | <{ b1 && b2 }> => vars_bexp b1 ++ vars_bexp b2
+  end.
+
 Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
   (match c with
   | <{{skip}}> => <{{skip}}>
@@ -319,7 +339,8 @@ Definition somePA := (true, [("A0", true); ("A1", true); ("A2", false)])%string.
 
 Sample (sized (gen_wt_com someP somePA)).
 
-Definition AllPub : pub_vars := (_!-> true).
+Definition AllPub : pub_vars := (_!-> public).
+Definition AllSecret : pub_vars := (_!-> secret).
 
 (* TODO: Strange that we need such a big hack here,
    but if we use AllPub we don't get public variables/arrays generated *)
@@ -380,27 +401,6 @@ Definition taint : Type := list (var_id + arr_id).
      end}.
 
 Module TaintTracking.
-
-Fixpoint vars_aexp (a:aexp) : list string :=
-  match a with
-  | AId (Var i) => [i]
-  | ANum n => []
-  | <{x + y}>
-  | <{x - y}>
-  | <{x * y}> => vars_aexp x ++ vars_aexp y
-  | <{ b ? t : f }> => vars_bexp b ++ vars_aexp t ++ vars_aexp f
-  end
-with vars_bexp (a:bexp) : list string :=
-  match a with
-  | <{true}>
-  | <{false}> => []
-  | <{x <= y}>
-  | <{x > y}>
-  | <{x = y}>
-  | <{x <> y}> => vars_aexp x ++ vars_aexp y
-  | <{~b}> => vars_bexp b
-  | <{b1 && b2}> => vars_bexp b1 ++ vars_bexp b2
-  end.
 
 Definition tstate := total_map taint.
 Definition tastate := total_map taint.
@@ -599,6 +599,10 @@ Definition taint_tracking (f : nat) (c : com) (st : state) (ast : astate)
   | _ => None
   end.
 
+(* Testing the taint_tracking itself *)
+
+(* Extract Constant defNumTests => "1000000". *)
+
 QuickChick(
   forAllShrink (sized gen_com) shrink (fun c =>
   forAll gen_state (fun s1 =>
@@ -623,10 +627,7 @@ Definition extend_pub (P:pub_vars) (xs:list string) :=
   fold_left (fun P x => x !-> public; P) xs P.
 
 (* Noninterference for target speculative execution *)
-Definition check_speculative_noninterference trans : Checker :=
-  forAll gen_pub_vars (fun P =>
-  forAll gen_pub_arrs (fun PA =>
-  forAll (sized (gen_wt_com P PA)) (fun c =>
+Definition check_speculative_noninterference P PA c hardened : Checker :=
   forAll gen_state (fun s1 =>
   let s1 := ("b" !-> 0; s1) in
   forAll gen_astate (fun a1 =>
@@ -641,8 +642,7 @@ Definition check_speculative_noninterference trans : Checker :=
       let r2 := cteval_engine 10 c s2 a2 in
       match r2 with
       | Some (s2', a2', os2') =>
-          (* implication (obs_eqb os1' os2') ( -- no longer needed *)
-          let hardened := trans P c in
+          (* implication (obs_eqb os1' os2') -- no longer needed *)
           (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
              (fun '(ds, s1', a1', b', os1) =>
                 match spec_eval_engine hardened s2 a2 false ds with
@@ -655,67 +655,52 @@ Definition check_speculative_noninterference trans : Checker :=
       | None => checker tt (* discard -- doesn't seem to happen *)
       end)))
   | None => checker tt (* discard *)
-  end))))).
+  end)).
 
-QuickChick (check_speculative_noninterference flex_slh).
-
-(* Counterexample without implication (obs_eqb os1' os2') ... *)
-(* (true, [("X0", true); ("X1", false); ("X2", false); ("X3", true); ("X4", true); ("X5", false)]) *)
-(* (false, [("A0", true); ("A1", false); ("A2", true)]) *)
-(* (while (~ (X1 > (0 - 1))) do (if true then skip else ((X0 <- A2[[4]]) ; skip) end) end) *)
-(* (0, [("X0", 2); ("X1", 1); ("X2", 1); ("X3", 0); ("X4", 4); ("X5", 2)]) *)
-(* (0, [("X5", 0); ("X4", 4); ("X3", 0); ("X2", 3); ("X1", 0); ("X0", 2)]) *)
-(* ([0; 3; 4; 2; 1], [("A0", [3; 3; 2; 2; 1; 1]); ("A1", [2; 1]); ("A2", [1; 2; 4; 2; 2; 3; 4; 1; 3])]) *)
-(* ([0; 3; 4; 2; 1], [("A2", [1; 2; 4; 2; 2; 3; 4; 1; 3]); ("A1", [3; 3]); ("A0", [3; 3; 2; 2; 1; 1])]) *)
-(* (((([force; force; step; step], (0, [("b", 1); ("X0", 0); ("X0", 2); ("b", 1); ("b", 1); ("b", 0); ("X0", 2); ("X1", 1); ("X2", 1); ("X3", 0); ("X4", 4); ("X5", 2)])), ([0; 3; 4; 2; 1], [("A0", [3; 3; 2; 2; 1; 1]); ("A1", [2; 1]); ("A2", [1; 2; 4; 2; 2; 3; 4; 1; 3])])), true), [branch false; branch true; aread A2 4; branch false]) *)
-(* *** Failed after 67 tests and 5 shrinks. (12 discards) *)
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (sized (gen_wt_com P PA)) (fun c =>
+  check_speculative_noninterference P PA c (flex_slh P c))))).
 
 (* Testing flex_slh_relative_secure *)
 
-Definition check_relative_security trans : Checker :=
+Definition check_relative_security P PA c hardened : Checker :=
+  forAll gen_state (fun s1 =>
+  let s1 := ("b" !-> 0; s1) in
+  forAll gen_astate (fun a1 =>
+  let r1 := taint_tracking 10 c s1 a1 in
+  match r1 with
+  | Some (s1', a1', os1', tvars, tarrs) =>
+      collect (show (List.length os1')) (
+      (* collect (show (List.length (tvars ++ tarrs))) ( *)
+      forAll (gen_pub_equiv (extend_pub P tvars) s1) (fun s2 =>
+      let s2 := ("b" !-> 0; s2) in
+      forAll (gen_pub_equiv_and_same_length (extend_pub PA tarrs) a1) (fun a2 =>
+      let r2 := cteval_engine 10 c s2 a2 in
+      match r2 with
+      | Some (s2', a2', os2') =>
+          (* implication (obs_eqb os1' os2') -- no longer needed *)
+          (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
+             (fun '(ds, s1', a1', b', os1) =>
+                match spec_eval_engine hardened s2 a2 false ds with
+                | Some (s2', a2', b'', os2) =>  checker (obs_eqb os1 os2)
+                | None => checker tt (* discard -- doesn't seem to happen *)
+                end))
+      | None => checker tt (* discard -- doesn't seem to happen *)
+      end)))
+  | None => checker tt (* discard *)
+  end)).
+
+QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
-
   forAll (sized (gen_wt_com P PA)) (fun c =>
-  let hardened := trans P c in
-
-  forAll gen_state (fun s1 =>
-  forAll (gen_pub_equiv P s1) (fun s2 =>
-  let s1 := ("b" !-> 0; s1) in
-  let s2 := ("b" !-> 0; s2) in
-
-  forAll gen_astate (fun a1 =>
-  forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
-  let r1 := cteval_engine 10 c s1 a1 in
-  let r2 := cteval_engine 10 c s2 a2 in
-  match (r1, r2) with
-  | (Some (s1', a1', os1'), Some (s2', a2', os2')) =>
-      collect (show (List.length os1')) (
-      implication (obs_eqb os1' os2')
-        (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
-           (fun '(ds, s1', a1', b', os1) =>
-              match spec_eval_engine hardened s2 a2 false ds with
-              | Some (s2', a2', b'', os2) => checker (obs_eqb os1 os2)
-              | None => checker tt (* discard *)
-              end)))
-  | _ => checker tt (* discard *)
-  end))))))).
-
-QuickChick (check_relative_security flex_slh).
+  check_relative_security P PA c (flex_slh P c))))).
 
 (* Also testing Gilles' lemma here, not for ideal semantics, but for the translation *)
 
-Definition check_gilles_lemma trans : Checker :=
-  forAll gen_pub_vars (fun P =>
-  forAll gen_pub_arrs (fun PA =>
-
-  forAll (sized (gen_wt_com P PA)) (fun c =>
-  let hardened := trans P c in
-
-  forAll gen_state (fun s1 =>
-  forAll (gen_pub_equiv P s1) (fun s2 =>
-  let s1 := ("b" !-> 1; s1) in
-  let s2 := ("b" !-> 1; s2) in
+Definition check_gilles_lemma hardened s1 s2 : Checker :=
   forAll gen_astate (fun a1 =>
   forAll gen_astate (fun a2 => (* same length not needed? *)
   forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
@@ -723,15 +708,38 @@ Definition check_gilles_lemma trans : Checker :=
        match spec_eval_engine hardened s2 a2 false ds with
        | Some (s2', a2', b'', os2) => checker (obs_eqb os1 os2)
        | None => checker tt (* discard *)
-       end)))))))).
+       end))).
 
-QuickChick (check_gilles_lemma flex_slh).
+(* This fails for flex_slh as stated in UltimateSLH.v!
+   Didn't expect it, but it makes sense in retrospect:
+   public variables should *never* contain secrets,
+   and our type-system ensures that *)
 
-(* Directly testing also the top-level statement for Ultimate SLH,
-   even if it is just a special case where all things are private.  *)
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (sized (gen_wt_com P PA)) (fun c =>
+  forAll gen_state (fun s1 =>
+  forAll gen_state (fun s2 =>
+  let s1 := ("b" !-> 1; s1) in
+  let s2 := ("b" !-> 1; s2) in
+  check_gilles_lemma (flex_slh P c) s1 s2)))))).
 
-(* TODO: Discards are the biggest problem for this one, but there is hope of improving this later:
-   https://secure-compilation.zulipchat.com/#narrow/stream/436285-speculation/topic/Testing.20Ultimate.20SLH *)
+(* It works if we only generate equivalent initial states
+   (and in general for ultimate_slh, see below) *)
+
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (sized (gen_wt_com P PA)) (fun c =>
+  forAll gen_state (fun s1 =>
+  forAll (gen_pub_equiv P s1) (fun s2 =>
+  let s1 := ("b" !-> 1; s1) in
+  let s2 := ("b" !-> 1; s2) in
+  check_gilles_lemma (flex_slh P c) s1 s2)))))).
+
+(* Directly testing also the top-level statement for OUR(!) Ultimate SLH,
+   even if it is just a special case where all things are private. *)
 
 Fixpoint ultimate_slh (c:com) :=
   (match c with
@@ -749,17 +757,75 @@ Fixpoint ultimate_slh (c:com) :=
   | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
-QuickChick (check_relative_security (fun _ => ultimate_slh)).
+Module RelatingUltimateSLH.
+  (* OUR(!) Ultimate SLH above is just a suboptimal version of `flex_slh AllSecret` *)
 
-(* Also testing Gilles' lemma, not for ideal semantics, but for the translation *)
-QuickChick (check_gilles_lemma (fun _ => ultimate_slh)).
+  (* Suboptimal because it even masks constant expressions, which clearly cannot
+     leak secrets via observations.
+
+  Still without such constant expressions we can prove it's the same. *)
+  Axiom no_constant_bexps : forall b, vars_bexp b <> [].
+  Axiom no_constant_aexps : forall a, vars_aexp a <> [].
+
+  Ltac rewrite_eq :=
+    match goal with
+    | H:_=_ |- _ => rewrite H; clear H
+    | H:forall _, _=_ |- _ => rewrite H; clear H
+    | _ => idtac
+   end.
+
+  Lemma all_secret_bexp : forall b, label_of_bexp AllSecret b = secret.
+  Proof.
+    intro b. pose proof (no_constant_bexps b).
+    induction b; simpl in *; eauto; try contradiction.
+  Admitted. (* need mutual induction proof *)
+
+  Lemma all_secret_aexp : forall a, label_of_aexp AllSecret a = secret.
+    intro a. pose proof (no_constant_aexps a).
+    induction a; simpl in *; eauto; try contradiction.
+  Admitted. (* need mutual induction proof *)
+
+  Lemma ultimate_slh_is_flex_slh :
+    forall c, ultimate_slh c = flex_slh AllSecret c.
+  Proof.
+    pose proof all_secret_bexp. pose proof all_secret_aexp.
+    intros c. induction c; simpl; repeat rewrite_eq; reflexivity.
+  Qed.
+
+End RelatingUltimateSLH.
+
+(* Testing ultimate_slh *)
+
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  (check_speculative_noninterference AllSecret AllSecret c (ultimate_slh c)))).
+
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  (check_relative_security AllSecret AllSecret c (ultimate_slh c)))).
+
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  forAll gen_state (fun s1 =>
+  forAll gen_state (fun s2 =>
+  let s1 := ("b" !-> 1; s1) in
+  let s2 := ("b" !-> 1; s2) in
+  check_gilles_lemma (ultimate_slh c) s1 s2)))).
 
 (** * Standard SLH -- INSECURE! SHOULD FAIL! *)
 Definition slh := sel_slh AllPub.
-QuickChick (check_relative_security (fun _ => slh)).
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  check_relative_security AllSecret AllSecret (slh c))).
 
 (* Also testing Gilles' lemma -- SHOULD FAIL! *)
-QuickChick (check_gilles_lemma (fun _ => slh)).
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  forAll gen_state (fun s1 =>
+  forAll gen_state (fun s2 =>
+  let s1 := ("b" !-> 1; s1) in
+  let s2 := ("b" !-> 1; s2) in
+  check_gilles_lemma (slh c) s1 s2)))).
 
 (** * Exorcising Spectre SLH -- INSECURE! SHOULD FAIL! *)
 
@@ -779,7 +845,19 @@ Fixpoint exorcised_slh (c:com) :=
   | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
-QuickChick (check_relative_security (fun _ => exorcised_slh)).
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  forAll gen_state (fun s1 =>
+  forAll gen_state (fun s2 =>
+  let s1 := ("b" !-> 1; s1) in
+  let s2 := ("b" !-> 1; s2) in
+  check_gilles_lemma (exorcised_slh c) s1 s2)))).
 
 (* Also testing Gilles' lemma -- SHOULD FAIL! *)
-QuickChick (check_gilles_lemma (fun _ => exorcised_slh)).
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  forAll gen_state (fun s1 =>
+  forAll gen_state (fun s2 =>
+  let s1 := ("b" !-> 1; s1) in
+  let s2 := ("b" !-> 1; s2) in
+  check_gilles_lemma (exorcised_slh c) s1 s2)))).
