@@ -1446,6 +1446,13 @@ QuickChick (forAll gen_pub_vars (fun P =>
 
     forallb (fun '(Var X') => Bool.eqb (apply P X') l) (shrink_var_preserve_label P X)
   ))).
+QuickChick (
+    forAll gen_pub_arrs (fun PA =>
+    forAll arbitrary (fun (a : var_id) =>
+    let l := apply PA a in
+
+    forallb (fun '(Arr a') => Bool.eqb (apply PA a') l) (shrink_arr_preserve_label PA a)
+  ))).
 
 (* Shrinker that preserve the label of aexp/bexp *)
 Fixpoint shrink_bexp_with_label (P : pub_vars) (l : label) (b : bexp) : list bexp :=
@@ -1869,8 +1876,8 @@ Fixpoint shrink_ct_well_typed (P : pub_vars) (PA : pub_arrs) (c : com) : list co
 
         (* preserve can_flow l (PA a) *)
         (map (fun shrunk : arr_id => <{{ shrunk [ie] <- e }}>) (match l with
-          | true => shrink_arr_preserve_label PA a (* only public *)
-          | false => shrink a (* secret and public are possible *)
+          | true => shrink a (* secret and public are possible *)
+          | false => shrink_arr_preserve_label PA a (* only private *)
           end)) ++
         (* preserve P |-a- ie \in public *)
         (map (fun shrunk : aexp => <{{ a [shrunk] <- e }}>) (shrink_aexp_with_label P public ie)) ++
@@ -1888,11 +1895,9 @@ Fixpoint ct_typechecker (P PA:pub_vars) (c:com) : bool :=
   | <{ while b do c1 end }> =>
       label_of_bexp P b && ct_typechecker P PA c1
   | <{{ x <- a[[i]] }}> =>
-      label_of_aexp P i &&
-      can_flow (join (label_of_aexp P i) (apply PA a)) (apply P x)
+      label_of_aexp P i && can_flow (apply PA a) (apply P x)
   | <{{ a[i] <- e }}> =>
-      label_of_aexp P i &&
-      can_flow (join (label_of_aexp P i) (label_of_aexp P e)) (apply PA a)
+      label_of_aexp P i && can_flow (label_of_aexp P e) (apply PA a)
   end.
 
 QuickChick (
@@ -1900,6 +1905,12 @@ QuickChick (
   forAll gen_pub_arrs (fun PA =>
   forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
   ct_typechecker P PA c)))).
+
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (gen_ct_well_typed_sized P PA 3)  (fun c =>
+  (forallb (ct_typechecker P PA) (shrink_ct_well_typed P PA c)))))).
 
 (** ** Final theorems: noninterference and constant-time security *)
 
