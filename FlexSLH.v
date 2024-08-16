@@ -860,8 +860,8 @@ QuickChick (
   let s2 := ("b" !-> 1; s2) in
   check_gilles_lemma (our_ultimate_slh c) s1 s2)))).
 
-(* Now defining something closer to the original Ultimate SLH,
-   even if it is STILL JUST KIND OFF(!) a special case of flex_slh AllSecret. *)
+(* Now defining something closer to the original Ultimate SLH, even if it is
+   just a special case of flex_slh AllSecret (we prove this below). *)
 
 Fixpoint ultimate_slh (c:com) :=
   (match c with
@@ -883,8 +883,8 @@ Fixpoint ultimate_slh (c:com) :=
         <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c end;
            "b" := ("b" = 0 && be) ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
-      if seq.nilp (vars_aexp i) then (* optimized: vanilla SHL *)
-        <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
+      if seq.nilp (vars_aexp i) then (* optimized -- no mask even if it's out of bounds! *)
+        <{{x <- a[[i]]}}>
       else
         <{{x <- a[[("b" = 1) ? 0 : i]] }}>
   | <{{a[i] <- e}}> =>
@@ -895,8 +895,7 @@ Fixpoint ultimate_slh (c:com) :=
         <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
-(* This original Ultimate SLH is just STILL JUST KIND OFF(!)
-   a version of `flex_slh AllSecret` -- they differ on constant array loads *)
+(* This original `ultimate_slh` is just `flex_slh AllSecret` *)
 
 Lemma ultimate_slh_is_flex_slh :
   forall c, ultimate_slh c = flex_slh AllSecret c.
@@ -911,12 +910,12 @@ Proof.
     + eapply no_vars_public_bexp in Eq. rewrite Eq. reflexivity.
     + erewrite Hb; eauto.
   - destruct (seq.nilp (vars_aexp i)) eqn:Eq.
-    + eapply no_vars_public_aexp in Eq. rewrite Eq. simpl. admit.
+    + eapply no_vars_public_aexp in Eq. rewrite Eq. reflexivity.
     + erewrite Ha; eauto.
   - destruct (seq.nilp (vars_aexp i)) eqn:Eq.
     + eapply no_vars_public_aexp in Eq. rewrite Eq. reflexivity.
     + erewrite Ha; eauto.
-Abort. (* would need to restate this to prevent constant array loads for it to work *)
+Qed.
 
 (* Testing ultimate_slh *)
 
