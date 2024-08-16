@@ -15,27 +15,6 @@ From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
 
-Fixpoint label_of_aexp (P:pub_vars) (a:aexp) : label :=
-  match a with
-  | ANum n => public
-  | AId X => apply P X
-  | <{ a1 + a2 }>
-  | <{ a1 - a2 }>
-  | <{ a1 * a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
-  | <{ be ? a1 : a2 }> => join (label_of_bexp P be)
-                            (join (label_of_aexp P a1) (label_of_aexp P a2))
-  end
-with label_of_bexp (P:pub_vars) (a:bexp) : label :=
-  match a with
-  | <{ true }> | <{ false }> => public
-  | <{ a1 = a2 }>
-  | <{ a1 <> a2 }>
-  | <{ a1 <= a2 }>
-  | <{ a1 > a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
-  | <{ ~b }> => label_of_bexp P b
-  | <{ b1 && b2 }> => join (label_of_bexp P b1) (label_of_bexp P b2)
-  end.
-
 Fixpoint vars_aexp (a:aexp) : list string :=
   match a with
   | ANum n => []
@@ -55,6 +34,45 @@ with vars_bexp (a:bexp) : list string :=
   | <{ ~b }> => vars_bexp b
   | <{ b1 && b2 }> => vars_bexp b1 ++ vars_bexp b2
   end.
+
+Definition label_of_aexp (P:pub_vars) (a:aexp) : label :=
+  List.fold_left (fun l a => join l (apply P a)) (vars_aexp a) public.
+
+Definition label_of_bexp (P:pub_vars) (b:bexp) : label :=
+  List.fold_left (fun l b => join l (apply P b)) (vars_bexp b) public.
+
+Lemma no_vars_public_bexp : forall P b,
+  seq.nilp (vars_bexp b) = true ->
+  label_of_bexp P b = public.
+Proof. intros P b H. unfold label_of_bexp. destruct (vars_bexp b); eauto. Qed.
+
+Lemma no_vars_public_aexp : forall P a,
+  seq.nilp (vars_aexp a) = true ->
+  label_of_aexp P a = public.
+Proof. intros P a H. unfold label_of_aexp. destruct (vars_aexp a); eauto. Qed.
+
+Definition AllPub : pub_vars := (_!-> public).
+Definition AllSecret : pub_vars := (_!-> secret).
+
+Lemma joining_to_secret : forall l' (xs:list string),
+  List.fold_left (fun l b => join l l') xs secret = secret.
+Proof. intros P xs. induction xs; eauto. Qed.
+
+Lemma all_secret_bexp : forall b,
+  seq.nilp (vars_bexp b) = false ->
+  label_of_bexp AllSecret b = secret.
+Proof.
+  intros b H. unfold label_of_bexp. destruct (vars_bexp b) eqn:Eq; eauto.
+  simpl. apply joining_to_secret.
+Qed.
+
+Lemma all_secret_aexp : forall a,
+  seq.nilp (vars_aexp a) = false ->
+  label_of_aexp AllSecret a = secret.
+Proof.
+  intros a H. unfold label_of_aexp. destruct (vars_aexp a) eqn:Eq; eauto.
+  simpl. apply joining_to_secret.
+Qed.
 
 Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
   (match c with
@@ -338,9 +356,6 @@ Sample gen_pub_arrs.
 Definition somePA := (true, [("A0", true); ("A1", true); ("A2", false)])%string.
 
 Sample (sized (gen_wt_com someP somePA)).
-
-Definition AllPub : pub_vars := (_!-> public).
-Definition AllSecret : pub_vars := (_!-> secret).
 
 (* TODO: Strange that we need such a big hack here,
    but if we use AllPub we don't get public variables/arrays generated *)
@@ -739,7 +754,72 @@ QuickChick (
   check_gilles_lemma (flex_slh P c) s1 s2)))))).
 
 (* Directly testing also the top-level statement for OUR(!) Ultimate SLH,
-   even if it is just a special case where all things are private. *)
+   even if it is KIND OF(!) just a special case where all things are private. *)
+
+Fixpoint our_ultimate_slh (c:com) :=
+  (match c with
+  | <{{skip}}> => <{{skip}}>
+  | <{{x := e}}> => <{{x := e}}>
+  | <{{c1; c2}}> => <{{ our_ultimate_slh c1; our_ultimate_slh c2}}>
+  | <{{if be then c1 else c2 end}}> =>
+      <{{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; our_ultimate_slh c1
+                          else "b" := ("b" = 0 && be) ? 1 : "b"; our_ultimate_slh c2 end}}>
+  | <{{while be do c end}}> =>
+      <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; our_ultimate_slh c end;
+         "b" := ("b" = 0 && be) ? 1 : "b"}}>
+  | <{{x <- a[[i]]}}> =>
+    <{{x <- a[[("b" = 1) ? 0 : i]] }}>
+  | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
+  end)%string.
+
+Ltac rewrite_eq :=
+  match goal with
+  | H:_=_ |- _ => rewrite H; clear H
+  | H:forall _, _=_ |- _ => rewrite H; clear H
+  | _ => idtac
+ end.
+
+Module RelatingOurUltimateSLH.
+  (* OUR(!) Ultimate SLH above is just a suboptimal version of `flex_slh AllSecret` *)
+
+  (* Suboptimal because it even masks constant expressions, which clearly cannot
+     leak secrets via observations. Still without such constant expressions we
+     can prove it's the same. Here is a crude way of proving this using axioms
+     that are generally false. *)
+
+  Axiom no_constant_bexps : forall b, seq.nilp (vars_bexp b) = false.
+  Axiom no_constant_aexps : forall a, seq.nilp (vars_aexp a) = false.
+
+  Lemma our_ultimate_slh_is_flex_slh :
+    forall c, our_ultimate_slh c = flex_slh AllSecret c.
+  Proof.
+    pose proof (fun b => all_secret_bexp b (no_constant_bexps b)).
+    pose proof (fun b => all_secret_aexp b (no_constant_aexps b)).
+    intros c. induction c; simpl; repeat rewrite_eq; reflexivity.
+  Qed.
+
+End RelatingOurUltimateSLH.
+
+(* Testing our_ultimate_slh *)
+
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  (check_speculative_noninterference AllSecret AllSecret c (our_ultimate_slh c)))).
+
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  (check_relative_security AllSecret AllSecret c (our_ultimate_slh c)))).
+
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  forAll gen_state (fun s1 =>
+  forAll gen_state (fun s2 =>
+  let s1 := ("b" !-> 1; s1) in
+  let s2 := ("b" !-> 1; s2) in
+  check_gilles_lemma (our_ultimate_slh c) s1 s2)))).
+
+(* Now defining something closer to the original Ultimate SLH,
+   even if it is STILL JUST KIND OFF(!) a special case where all things are private. *)
 
 Fixpoint ultimate_slh (c:com) :=
   (match c with
@@ -747,50 +827,55 @@ Fixpoint ultimate_slh (c:com) :=
   | <{{x := e}}> => <{{x := e}}>
   | <{{c1; c2}}> => <{{ ultimate_slh c1; ultimate_slh c2}}>
   | <{{if be then c1 else c2 end}}> =>
-      <{{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c1
-                          else "b" := ("b" = 0 && be) ? 1 : "b"; ultimate_slh c2 end}}>
+      if seq.nilp (vars_bexp be) then (* optimized *)
+        <{{if be then "b" := be ? "b" : 1; ultimate_slh c1
+                 else "b" := be ? 1 : "b"; ultimate_slh c2 end}}>
+      else
+        <{{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c1
+                            else "b" := ("b" = 0 && be) ? 1 : "b"; ultimate_slh c2 end}}>
   | <{{while be do c end}}> =>
-      <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c end;
-         "b" := ("b" = 0 && be) ? 1 : "b"}}>
+      if seq.nilp (vars_bexp be) then (* optimized *)
+        <{{while be do "b" := be ? "b" : 1; ultimate_slh c end;
+           "b" := be ? 1 : "b"}}>
+      else
+        <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c end;
+           "b" := ("b" = 0 && be) ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
-    <{{x <- a[[("b" = 1) ? 0 : i]] }}>
-  | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
+      if seq.nilp (vars_aexp i) then (* optimized: vanilla SHL *)
+        <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
+      else
+        <{{x <- a[[("b" = 1) ? 0 : i]] }}>
+  | <{{a[i] <- e}}> =>
+      if seq.nilp (vars_aexp i) then (* optimized *)
+        <{{a[i] <- e}}> (* <- Doing nothing here okay for Spectre v1,
+         but problematic for return address or code pointer overwrites *)
+      else
+        <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
 Module RelatingUltimateSLH.
-  (* OUR(!) Ultimate SLH above is just a suboptimal version of `flex_slh AllSecret` *)
-
-  (* Suboptimal because it even masks constant expressions, which clearly cannot
-     leak secrets via observations.
-
-  Still without such constant expressions we can prove it's the same. *)
-  Axiom no_constant_bexps : forall b, vars_bexp b <> [].
-  Axiom no_constant_aexps : forall a, vars_aexp a <> [].
-
-  Ltac rewrite_eq :=
-    match goal with
-    | H:_=_ |- _ => rewrite H; clear H
-    | H:forall _, _=_ |- _ => rewrite H; clear H
-    | _ => idtac
-   end.
-
-  Lemma all_secret_bexp : forall b, label_of_bexp AllSecret b = secret.
-  Proof.
-    intro b. pose proof (no_constant_bexps b).
-    induction b; simpl in *; eauto; try contradiction.
-  Admitted. (* need mutual induction proof *)
-
-  Lemma all_secret_aexp : forall a, label_of_aexp AllSecret a = secret.
-    intro a. pose proof (no_constant_aexps a).
-    induction a; simpl in *; eauto; try contradiction.
-  Admitted. (* need mutual induction proof *)
+  (* This original Ultimate SLH is just STILL JUST KIND OFF(!)
+     a version of `flex_slh AllSecret` -- they differ on constant array loads *)
 
   Lemma ultimate_slh_is_flex_slh :
     forall c, ultimate_slh c = flex_slh AllSecret c.
   Proof.
-    pose proof all_secret_bexp. pose proof all_secret_aexp.
-    intros c. induction c; simpl; repeat rewrite_eq; reflexivity.
-  Qed.
+    pose proof all_secret_bexp as Hb.
+    pose proof all_secret_aexp as Ha.
+    intros c. induction c; simpl; repeat rewrite_eq; try reflexivity.
+    - destruct (seq.nilp (vars_bexp be)) eqn:Eq.
+      + eapply no_vars_public_bexp in Eq. rewrite Eq. reflexivity.
+      + erewrite Hb; eauto.
+    - destruct (seq.nilp (vars_bexp be)) eqn:Eq.
+      + eapply no_vars_public_bexp in Eq. rewrite Eq. reflexivity.
+      + erewrite Hb; eauto.
+    - destruct (seq.nilp (vars_aexp i)) eqn:Eq.
+      + eapply no_vars_public_aexp in Eq. rewrite Eq. simpl. admit.
+      + erewrite Ha; eauto.
+    - destruct (seq.nilp (vars_aexp i)) eqn:Eq.
+      + eapply no_vars_public_aexp in Eq. rewrite Eq. reflexivity.
+      + erewrite Ha; eauto.
+  Abort. (* would need to restate this to prevent constant array loads for it to work *)
 
 End RelatingUltimateSLH.
 
