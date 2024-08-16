@@ -111,8 +111,51 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
       <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
-(* Unclear if the following type system that just tracks explicit and implicit
-   flows is good enough for what we need. *)
+(* For CT programs this is the same as sel_slh *)
+
+Ltac rewrite_eq :=
+  match goal with
+  | H:_=_ |- _ => rewrite H; clear H
+  | H:forall _, _=_ |- _ => rewrite H; clear H
+  | _ => idtac
+ end.
+
+Module RelatingSelSLH.
+
+  Lemma label_of_aexp_sound : forall P a,
+    P |-a- a \IN label_of_aexp P a.
+  Admitted.
+
+  Lemma label_of_aexp_unique : forall P a l,
+    P |-a- a \IN l ->
+    l = label_of_aexp P a.
+  Admitted.
+
+  Lemma label_of_bexp_sound : forall P b,
+    P |-b- b \IN label_of_bexp P b.
+  Admitted.
+
+  Lemma label_of_bexp_unique : forall P b l,
+    P |-b- b \IN l ->
+    l = label_of_bexp P b.
+  Admitted.
+
+  Lemma sel_slh_is_flex_slh : forall P PA c,
+      ct_well_typed P PA c ->
+      sel_slh P c = flex_slh P c.
+  Proof.
+    intros P PA c H. induction H; simpl; repeat rewrite_eq; try reflexivity.
+    - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
+    - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
+    - apply label_of_aexp_unique in H. rewrite <- H. reflexivity.
+    - apply label_of_aexp_unique in H. rewrite <- H. reflexivity.
+  Qed.
+
+End RelatingSelSLH.
+
+(* The following type system that just tracks explicit and implicit flows seems
+   good enough for what we need. Most importantly, it works gives us
+   noninterference both sequentially and speculatively (see testing below). *)
 
 Reserved Notation "P '&' PA ',' pc '|--' c" (at level 40).
 
@@ -404,7 +447,8 @@ QuickChick (forAll gen_pub_vars (fun P =>
       end
   )))))))).
 
-(* Taint tracking sequential executions (variant of Lucie's interpreter) *)
+(* For relative security we do taint tracking of sequential executions
+   (as a variant of Lucie's interpreter) *)
 
 Definition taint : Type := list (var_id + arr_id).
 
@@ -619,13 +663,14 @@ Definition taint_tracking (f : nat) (c : com) (st : state) (ast : astate)
 (* Extract Constant defNumTests => "1000000". *)
 
 QuickChick(
-  forAllShrink (sized gen_com) shrink (fun c =>
+  forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_astate (fun a1 =>
   let r1 := taint_tracking 10 c s1 a1 in
   match r1 with
   | Some (s1', a1', os1', tvars, tarrs) =>
       (* trace ("Leaked vars: " ++ show tvars ++ " arrs: " ++ show tarrs ++ nl) ( *)
+      (* collect (show (List.length tvars + List.length tarrs)) ( *)
       let P := (false, map (fun x => (x,true)) tvars) in
       let PA := (false, map (fun a => (a,true)) tarrs) in
       forAll (gen_pub_equiv P s1) (fun s2 =>
@@ -641,7 +686,8 @@ QuickChick(
 Definition extend_pub (P:pub_vars) (xs:list string) :=
   fold_left (fun P x => x !-> public; P) xs P.
 
-(* Noninterference for target speculative execution *)
+(* Testing noninterference for target speculative execution *)
+
 Definition check_speculative_noninterference P PA c hardened : Checker :=
   forAll gen_state (fun s1 =>
   let s1 := ("b" !-> 0; s1) in
@@ -725,9 +771,9 @@ Definition check_gilles_lemma hardened s1 s2 : Checker :=
        | None => checker tt (* discard *)
        end))).
 
-(* This fails for flex_slh as stated in UltimateSLH.v!
+(* Gilles' lemma as stated in UltimateSLH.v fails for flex_slh!
    Didn't expect it, but it makes sense in retrospect:
-   public variables should *never* contain secrets,
+   for flex_slh public variables should *never* contain secrets,
    and our type-system ensures that *)
 
 QuickChick (
@@ -740,8 +786,8 @@ QuickChick (
   let s2 := ("b" !-> 1; s2) in
   check_gilles_lemma (flex_slh P c) s1 s2)))))).
 
-(* It works if we only generate equivalent initial states
-   (and in general for ultimate_slh, see below) *)
+(* A variant of Gilles' lemma works for flex_slh,
+   but we need to only generate equivalent initial states *)
 
 QuickChick (
   forAll gen_pub_vars (fun P =>
@@ -754,7 +800,7 @@ QuickChick (
   check_gilles_lemma (flex_slh P c) s1 s2)))))).
 
 (* Directly testing also the top-level statement for OUR(!) Ultimate SLH,
-   even if it is KIND OF(!) just a special case where all things are private. *)
+   even if it is KIND OF(!) just a special case of flex_slh AllSecret. *)
 
 Fixpoint our_ultimate_slh (c:com) :=
   (match c with
@@ -772,15 +818,8 @@ Fixpoint our_ultimate_slh (c:com) :=
   | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
-Ltac rewrite_eq :=
-  match goal with
-  | H:_=_ |- _ => rewrite H; clear H
-  | H:forall _, _=_ |- _ => rewrite H; clear H
-  | _ => idtac
- end.
-
 Module RelatingOurUltimateSLH.
-  (* OUR(!) Ultimate SLH above is just a suboptimal version of `flex_slh AllSecret` *)
+  (* our_ultimate_slh above is just a suboptimal version of `flex_slh AllSecret` *)
 
   (* Suboptimal because it even masks constant expressions, which clearly cannot
      leak secrets via observations. Still without such constant expressions we
@@ -802,6 +841,9 @@ End RelatingOurUltimateSLH.
 
 (* Testing our_ultimate_slh *)
 
+(* Here is where taint_tracking really shines, since it halves the number of
+   discards, and much more than that for long observations traces *)
+
 QuickChick (
   forAll (sized gen_com) (fun c =>
   (check_speculative_noninterference AllSecret AllSecret c (our_ultimate_slh c)))).
@@ -819,7 +861,7 @@ QuickChick (
   check_gilles_lemma (our_ultimate_slh c) s1 s2)))).
 
 (* Now defining something closer to the original Ultimate SLH,
-   even if it is STILL JUST KIND OFF(!) a special case where all things are private. *)
+   even if it is STILL JUST KIND OFF(!) a special case of flex_slh AllSecret. *)
 
 Fixpoint ultimate_slh (c:com) :=
   (match c with

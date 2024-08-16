@@ -1733,15 +1733,15 @@ Inductive ct_well_typed (P:pub_vars) (PA:pub_arrs) : com -> Prop :=
       P !! PA |-ct- c1 ->
       P !! PA |-ct- c2 ->
       P !! PA |-ct- <{{ c1 ; c2 }}>
-  | CT_If : forall b c1 c2,
-      P |-b- b \IN public ->
+  | CT_If : forall be c1 c2,
+      P |-b- be \IN public ->
       P !! PA |-ct- c1 ->
       P !! PA |-ct- c2 ->
-      P !! PA |-ct- <{{ if b then c1 else c2 end }}>
-  | CT_While : forall b c1,
-      P |-b- b \IN public ->
+      P !! PA |-ct- <{{ if be then c1 else c2 end }}>
+  | CT_While : forall be c1,
+      P |-b- be \IN public ->
       P !! PA |-ct- c1 ->
-      P !! PA |-ct- <{{ while b do c1 end }}>
+      P !! PA |-ct- <{{ while be do c1 end }}>
   | CT_ARead : forall x a i,
       P |-a- i \IN public ->
       can_flow (apply PA a) (apply P x) = true ->
