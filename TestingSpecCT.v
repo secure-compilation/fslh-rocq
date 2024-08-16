@@ -1878,6 +1878,29 @@ Fixpoint shrink_ct_well_typed (P : pub_vars) (PA : pub_arrs) (c : com) : list co
         (map (fun shrunk : aexp => <{{ a [ie] <- shrunk }}>) (shrink_aexp_with_label P l e))
   end.
 
+Fixpoint ct_typechecker (P PA:pub_vars) (c:com) : bool :=
+  match c with
+  | <{ skip }> => true
+  | <{ X := a }> => can_flow (label_of_aexp P a) (apply P X)
+  | <{ c1 ; c2 }> => ct_typechecker P PA c1 && ct_typechecker P PA c2
+  | <{ if b then c1 else c2 end }> =>
+      label_of_bexp P b && ct_typechecker P PA c1 && ct_typechecker P PA c2
+  | <{ while b do c1 end }> =>
+      label_of_bexp P b && ct_typechecker P PA c1
+  | <{{ x <- a[[i]] }}> =>
+      label_of_aexp P i &&
+      can_flow (join (label_of_aexp P i) (apply PA a)) (apply P x)
+  | <{{ a[i] <- e }}> =>
+      label_of_aexp P i &&
+      can_flow (join (label_of_aexp P i) (label_of_aexp P e)) (apply PA a)
+  end.
+
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (gen_ct_well_typed_sized P PA 3) (fun c =>
+  ct_typechecker P PA c)))).
+
 (** ** Final theorems: noninterference and constant-time security *)
 
 QuickChick (forAll gen_pub_vars (fun P =>

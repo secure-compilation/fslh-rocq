@@ -153,9 +153,10 @@ Module RelatingSelSLH.
 
 End RelatingSelSLH.
 
-(* The following type system that just tracks explicit and implicit flows seems
-   good enough for what we need. Most importantly, it gives us noninterference
-   both sequentially and speculatively post flex_slh (see testing below). *)
+(* The following standard IFC type system that just tracks explicit and implicit
+   flows seems good enough for what we need. Most importantly, it gives us
+   noninterference both sequentially and speculatively after applying flex_slh
+   (see testing below). *)
 
 Reserved Notation "P '&' PA ',' pc '|--' c" (at level 40).
 
@@ -448,7 +449,8 @@ QuickChick (forAll gen_pub_vars (fun P =>
   )))))))).
 
 (* For testing relative security we do taint tracking of sequential executions
-   (as a variant of Lucie's interpreter) *)
+   (as a variant of Lucie's interpreter). We use this to track which initial
+   values of variables and arrays affect CT observations. *)
 
 Definition taint : Type := list (var_id + arr_id).
 
@@ -658,7 +660,9 @@ Definition taint_tracking (f : nat) (c : com) (st : state) (ast : astate)
   | _ => None
   end.
 
-(* Testing the taint_tracking itself *)
+(* We first test the taint_tracking itself: it needs to enforce that if we make
+   the initial values of the leaked variables/arrays public we can vary all the
+   remaining secret variables/arrays and still obtain the same CT leakage. *)
 
 (* Extract Constant defNumTests => "1000000". *)
 
@@ -683,10 +687,10 @@ QuickChick(
    | None => checker tt (* discard *)
    end)))).
 
+(* Testing noninterference for target speculative execution *)
+
 Definition extend_pub (P:pub_vars) (xs:list string) :=
   fold_left (fun P x => x !-> public; P) xs P.
-
-(* Testing noninterference for target speculative execution *)
 
 Definition check_speculative_noninterference P PA c hardened : Checker :=
   forAll gen_state (fun s1 =>
@@ -709,7 +713,7 @@ Definition check_speculative_noninterference P PA c hardened : Checker :=
                 match spec_eval_engine hardened s2 a2 false ds with
                 | Some (s2', a2', b'', os2) =>
                     checker (Bool.eqb b' b'' && (pub_equivb P s1' s2') &&
-                               (Bool.eqb b' true || (* <-- needed since we don't (yet) mask all stores *)
+                           (b' || (* <-- needed since we don't (yet) mask stores *)
                                   pub_equivb_astate PA a1' a2'))
                 | None => checker tt (* discard -- doesn't seem to happen *)
                 end))
@@ -745,7 +749,7 @@ Definition check_relative_security P PA c hardened : Checker :=
           (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
              (fun '(ds, s1', a1', b', os1) =>
                 match spec_eval_engine hardened s2 a2 false ds with
-                | Some (s2', a2', b'', os2) =>  checker (obs_eqb os1 os2)
+                | Some (s2', a2', b'', os2) => checker (obs_eqb os1 os2)
                 | None => checker tt (* discard -- doesn't seem to happen *)
                 end))
       | None => checker tt (* discard -- doesn't seem to happen *)
@@ -762,8 +766,10 @@ QuickChick (
 (* Also testing Gilles' lemma here, not for ideal semantics, but for the translation *)
 
 Definition check_gilles_lemma hardened s1 s2 : Checker :=
+  let s1 := ("b" !-> 1; s1) in
+  let s2 := ("b" !-> 1; s2) in
   forAll gen_astate (fun a1 =>
-  forAll gen_astate (fun a2 => (* same length not needed? *)
+  forAll gen_astate (fun a2 => (* same length doesn't seem not needed *)
   forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
     (fun '(ds, s1', a1', b', os1) =>
        match spec_eval_engine hardened s2 a2 false ds with
@@ -782,8 +788,6 @@ QuickChick (
   forAll (sized (gen_wt_com P PA)) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  let s1 := ("b" !-> 1; s1) in
-  let s2 := ("b" !-> 1; s2) in
   check_gilles_lemma (flex_slh P c) s1 s2)))))).
 
 (* A variant of Gilles' lemma works for flex_slh,
@@ -794,9 +798,7 @@ QuickChick (
   forAll gen_pub_arrs (fun PA =>
   forAll (sized (gen_wt_com P PA)) (fun c =>
   forAll gen_state (fun s1 =>
-  forAll (gen_pub_equiv P s1) (fun s2 =>
-  let s1 := ("b" !-> 1; s1) in
-  let s2 := ("b" !-> 1; s2) in
+  forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
   check_gilles_lemma (flex_slh P c) s1 s2)))))).
 
 (* Directly testing also the top-level statement for OUR(!) Ultimate SLH,
@@ -852,14 +854,12 @@ QuickChick (
   forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  let s1 := ("b" !-> 1; s1) in
-  let s2 := ("b" !-> 1; s2) in
   check_gilles_lemma (our_ultimate_slh c) s1 s2)))).
 
-(* Finally, because of the AllSecret instantiation
-   check_speculative_noninterference just gives us something about the final
-   flag here. There is no other sound instantiation for the conclusion of
-   check_speculative_noninterference though. *)
+(* Finally, because of the AllSecret instantiation of speculative noninterference
+   we only get something about the final flag here. There is no other sound
+   instantiation for the conclusion of check_speculative_noninterference that
+   would work for our_ultimate_slh though. *)
 QuickChick (
   forAll (sized gen_com) (fun c =>
   (check_speculative_noninterference AllSecret AllSecret c (our_ultimate_slh c)))).
@@ -931,31 +931,42 @@ QuickChick (
   forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  let s1 := ("b" !-> 1; s1) in
-  let s2 := ("b" !-> 1; s2) in
   check_gilles_lemma (ultimate_slh c) s1 s2)))).
 
-(* Finally, because of the AllSecret instantiation
-   check_speculative_noninterference just gives us something about the final
-   flag here. There is no other sound instantiation for the conclusion of
-   check_speculative_noninterference though. *)
+(* Finally, because of the AllSecret instantiation of speculative noninterference
+   we only get something about the final flag here. There is no other sound
+   instantiation for the conclusion of check_speculative_noninterference that
+   would work for ultimate_slh though. *)
 QuickChick (
   forAll (sized gen_com) (fun c =>
   (check_speculative_noninterference AllSecret AllSecret c (ultimate_slh c)))).
 
-(** * Standard SLH -- INSECURE! SHOULD FAIL! *)
+(** * Standard SLH -- INSECURE for arbitrary programs! SHOULD FAIL! *)
 Definition slh := sel_slh AllPub.
 QuickChick (
   forAll (sized gen_com) (fun c =>
   check_relative_security AllSecret AllSecret (slh c))).
+
+(* It's only secure for constant-time programs *)
+Definition gen_ct_well_typed P PA := sized (gen_ct_well_typed_sized P PA).
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (gen_ct_well_typed P PA) (fun c =>
+  check_relative_security P PA (slh c))))).
+
+(* But then for constant-time programs we should better use sel_slh *)
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (gen_ct_well_typed P PA) (fun c =>
+  check_relative_security P PA (sel_slh P c))))).
 
 (* Also testing Gilles' lemma -- SHOULD FAIL! *)
 QuickChick (
   forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  let s1 := ("b" !-> 1; s1) in
-  let s2 := ("b" !-> 1; s2) in
   check_gilles_lemma (slh c) s1 s2)))).
 
 (** * Exorcising Spectre SLH -- INSECURE! SHOULD FAIL! *)
@@ -980,8 +991,6 @@ QuickChick (
   forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  let s1 := ("b" !-> 1; s1) in
-  let s2 := ("b" !-> 1; s2) in
   check_gilles_lemma (exorcised_slh c) s1 s2)))).
 
 (* Also testing Gilles' lemma -- SHOULD FAIL! *)
@@ -989,6 +998,4 @@ QuickChick (
   forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  let s1 := ("b" !-> 1; s1) in
-  let s2 := ("b" !-> 1; s2) in
   check_gilles_lemma (exorcised_slh c) s1 s2)))).
