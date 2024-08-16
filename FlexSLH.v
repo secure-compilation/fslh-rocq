@@ -846,10 +846,6 @@ End RelatingOurUltimateSLH.
 
 QuickChick (
   forAll (sized gen_com) (fun c =>
-  (check_speculative_noninterference AllSecret AllSecret c (our_ultimate_slh c)))).
-
-QuickChick (
-  forAll (sized gen_com) (fun c =>
   (check_relative_security AllSecret AllSecret c (our_ultimate_slh c)))).
 
 QuickChick (
@@ -859,6 +855,14 @@ QuickChick (
   let s1 := ("b" !-> 1; s1) in
   let s2 := ("b" !-> 1; s2) in
   check_gilles_lemma (our_ultimate_slh c) s1 s2)))).
+
+(* Finally, because of the AllSecret instantiation
+   check_speculative_noninterference just gives us something about the final
+   flag here. There is no other sound instantiation for the conclusion of
+   check_speculative_noninterference though. *)
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  (check_speculative_noninterference AllSecret AllSecret c (our_ultimate_slh c)))).
 
 (* Now defining something closer to the original Ultimate SLH, even if it is
    just a special case of flex_slh AllSecret (we prove this below). *)
@@ -921,10 +925,6 @@ Qed.
 
 QuickChick (
   forAll (sized gen_com) (fun c =>
-  (check_speculative_noninterference AllSecret AllSecret c (ultimate_slh c)))).
-
-QuickChick (
-  forAll (sized gen_com) (fun c =>
   (check_relative_security AllSecret AllSecret c (ultimate_slh c)))).
 
 QuickChick (
@@ -934,6 +934,14 @@ QuickChick (
   let s1 := ("b" !-> 1; s1) in
   let s2 := ("b" !-> 1; s2) in
   check_gilles_lemma (ultimate_slh c) s1 s2)))).
+
+(* Finally, because of the AllSecret instantiation
+   check_speculative_noninterference just gives us something about the final
+   flag here. There is no other sound instantiation for the conclusion of
+   check_speculative_noninterference though. *)
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  (check_speculative_noninterference AllSecret AllSecret c (ultimate_slh c)))).
 
 (** * Standard SLH -- INSECURE! SHOULD FAIL! *)
 Definition slh := sel_slh AllPub.
