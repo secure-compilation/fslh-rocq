@@ -853,31 +853,28 @@ Fixpoint ultimate_slh (c:com) :=
         <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
-Module RelatingUltimateSLH.
-  (* This original Ultimate SLH is just STILL JUST KIND OFF(!)
-     a version of `flex_slh AllSecret` -- they differ on constant array loads *)
+(* This original Ultimate SLH is just STILL JUST KIND OFF(!)
+   a version of `flex_slh AllSecret` -- they differ on constant array loads *)
 
-  Lemma ultimate_slh_is_flex_slh :
-    forall c, ultimate_slh c = flex_slh AllSecret c.
-  Proof.
-    pose proof all_secret_bexp as Hb.
-    pose proof all_secret_aexp as Ha.
-    intros c. induction c; simpl; repeat rewrite_eq; try reflexivity.
-    - destruct (seq.nilp (vars_bexp be)) eqn:Eq.
-      + eapply no_vars_public_bexp in Eq. rewrite Eq. reflexivity.
-      + erewrite Hb; eauto.
-    - destruct (seq.nilp (vars_bexp be)) eqn:Eq.
-      + eapply no_vars_public_bexp in Eq. rewrite Eq. reflexivity.
-      + erewrite Hb; eauto.
-    - destruct (seq.nilp (vars_aexp i)) eqn:Eq.
-      + eapply no_vars_public_aexp in Eq. rewrite Eq. simpl. admit.
-      + erewrite Ha; eauto.
-    - destruct (seq.nilp (vars_aexp i)) eqn:Eq.
-      + eapply no_vars_public_aexp in Eq. rewrite Eq. reflexivity.
-      + erewrite Ha; eauto.
-  Abort. (* would need to restate this to prevent constant array loads for it to work *)
-
-End RelatingUltimateSLH.
+Lemma ultimate_slh_is_flex_slh :
+  forall c, ultimate_slh c = flex_slh AllSecret c.
+Proof.
+  pose proof all_secret_bexp as Hb.
+  pose proof all_secret_aexp as Ha.
+  intros c. induction c; simpl; repeat rewrite_eq; try reflexivity.
+  - destruct (seq.nilp (vars_bexp be)) eqn:Eq.
+    + eapply no_vars_public_bexp in Eq. rewrite Eq. reflexivity.
+    + erewrite Hb; eauto.
+  - destruct (seq.nilp (vars_bexp be)) eqn:Eq.
+    + eapply no_vars_public_bexp in Eq. rewrite Eq. reflexivity.
+    + erewrite Hb; eauto.
+  - destruct (seq.nilp (vars_aexp i)) eqn:Eq.
+    + eapply no_vars_public_aexp in Eq. rewrite Eq. simpl. admit.
+    + erewrite Ha; eauto.
+  - destruct (seq.nilp (vars_aexp i)) eqn:Eq.
+    + eapply no_vars_public_aexp in Eq. rewrite Eq. reflexivity.
+    + erewrite Ha; eauto.
+Abort. (* would need to restate this to prevent constant array loads for it to work *)
 
 (* Testing ultimate_slh *)
 
