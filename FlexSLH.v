@@ -777,7 +777,7 @@ Definition check_gilles_lemma hardened s1 s2 : Checker :=
        | None => checker tt (* discard *)
        end))).
 
-(* Gilles' lemma as stated in UltimateSLH.v fails for flex_slh!
+(* Gilles' lemma as stated in UltimateSLH.v fails for flex_slh! -- SHOULD FAIL!
    Didn't expect it, but it makes sense in retrospect:
    for flex_slh public variables should *never* contain secrets,
    and our type-system ensures that *)
@@ -941,33 +941,53 @@ QuickChick (
   forAll (sized gen_com) (fun c =>
   (check_speculative_noninterference AllSecret AllSecret c (ultimate_slh c)))).
 
-(** * Standard SLH -- INSECURE for arbitrary programs! SHOULD FAIL! *)
+(** Now testing Standard SLH and Sel SLH *)
+
+(** Standard SLH -- INSECURE FOR ARBITRARY PROGRAMS! SHOULD FAIL! *)
 Definition slh := sel_slh AllPub.
 QuickChick (
-  forAll (sized gen_com) (fun c =>
-  check_relative_security AllSecret AllSecret (slh c))).
+  forAllShrink (sized gen_com) shrink (fun c =>
+  check_relative_security AllSecret AllSecret c (slh c))).
 
-(* It's only secure for constant-time programs *)
+(* Standard SLH is secure for constant-time programs though *)
 Definition gen_ct_well_typed P PA := sized (gen_ct_well_typed_sized P PA).
 QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
   forAll (gen_ct_well_typed P PA) (fun c =>
-  check_relative_security P PA (slh c))))).
+  check_relative_security P PA c (slh c))))).
 
 (* But then for constant-time programs we should better use sel_slh *)
 QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
   forAll (gen_ct_well_typed P PA) (fun c =>
-  check_relative_security P PA (sel_slh P c))))).
+  check_relative_security P PA c (sel_slh P c))))).
 
-(* Also testing Gilles' lemma -- SHOULD FAIL! *)
+(* Also testing Gilles' lemma -- WRONG ARBITRARY PROGRAMS! SHOULD FAIL! *)
 QuickChick (
-  forAll (sized gen_com) (fun c =>
+  forAllShrink (sized gen_com) shrink (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
   check_gilles_lemma (slh c) s1 s2)))).
+
+(* This works for constant-time programs on equivalent initial states though *)
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (gen_ct_well_typed P PA) (fun c => (* <- extra assumption *)
+  forAll gen_state (fun s1 =>
+  forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
+  check_gilles_lemma (slh c) s1 s2)))))).
+
+(* But then for constant-time programs we should better use sel_slh *)
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (gen_ct_well_typed P PA) (fun c => (* <- extra assumption *)
+  forAll gen_state (fun s1 =>
+  forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
+  check_gilles_lemma (sel_slh P c) s1 s2)))))).
 
 (** * Exorcising Spectre SLH -- INSECURE! SHOULD FAIL! *)
 
@@ -988,14 +1008,12 @@ Fixpoint exorcised_slh (c:com) :=
   end)%string.
 
 QuickChick (
-  forAll (sized gen_com) (fun c =>
-  forAll gen_state (fun s1 =>
-  forAll gen_state (fun s2 =>
-  check_gilles_lemma (exorcised_slh c) s1 s2)))).
+  forAllShrink (sized gen_com) shrink (fun c =>
+  check_relative_security AllSecret AllSecret c (exorcised_slh c))).
 
 (* Also testing Gilles' lemma -- SHOULD FAIL! *)
 QuickChick (
-  forAll (sized gen_com) (fun c =>
+  forAllShrink (sized gen_com) shrink (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
   check_gilles_lemma (exorcised_slh c) s1 s2)))).
