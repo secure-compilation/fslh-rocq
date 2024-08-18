@@ -856,13 +856,29 @@ QuickChick (
   forAll gen_state (fun s2 =>
   check_gilles_lemma (our_ultimate_slh c) s1 s2)))).
 
-(* Finally, because of the AllSecret instantiation of speculative noninterference
-   we only get something about the final flag here. There is no other sound
-   instantiation for the conclusion of check_speculative_noninterference that
-   would work for our_ultimate_slh though. *)
+(* Finally, we check a very weak AllSecret instantiation of speculative
+   noninterference, which only gives us something about the final flag. *)
+
 QuickChick (
   forAll (sized gen_com) (fun c =>
   (check_speculative_noninterference AllSecret AllSecret c (our_ultimate_slh c)))).
+
+(* This works without any protection though, probably because our speculative
+   semantics works and the fact that we share the directions. *)
+
+QuickChick (
+  forAll (sized gen_com) (fun c =>
+  (check_speculative_noninterference AllSecret AllSecret c c))).
+
+(* There is no other sound instantiation of P and PA that would satisfy the
+   conclusion of check_speculative_noninterference for our_ultimate_slh and
+   arbitrary programs though. Here is a very naive attempt -- SHOULD FAIL! *)
+
+QuickChick (
+  forAllShrink (sized gen_com) shrink (fun c =>
+  forAllShrink gen_pub_vars shrink (fun P =>
+  forAllShrink gen_pub_arrs shrink (fun PA =>
+  (check_speculative_noninterference P PA c (our_ultimate_slh c)))))).
 
 (* Now defining something closer to the original Ultimate SLH, even if it is
    just a special case of flex_slh AllSecret (we prove this below). *)
@@ -933,14 +949,6 @@ QuickChick (
   forAll gen_state (fun s2 =>
   check_gilles_lemma (ultimate_slh c) s1 s2)))).
 
-(* Finally, because of the AllSecret instantiation of speculative noninterference
-   we only get something about the final flag here. There is no other sound
-   instantiation for the conclusion of check_speculative_noninterference that
-   would work for ultimate_slh though. *)
-QuickChick (
-  forAll (sized gen_com) (fun c =>
-  (check_speculative_noninterference AllSecret AllSecret c (ultimate_slh c)))).
-
 (** Now testing Standard SLH and Sel SLH *)
 
 (** Standard SLH -- INSECURE FOR ARBITRARY PROGRAMS! SHOULD FAIL! *)
@@ -964,11 +972,11 @@ QuickChick (
   forAll (gen_ct_well_typed P PA) (fun c =>
   check_relative_security P PA c (sel_slh P c))))).
 
-(* Also testing Gilles' lemma -- WRONG ARBITRARY PROGRAMS! SHOULD FAIL! *)
+(* Also testing Gilles' lemma -- WRONG FOR ARBITRARY PROGRAMS! SHOULD FAIL! *)
 QuickChick (
   forAllShrink (sized gen_com) shrink (fun c =>
-  forAll gen_state (fun s1 =>
-  forAll gen_state (fun s2 =>
+  forAllShrink gen_state shrink (fun s1 =>
+  forAllShrink gen_state shrink (fun s2 =>
   check_gilles_lemma (slh c) s1 s2)))).
 
 (* This works for constant-time programs on equivalent initial states though *)
@@ -980,7 +988,7 @@ QuickChick (
   forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
   check_gilles_lemma (slh c) s1 s2)))))).
 
-(* But then for constant-time programs we should better use sel_slh *)
+(* For constant-time programs we can use sel_slh though *)
 QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
@@ -988,6 +996,29 @@ QuickChick (
   forAll gen_state (fun s1 =>
   forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
   check_gilles_lemma (sel_slh P c) s1 s2)))))).
+
+(* Finally, we can also check speculative noninterference for constant-time
+   programs, but then for sel_slh we already proved a stronger version, which
+   doesn't assume agreement of source leakages, so this is not a surprise. *)
+
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (gen_ct_well_typed P PA) (fun c =>
+  check_speculative_noninterference P PA c (sel_slh P c))))).
+
+(* This of course DOESN'T WORK FOR ARBITRARY PROGRAMS! It's a very naive
+   property since c would be independent of P and PA. SHOULD FAIL! *)
+
+QuickChick (
+  forAllShrink (sized gen_com) shrink (fun c =>
+  forAllShrink gen_pub_vars shrink (fun P =>
+  forAllShrink gen_pub_arrs shrink (fun PA =>
+  check_speculative_noninterference P PA c (slh c))))).
+
+(* The only thing that would work for arbitrary programs is an AllSecret
+   AllSecret instantiation, but then, that's just about the final flag and works
+   without any transformation, so we won't try it again here. *)
 
 (** * Exorcising Spectre SLH -- INSECURE! SHOULD FAIL! *)
 
