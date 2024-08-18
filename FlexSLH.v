@@ -728,6 +728,31 @@ QuickChick (
   forAll (sized (gen_wt_com P PA)) (fun c =>
   check_speculative_noninterference P PA c (flex_slh P c))))).
 
+(* One may wonder if this property is enforced ENTIRELY by the source type
+   system and would hold for any transformation that doesn't introduce (explicit
+   or implicit) information flows, including no transformation at all?
+   This doesn't work though because of out of bounds loads, and testing can
+   find it -- SHOULD FAIL: *)
+
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (sized (gen_wt_com P PA)) (fun c =>
+  check_speculative_noninterference P PA c c)))).
+
+(* In fact this doesn't even work for CT programs -- SHOULD FAIL: *)
+
+Definition gen_ct_well_typed P PA := sized (gen_ct_well_typed_sized P PA).
+
+QuickChick (
+  forAllShrink gen_pub_vars shrink (fun P =>
+  forAllShrink gen_pub_arrs shrink (fun PA =>
+  forAllShrink (gen_ct_well_typed P PA) (shrink_ct_well_typed P PA) (fun c =>
+  check_speculative_noninterference P PA c c)))).
+
+(* This was the main reason for introducing sel_slh, which satisfies something
+   even stronger as we proved in SpecCT.v (and we are testing it anyway below). *)
+
 (* Testing flex_slh_relative_secure *)
 
 Definition check_relative_security P PA c hardened : Checker :=
@@ -952,13 +977,14 @@ QuickChick (
 (** Now testing Standard SLH and Sel SLH *)
 
 (** Standard SLH -- INSECURE FOR ARBITRARY PROGRAMS! SHOULD FAIL! *)
+
 Definition slh := sel_slh AllPub.
+
 QuickChick (
   forAllShrink (sized gen_com) shrink (fun c =>
   check_relative_security AllSecret AllSecret c (slh c))).
 
 (* Standard SLH is secure for constant-time programs though *)
-Definition gen_ct_well_typed P PA := sized (gen_ct_well_typed_sized P PA).
 QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
@@ -1005,6 +1031,14 @@ QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
   forAll (gen_ct_well_typed P PA) (fun c =>
+  check_speculative_noninterference P PA c (sel_slh P c))))).
+
+(* A bit more interestingly, this also holds for our weaker typing notion: *)
+
+QuickChick (
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  forAll (sized (gen_wt_com P PA)) (fun c =>
   check_speculative_noninterference P PA c (sel_slh P c))))).
 
 (* This of course DOESN'T WORK FOR ARBITRARY PROGRAMS! It's a very naive
