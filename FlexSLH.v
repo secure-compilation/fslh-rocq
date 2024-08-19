@@ -888,8 +888,8 @@ QuickChick (
   forAll (sized gen_com) (fun c =>
   (check_speculative_noninterference AllSecret AllSecret c (our_ultimate_slh c)))).
 
-(* This works without any protection though, probably because our speculative
-   semantics works and the fact that we share the directions. *)
+(* This works without any protection though, probably because of the way our
+   speculative semantics works and the fact that we share the directions. *)
 
 QuickChick (
   forAll (sized gen_com) (fun c =>
@@ -1033,13 +1033,37 @@ QuickChick (
   forAll (gen_ct_well_typed P PA) (fun c =>
   check_speculative_noninterference P PA c (sel_slh P c))))).
 
-(* A bit more interestingly, this also holds for our weaker typing notion: *)
+(* A bit more interestingly, this also holds for our weaker typing notion:
+   -- TODO: This fails after over 10000 tests, need to investigate why,
+            but for that to work well may need a custom shrinker *)
+
+Extract Constant defNumTests => "1000000".
+
+Definition forAllShrinkNonDet {A prop : Type} {_ : Checkable prop} `{Show A}
+           (n : nat) (gen : G A) (shrinker : A -> list A) (pf : A -> prop) : Checker :=
+  let repeated_shrinker (x : A) : list A :=
+    List.concat (List.repeat (shrinker x) n) in
+  bindGen gen (fun x : A =>
+                 shrinking repeated_shrinker x (fun x' =>
+                                         printTestCase (show x' ++ newline) (pf x'))).
 
 QuickChick (
-  forAll gen_pub_vars (fun P =>
-  forAll gen_pub_arrs (fun PA =>
-  forAll (sized (gen_wt_com P PA)) (fun c =>
-  check_speculative_noninterference P PA c (sel_slh P c))))).
+  forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
+  forAllShrinkNonDet 100 gen_pub_arrs shrink (fun PA =>
+  forAllShrinkNonDet 100 (sized (gen_wt_com P PA)) shrink (fun c =>
+  implication (wt_typechecker P PA public c)
+  (check_speculative_noninterference P PA c (sel_slh P c)))))).
+
+(* Counterexamples: *)
+
+(* (false, [("X0", false); ("X1", true); ("X2", false); ("X3", true); ("X4", false); ("X5", true)]) *)
+(* (true, [("A0", false); ("A1", true); ("A2", false)]) *)
+(* (while false do (if (1 <= X1) then (while (X0 = X1) do skip end) else (X1 <- A1[[X1]]) end) end) *)
+
+(* (true, [("X0", true); ("X1", true); ("X2", false); ("X3", false); ("X4", false); ("X5", false)]) *)
+(* (true, [("A0", false); ("A1", true); ("A2", true)]) *)
+(* ((while (1 > X2) do (X2 <- A0[[0]]) end) ; (while (X0 > 0) do (X0 := 0) end)) *)
+
 
 (* This of course DOESN'T WORK FOR ARBITRARY PROGRAMS! It's a very naive
    property since c would be independent of P and PA. SHOULD FAIL! *)
