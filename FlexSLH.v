@@ -992,6 +992,10 @@ QuickChick (
   check_relative_security P PA c (slh c))))).
 
 (* But then for constant-time programs we should better use sel_slh *)
+
+(* TODO: Surprisingly this causes a stack overflow with 10 million tests,
+   but works fine with just 1 million. *)
+
 QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
@@ -1026,6 +1030,9 @@ QuickChick (
 (* Finally, we can also check speculative noninterference for constant-time
    programs, but then for sel_slh we already proved a stronger version, which
    doesn't assume agreement of source leakages, so this is not a surprise. *)
+
+(* TODO: Surprisingly this causes a stack overflow with 10 million tests,
+   but works fine with just 1 million. *)
 
 QuickChick (
   forAll gen_pub_vars (fun P =>
