@@ -996,8 +996,6 @@ QuickChick (
 (* TODO: Surprisingly this causes a stack overflow with 10 million tests,
    but works fine with just 5 million. *)
 
-Extract Constant defNumTests => "5000000".
-
 QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
