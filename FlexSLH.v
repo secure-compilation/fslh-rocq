@@ -379,7 +379,7 @@ Fixpoint gen_com_rec (gen_asgn : pub_vars -> G com)
                                  (gen_aread_in_ctx gen_aread (label_of_bexp P b))
                                  (gen_awrite_in_ctx gen_awrite (label_of_bexp P b))
                                  P PA sz')));
-             (div sz 2, thunkGen (fun _ =>
+             (sz, thunkGen (fun _ =>
                   b <- arbitrarySized 1;;
                   liftM2 While (ret b)
                     (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
@@ -1033,11 +1033,20 @@ QuickChick (
   forAll (gen_ct_well_typed P PA) (fun c =>
   check_speculative_noninterference P PA c (sel_slh P c))))).
 
-(* A bit more interestingly, this also holds for our weaker typing notion:
-   -- TODO: This fails after over 10000 tests, need to investigate why,
-            but for that to work well may need a custom shrinker *)
+(* Much more interestingly, I was expecting this to hold even for our weaker
+   typing notion. But QuickChick found the beautiful counterexample below
+   involving a loop that branches on an unmasked secret variable that gets
+   assigned in the loop body and makes the directions go out of sync in the two
+   executions, so the following public if gets different directions and based on
+   that assigns or not to a public variable. So a new kind of implicit flow
+   coming from running with different directions. SHOULD FAIL! *)
 
-Extract Constant defNumTests => "1000000".
+(* Since this is not consistently found with 10000 tests and shrinking doesn't
+   work perfectly consistently even with forAllShrinkNonDet I've hard-coded the
+   counterexample for now. Otherwise just set a larger number of tests and
+   comment out the forAllShrinkNonDets: *)
+
+(* Extract Constant defNumTests => "1000000". *)
 
 Definition forAllShrinkNonDet {A prop : Type} {_ : Checkable prop} `{Show A}
            (n : nat) (gen : G A) (shrinker : A -> list A) (pf : A -> prop) : Checker :=
@@ -1047,36 +1056,18 @@ Definition forAllShrinkNonDet {A prop : Type} {_ : Checkable prop} `{Show A}
                  shrinking repeated_shrinker x (fun x' =>
                                          printTestCase (show x' ++ newline) (pf x'))).
 
+Definition X0 := "X0"%string.
+Definition X2 := "X2"%string.
+Definition A0 := "A0"%string.
 QuickChick (
-  forAllShrinkNonDet 100 gen_pub_vars shrink (fun P =>
-  forAllShrinkNonDet 100 gen_pub_arrs shrink (fun PA =>
-  forAllShrinkNonDet 100 (sized (gen_wt_com P PA)) shrink (fun c =>
+  (* forAllShrinkNonDet 100 gen_pub_vars shrink (fun P => *)
+  (* forAllShrinkNonDet 100 gen_pub_arrs shrink (fun PA => *)
+  (* forAllShrinkNonDet 100 (sized (gen_wt_com P PA)) shrink (fun c => *)
+  let P := (true, [("X0", true); ("X1", true); ("X2", false); ("X3", false); ("X4", false); ("X5", false)])%string in
+  let PA := (true, [("A0", false); ("A1", true); ("A2", true)])%string in
+  let c := <{{while (1 > X2) do (X2 <- A0[[0]]) end ; if (X0 > 0) then X0 := 0 else skip end}}> in
   implication (wt_typechecker P PA public c)
-  (check_speculative_noninterference P PA c (sel_slh P c)))))).
-
-(* Counterexamples: *)
-
-(* (false, [("X0", false); ("X1", true); ("X2", false); ("X3", true); ("X4", false); ("X5", true)]) *)
-(* (true, [("A0", false); ("A1", true); ("A2", false)]) *)
-(* (while false do (if (1 <= X1) then (while (X0 = X1) do skip end) else (X1 <- A1[[X1]]) end) end) *)
-
-(* (true, [("X0", true); ("X1", true); ("X2", false); ("X3", false); ("X4", false); ("X5", false)]) *)
-(* (true, [("A0", false); ("A1", true); ("A2", true)]) *)
-(* ((while (1 > X2) do (X2 <- A0[[0]]) end) ; (while (X0 > 0) do (X0 := 0) end)) *)
-
-
-(* This of course DOESN'T WORK FOR ARBITRARY PROGRAMS! It's a very naive
-   property since c would be independent of P and PA. SHOULD FAIL! *)
-
-QuickChick (
-  forAllShrink (sized gen_com) shrink (fun c =>
-  forAllShrink gen_pub_vars shrink (fun P =>
-  forAllShrink gen_pub_arrs shrink (fun PA =>
-  check_speculative_noninterference P PA c (slh c))))).
-
-(* The only thing that would work for arbitrary programs is an AllSecret
-   AllSecret instantiation, but then, that's just about the final flag and works
-   without any transformation, so we won't try it again here. *)
+  (check_speculative_noninterference P PA c (sel_slh P c))).
 
 (** * Exorcising Spectre SLH -- INSECURE! SHOULD FAIL! *)
 
