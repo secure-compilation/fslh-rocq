@@ -1069,6 +1069,9 @@ QuickChick (
   implication (wt_typechecker P PA public c)
   (check_speculative_noninterference P PA c (sel_slh P c))).
 
+(* Counterexamples also exist without while loops, but they are harder to find: *)
+(* <{{if (0 <= 0) then (X0 := X0) else (if (1 > X3) then skip else (X0 <- A0[[X0]]) end) end}}> *)
+
 (** * Exorcising Spectre SLH -- INSECURE! SHOULD FAIL! *)
 
 Fixpoint exorcised_slh (c:com) :=
