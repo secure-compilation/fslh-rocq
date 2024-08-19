@@ -994,7 +994,9 @@ QuickChick (
 (* But then for constant-time programs we should better use sel_slh *)
 
 (* TODO: Surprisingly this causes a stack overflow with 10 million tests,
-   but works fine with just 1 million. *)
+   but works fine with just 5 million. *)
+
+Extract Constant defNumTests => "5000000".
 
 QuickChick (
   forAll gen_pub_vars (fun P =>
@@ -1032,7 +1034,7 @@ QuickChick (
    doesn't assume agreement of source leakages, so this is not a surprise. *)
 
 (* TODO: Surprisingly this causes a stack overflow with 10 million tests,
-   but works fine with just 1 million. *)
+   but works fine with just 5 million. *)
 
 QuickChick (
   forAll gen_pub_vars (fun P =>
@@ -1053,7 +1055,7 @@ QuickChick (
    counterexample for now. Otherwise just set a larger number of tests and
    comment out the forAllShrinkNonDets: *)
 
-(* Extract Constant defNumTests => "1000000". *)
+(* Extract Constant defNumTests => "100000". *)
 
 Definition forAllShrinkNonDet {A prop : Type} {_ : Checkable prop} `{Show A}
            (n : nat) (gen : G A) (shrinker : A -> list A) (pf : A -> prop) : Checker :=
