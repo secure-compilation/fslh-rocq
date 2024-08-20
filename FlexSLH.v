@@ -666,6 +666,9 @@ Definition taint_tracking (f : nat) (c : com) (st : state) (ast : astate)
 
 (* Extract Constant defNumTests => "1000000". *)
 
+(* TODO: Running taint_tracking 70 below causes a stack overflow
+   even for 10000 tests *)
+
 QuickChick(
   forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
@@ -994,7 +997,8 @@ QuickChick (
 (* But then for constant-time programs we should better use sel_slh *)
 
 (* TODO: Surprisingly this causes a stack overflow with 10 million tests,
-   but works fine with just 5 million. *)
+   but works fine with just 5 million. It may be more complicated though
+   (see next TODO below). *)
 
 QuickChick (
   forAll gen_pub_vars (fun P =>
@@ -1032,7 +1036,8 @@ QuickChick (
    doesn't assume agreement of source leakages, so this is not a surprise. *)
 
 (* TODO: Surprisingly this causes a stack overflow with 10 million tests,
-   but works fine with just 5 million. *)
+   but works fine with just 5 million. It seems more complicated though
+   and it may even depend on how many tests *previous* QuickChick commands run? *)
 
 QuickChick (
   forAll gen_pub_vars (fun P =>
