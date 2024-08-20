@@ -15,6 +15,16 @@ From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
 
+(* Tail recursive append to prevent stack overflows when testing *)
+Fixpoint rev_append {A:Type} (l1 l2 : list A) : list A :=
+  match l1 with
+  | [] => l2
+  | x :: l1 => rev_append l1 (x :: l2)
+  end.
+Definition rev {A : Type} (l : list A) := rev_append l [].
+Definition app {A:Type} (l1:list A) := rev_append (rev l1).
+Notation "x ++ y" := (app x y) (right associativity, at level 60).
+
 Fixpoint vars_aexp (a:aexp) : list string :=
   match a with
   | ANum n => []
@@ -461,6 +471,23 @@ Definition taint : Type := list (var_id + arr_id).
      | inr a => show a
      end}.
 
+Fixpoint remove_dupes {a:Type} (eqb:a->a->bool) (t : list a) : list a :=
+  match t with
+  | [] => []
+  | x :: xs => if existsb (eqb x) xs
+               then      remove_dupes eqb xs
+               else x :: remove_dupes eqb xs
+  end.
+
+Definition sum_eqb (s1 s2 : (var_id + arr_id)) : bool :=
+  match s1, s2 with
+  | inl x1, inl x2
+  | inr x1, inr x2 => String.eqb x1 x2
+  | _, _ => false
+  end.
+
+Definition join_taints t1 t2 := remove_dupes sum_eqb (t1 ++ t2).
+
 Module TaintTracking.
 
 Definition tstate := total_map taint.
@@ -549,7 +576,7 @@ Definition observe (o : observation) : interpreter :=
 Definition get_taint_of_vars (xs:list string) : evaluator taint :=
   mkEvaluator _ (fun (ist : input_st) =>
     let '(_, _, tst, _) := ist in
-    evaluate _ (ret (List.concat (map (apply tst) xs))) ist).
+    evaluate _ (ret (remove_dupes sum_eqb (List.concat (map (apply tst) xs)))) ist).
 
 Definition get_taint_of_arr (a:string) : evaluator taint :=
   mkEvaluator _ (fun (ist : input_st) =>
@@ -559,13 +586,13 @@ Definition get_taint_of_arr (a:string) : evaluator taint :=
 Definition set_var_taint (x : string) (t : taint) : interpreter :=
   mkEvaluator _ (fun (ist : input_st) =>
     let '(st, ast, tst, tast) := ist in
-    let new_tst := (x !-> t ; tst) in
+    let new_tst := (x !-> remove_dupes sum_eqb t ; tst) in
     evaluate _ finish (st, ast, new_tst, tast)).
 
 Definition add_arr_taint (a : string) (t : taint) : interpreter :=
   mkEvaluator _ (fun (ist : input_st) =>
     let '(st, ast, tst, tast) := ist in
-    let new_tast := (a !-> (t ++ apply tast a) ; tast) in
+    let new_tast := (a !-> (join_taints t (apply tast a)); tast) in
     evaluate _ finish (st, ast, tst, new_tast)).
 
 Fixpoint taint_track (f : nat) (c : com) : evaluator taint :=
@@ -585,14 +612,14 @@ Fixpoint taint_track (f : nat) (c : com) : evaluator taint :=
   | <{ c1 ; c2 }> =>
       t1 <- taint_track f c1;;
       t2 <- taint_track f c2;;
-      ret (t1 ++ t2)
+      ret (join_taints t1 t2)
   | <{ if b then ct else cf end }> =>
       condition <- eval_bexp b;;
       let next_c := if Bool.eqb condition true then ct else cf in
       observe (OBranch condition);;
       tb <- get_taint_of_vars (vars_bexp b);;
       t <- taint_track f next_c;;
-      ret (tb ++ t)
+      ret (join_taints tb t)
   | <{ while be do c end }> =>
     taint_track f <{
       if be then
@@ -610,7 +637,7 @@ Fixpoint taint_track (f : nat) (c : com) : evaluator taint :=
         set_var x (nth i l 0);;
         ti <- get_taint_of_vars (vars_aexp ie);;
         ta <- get_taint_of_arr a;;
-        set_var_taint x (ti ++ ta);;
+        set_var_taint x (join_taints ti ta);;
         (ret ti)
       else
         raise_out_of_bounds
@@ -623,7 +650,7 @@ Fixpoint taint_track (f : nat) (c : com) : evaluator taint :=
         set_arr a (upd i l n);;
         ti <- get_taint_of_vars (vars_aexp ie);;
         te <- get_taint_of_vars (vars_aexp e);;
-        add_arr_taint a (ti ++ te);;
+        add_arr_taint a (join_taints ti te);;
         (ret ti)
       else
         raise_out_of_bounds
@@ -631,14 +658,6 @@ Fixpoint taint_track (f : nat) (c : com) : evaluator taint :=
   end.
 
 End TaintTracking.
-
-Fixpoint remove_duplicates (t : list string) : list string :=
-  match t with
-  | [] => []
-  | x :: xs => if existsb (String.eqb x) xs
-               then      remove_duplicates xs
-               else x :: remove_duplicates xs
-  end.
 
 Fixpoint split_sum_list {A B : Type} (l : list (A + B)) : (list A * list B) :=
   match l with
@@ -655,8 +674,8 @@ Definition taint_tracking (f : nat) (c : com) (st : state) (ast : astate)
   match TaintTracking.evaluate _ (TaintTracking.taint_track f c) ist with
   | TaintTracking.ROk _ t os (st', ast', _, _) =>
       let (vars, arrs) := split_sum_list t in
-      Some (st', ast', os, remove_duplicates (map var_id_to_string vars),
-                           remove_duplicates (map arr_id_to_string arrs))
+      Some (st', ast', os, remove_dupes String.eqb (map var_id_to_string vars),
+                           remove_dupes String.eqb (map arr_id_to_string arrs))
   | _ => None
   end.
 
@@ -996,6 +1015,8 @@ QuickChick (
 
 (* But then for constant-time programs we should better use sel_slh *)
 
+(* Extract Constant defNumTests => "10000000". *)
+
 (* TODO: Surprisingly this causes a stack overflow with 10 million tests,
    but works fine with just 5 million. It may be more complicated though
    (see next TODO below). *)
@@ -1014,6 +1035,7 @@ QuickChick (
   check_gilles_lemma (slh c) s1 s2)))).
 
 (* This works for constant-time programs on equivalent initial states though *)
+
 QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
