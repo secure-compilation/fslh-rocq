@@ -411,8 +411,8 @@ Definition somePA := (true, [("A0", true); ("A1", true); ("A2", false)])%string.
 
 Sample (sized (gen_wt_com someP somePA)).
 
-(* TODO: Strange that we need such a big hack here,
-   but if we use AllPub we don't get public variables/arrays generated *)
+(* Strange that we need such a big hack here, but if we use AllPub we don't get
+   public variables/arrays generated *)
 Definition gen_com := gen_wt_com
                         (true, [("X0", true); ("X1", true); ("X2", true);
                           ("X3", true); ("X4", true); ("X5", true)])%string
@@ -682,11 +682,6 @@ Definition taint_tracking (f : nat) (c : com) (st : state) (ast : astate)
 (* We first test the taint_tracking itself: it needs to enforce that if we make
    the initial values of the leaked variables/arrays public we can vary all the
    remaining secret variables/arrays and still obtain the same CT leakage. *)
-
-(* Extract Constant defNumTests => "1000000". *)
-
-(* TODO: Running taint_tracking 70 below causes a stack overflow
-   even for 10000 tests *)
 
 QuickChick(
   forAll (sized gen_com) (fun c =>
@@ -1015,12 +1010,6 @@ QuickChick (
 
 (* But then for constant-time programs we should better use sel_slh *)
 
-(* Extract Constant defNumTests => "10000000". *)
-
-(* TODO: Surprisingly this causes a stack overflow with 10 million tests,
-   but works fine with just 5 million. It may be more complicated though
-   (see next TODO below). *)
-
 QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
@@ -1056,10 +1045,6 @@ QuickChick (
 (* Finally, we can also check speculative noninterference for constant-time
    programs, but then for sel_slh we already proved a stronger version, which
    doesn't assume agreement of source leakages, so this is not a surprise. *)
-
-(* TODO: Surprisingly this causes a stack overflow with 10 million tests,
-   but works fine with just 5 million. It seems more complicated though
-   and it may even depend on how many tests *previous* QuickChick commands run? *)
 
 QuickChick (
   forAll gen_pub_vars (fun P =>
