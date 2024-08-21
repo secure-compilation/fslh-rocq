@@ -563,17 +563,39 @@ Definition ct_preservation trans : Prop := forall c,
   (forall st1 st2 ast1 ast2, ideal_same_obs c st1 st2 ast1 ast2) ->
   (forall st1 st2 ast1 ast2, spec_same_obs (trans c) st1 st2 ast1 ast2).
 
-(* Theorem 2 of Santiago's POPL submission *)
-Theorem ct_preservation_bw : forall trans,
-  (forall c, exists Td To, forall ds st ast ost st' ast' b,
+Definition secure_compilation_bw trans :=
+  forall c, exists Td To, forall ds st ast ost st' ast' b,
       <(st, ast, false, ds)> =[trans c]=> <(st', ast', b, ost)> ->
      exists oss,
       |-i <(st, ast, false, Td ds)> =[c]=> <(st', ast', b, oss)> /\
-      ost = To oss) ->
+      ost = To oss.
+
+(* Theorem 2 of Santiago's POPL submission *)
+Theorem ct_preservation_bw : forall trans,
+  secure_compilation_bw trans ->
   ct_preservation trans.
 Proof.
-  unfold ct_preservation, ideal_same_obs, spec_same_obs.
+  unfold secure_compilation_bw, ct_preservation, ideal_same_obs, spec_same_obs.
   intros trans H c Hsrc st1 st2 ast1 ast2
+         ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 H1 H2.
+  specialize (H c). destruct H as [Td [To H] ].
+  apply H in H1. destruct H1 as [oss1 [H1 H1'] ].
+  apply H in H2. destruct H2 as [oss2 [H2 H2'] ].
+  subst. f_equal. eapply Hsrc; eassumption.
+Qed.
+
+(* The same proof also applies in our setting to prove relative security from
+   speculative source semantics (our ideal semantics) to speculative target
+   semantics for the transformed program. In fact this is very similar to
+   our use of BCC, just that in our setting both Td and To are identity. *)
+Theorem relative_secure_bw : forall trans,
+  secure_compilation_bw trans ->
+  forall c st1 st2 ast1 ast2,
+    ideal_same_obs c st1 st2 ast1 ast2 ->
+    spec_same_obs (trans c) st1 st2 ast1 ast2.
+Proof.
+  unfold secure_compilation_bw, relative_secure, ideal_same_obs, spec_same_obs.
+  intros trans H c st1 st2 ast1 ast2 Hsrc
          ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 H1 H2.
   specialize (H c). destruct H as [Td [To H] ].
   apply H in H1. destruct H1 as [oss1 [H1 H1'] ].
