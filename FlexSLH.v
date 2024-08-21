@@ -220,23 +220,25 @@ Definition relative_secure trans c st1 st2 ast1 ast2 : Prop :=
   seq_same_obs c st1 st2 ast1 ast2 ->
   spec_same_obs (trans c) st1 st2 ast1 ast2.
 
-Theorem relative_secure_implies_ct_preservation : forall trans c,
-  (forall st1 st2 ast1 ast2, relative_secure trans c st1 st2 ast1 ast2) ->
+Definition ct_preservation trans : Prop := forall c,
   (forall st1 st2 ast1 ast2, seq_same_obs c st1 st2 ast1 ast2) ->
   (forall st1 st2 ast1 ast2, spec_same_obs (trans c) st1 st2 ast1 ast2).
+
+Theorem relative_secure_implies_ct_preservation : forall trans,
+  (forall c st1 st2 ast1 ast2, relative_secure trans c st1 st2 ast1 ast2) ->
+  ct_preservation trans.
 Proof.
-  unfold relative_secure. intros trans c Hrs Hct st1 st2 ast1 ast2.
-  apply Hrs. apply Hct.
+  unfold relative_secure, ct_preservation.
+  intros trans Hrs c Hct st1 st2 ast1 ast2. apply Hrs. apply Hct.
 Qed.
 
 (* The converse is generally not true *)
-Theorem not_true_that_ct_preservation_implies_relative_secure : forall trans c,
-  ((forall st1 st2 ast1 ast2, seq_same_obs c st1 st2 ast1 ast2) ->
-  (forall st1 st2 ast1 ast2, spec_same_obs (trans c) st1 st2 ast1 ast2)) ->
-  (forall st1 st2 ast1 ast2, relative_secure trans c st1 st2 ast1 ast2).
+Lemma not_true_that_ct_preservation_implies_relative_secure : forall trans,
+  ct_preservation trans ->
+  (forall c st1 st2 ast1 ast2, relative_secure trans c st1 st2 ast1 ast2).
 Proof.
-  unfold relative_secure. intros trans c H st1 st2 ast1 ast2 Hsrc.
-  apply H. intros st1' st2' ast1' ast2'.
+  unfold relative_secure, ct_preservation.
+  intros trans H c st1 st2 ast1 ast2 Hsrc. apply H. intros st1' st2' ast1' ast2'.
 Abort.
 
 Conjecture flex_slh_relative_secure :
