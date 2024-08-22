@@ -1394,8 +1394,12 @@ Fixpoint static_tracking (P:pub_vars) (PA:pub_arrs) (pc:label) (c:com)
 QuickChick (forAll (sized gen_com) (fun c =>
     forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
-    let '(_,_,ac) := static_tracking P PA public c in
-    checker (eq_com (erase ac) c))))).
+    let '(P',PA',ac) := static_tracking P PA public c in
+    let pvars := filter (apply P') (map_dom (snd  P)) in
+    let parrs := filter (apply PA') (map_dom (snd PA)) in
+    collect (List.length pvars + List.length parrs) (
+    (* Looking at these ^ statistics it doesn't seem we're overtainting *)
+    checker (eq_com (erase ac) c)))))).
 
 (* Noninterference for source sequential execution -- should work this time *)
 QuickChick (forAll (sized gen_com) (fun c =>
