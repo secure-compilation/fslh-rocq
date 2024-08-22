@@ -730,7 +730,7 @@ QuickChick(
 Definition extend_pub (P:pub_vars) (xs:list string) :=
   fold_left (fun P x => x !-> public; P) xs P.
 
-Definition check_speculative_noninterference P PA c hardened : Checker :=
+Definition check_speculative_noninterference P PA P' PA' c hardened : Checker :=
   forAll gen_state (fun s1 =>
   let s1 := ("b" !-> 0; s1) in
   forAll gen_astate (fun a1 =>
@@ -750,9 +750,9 @@ Definition check_speculative_noninterference P PA c hardened : Checker :=
              (fun '(ds, s1', a1', b', os1) =>
                 match spec_eval_engine hardened s2 a2 false ds with
                 | Some (s2', a2', b'', os2) =>
-                    checker (Bool.eqb b' b'' && (pub_equivb P s1' s2') &&
+                    checker (Bool.eqb b' b'' && (pub_equivb P' s1' s2') &&
                            (b' || (* <-- needed since we don't (yet) mask stores *)
-                                  pub_equivb_astate PA a1' a2'))
+                                  pub_equivb_astate PA' a1' a2'))
                 | None => checker tt (* discard -- doesn't seem to happen *)
                 end))
       | None => checker tt (* discard -- doesn't seem to happen *)
@@ -764,7 +764,7 @@ QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
   forAll (sized (gen_wt_com P PA)) (fun c =>
-  check_speculative_noninterference P PA c (flex_slh P c))))).
+  check_speculative_noninterference P PA P PA c (flex_slh P c))))).
 
 (* One may wonder if this property is enforced ENTIRELY by the source type
    system and would hold for any transformation that doesn't introduce (explicit
@@ -776,7 +776,7 @@ QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
   forAll (sized (gen_wt_com P PA)) (fun c =>
-  check_speculative_noninterference P PA c c)))).
+  check_speculative_noninterference P PA P PA c c)))).
 
 (* In fact this doesn't even work for CT programs -- SHOULD FAIL: *)
 
@@ -786,7 +786,7 @@ QuickChick (
   forAllShrink gen_pub_vars shrink (fun P =>
   forAllShrink gen_pub_arrs shrink (fun PA =>
   forAllShrink (gen_ct_well_typed P PA) (shrink_ct_well_typed P PA) (fun c =>
-  check_speculative_noninterference P PA c c)))).
+  check_speculative_noninterference P PA P PA c c)))).
 
 (* This was the main reason for introducing sel_slh, which satisfies something
    even stronger as we proved in SpecCT.v (and we are testing it anyway below). *)
@@ -924,14 +924,16 @@ QuickChick (
 
 QuickChick (
   forAll (sized gen_com) (fun c =>
-  (check_speculative_noninterference AllSecret AllSecret c (our_ultimate_slh c)))).
+  (check_speculative_noninterference AllSecret AllSecret AllSecret AllSecret
+     c (our_ultimate_slh c)))).
 
 (* This works without any protection though, probably because of the way our
    speculative semantics works and the fact that we share the directions. *)
 
 QuickChick (
   forAll (sized gen_com) (fun c =>
-  (check_speculative_noninterference AllSecret AllSecret c c))).
+  (check_speculative_noninterference AllSecret AllSecret AllSecret AllSecret
+     c c))).
 
 (* There is no other sound instantiation of P and PA that would satisfy the
    conclusion of check_speculative_noninterference for our_ultimate_slh and
@@ -941,7 +943,7 @@ QuickChick (
   forAllShrink (sized gen_com) shrink (fun c =>
   forAllShrink gen_pub_vars shrink (fun P =>
   forAllShrink gen_pub_arrs shrink (fun PA =>
-  (check_speculative_noninterference P PA c (our_ultimate_slh c)))))).
+  (check_speculative_noninterference P PA P PA c (our_ultimate_slh c)))))).
 
 (* Now defining something closer to the original Ultimate SLH, even if it is
    just a special case of flex_slh AllSecret (we prove this below). *)
@@ -1071,7 +1073,7 @@ QuickChick (
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
   forAll (gen_ct_well_typed P PA) (fun c =>
-  check_speculative_noninterference P PA c (sel_slh P c))))).
+  check_speculative_noninterference P PA P PA c (sel_slh P c))))).
 
 (* Much more interestingly, I was expecting this to hold even for our weaker
    typing notion. But QuickChick found the beautiful counterexample below
@@ -1107,7 +1109,7 @@ QuickChick (
   let PA := (true, [("A0", false); ("A1", true); ("A2", true)])%string in
   let c := <{{while (1 > X2) do (X2 <- A0[[0]]) end ; if (X0 > 0) then X0 := 0 else skip end}}> in
   implication (wt_typechecker P PA public c)
-  (check_speculative_noninterference P PA c (sel_slh P c))).
+  (check_speculative_noninterference P PA P PA c (sel_slh P c))).
 
 (* Counterexamples also exist without while loops, but they are harder to find: *)
 (* <{{if (0 <= 0) then (X0 := X0) else (if (1 > X3) then skip else (X0 <- A0[[X0]]) end) end}}> *)
@@ -1140,3 +1142,334 @@ QuickChick (
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
   check_gilles_lemma (exorcised_slh c) s1 s2)))).
+
+(* New idea for applying flex_slh to all program, without rejecting anything as "ill-typed" *)
+
+Inductive acom : Type :=
+  | ASkip
+  | AAsgn (x : string) (e : aexp)
+  | ASeq (c1 c2 : acom)
+  | AIf (be : bexp) (lbe : label) (c1 c2 : acom)
+  | AWhile (be : bexp) (lbe : label) (c : acom)
+  | AARead (x : string) (lx : label) (a : string) (i : aexp)  (li : label)
+  | AAWrite (a : string) (i : aexp) (li : label) (e : aexp).
+
+Declare Custom Entry acom.
+Declare Scope acom_scope.
+
+Notation "'<[' e ']>'" := e (at level 0, e custom acom at level 99) : acom_scope.
+Notation "( x )" := x (in custom acom, x at level 99) : acom_scope.
+Notation "x" := x (in custom acom at level 0, x constr at level 0) : acom_scope.
+Notation "f x .. y" := (.. (f x) .. y)
+                  (in custom acom at level 0, only parsing,
+                  f constr at level 0, x constr at level 9,
+                  y constr at level 9) : acom_scope.
+
+Open Scope acom_scope.
+
+Notation "'skip'"  :=
+  ASkip (in custom acom at level 0) : acom_scope.
+Notation "x := y"  :=
+  (AAsgn x y)
+    (in custom acom at level 0, x constr at level 0,
+      y custom acom at level 85, no associativity) : acom_scope.
+Notation "x ; y" :=
+  (ASeq x y)
+    (in custom acom at level 90, right associativity) : acom_scope.
+Notation "'if' x '@' lbe 'then' y 'else' z 'end'" :=
+  (AIf x lbe y z)
+    (in custom acom at level 89, x custom acom at level 99,
+     y at level 99, z at level 99) : acom_scope.
+Notation "'while' x '@' lbe 'do' y 'end'" :=
+  (AWhile x lbe y)
+    (in custom acom at level 89, x custom acom at level 99, y at level 99) : acom_scope.
+Notation "x '@@' lx '<-' a '[[' i '@' li ']]'"  :=
+  (AARead x lx a i li)
+     (in custom acom at level 0, x constr at level 0,
+      a at level 85, i custom acom at level 85, no associativity) : acom_scope.
+Notation "a '[' i '@' li  ']'  '<-' e"  :=
+  (AAWrite a i li e)
+     (in custom acom at level 0, a constr at level 0,
+      i custom acom at level 0, e custom acom at level 85,
+         no associativity) : acom_scope.
+
+Fixpoint erase (ac:acom) : com :=
+  match ac with
+  | <[ skip ]> => <{skip}>
+  | <[ X := ae ]> => <{X := ae}>
+  | <[ ac1 ; ac2 ]> => <{ erase ac1; erase ac2 }>
+  | <[ if be@lbe then ac1 else ac2 end ]> => <{ if be then erase ac1
+                                                      else erase ac2 end }>
+  | <[ while be @ lbe do ac1 end ]> => <{ while be do erase ac1 end }>
+  | <[ X@@lx <- a[[i@li]] ]> => <{ X <- a[[i]] }>
+  | <[ a[i@li] <- e ]> => <{ a[i] <- e }>
+  end.
+
+Definition join_total_maps (P1 P2: pub_vars) : pub_vars :=
+  match P1, P2 with
+  | (d1,m1), (d2,m2) =>
+      let dm := remove_dupes String.eqb (map_dom m1 ++ map_dom m2) in
+      let m := List.map (fun x => (x, join (apply P1 x) (apply P2 x))) dm in
+      (join d1 d2, m)
+  end.
+
+(* First attempt at implementing fully permissive static IFC tracking *)
+
+Fixpoint static_tracking_naive (P:pub_vars) (PA:pub_arrs) (pc:label) (c:com)
+  : (pub_vars*pub_arrs*acom) :=
+  match c with
+  | <{ skip }> => (P, PA, <[skip]>)
+  | <{ X := ae }> => (X !-> (join pc (label_of_aexp P ae)); P, PA, <[X := ae]>)
+  | <{ c1; c2 }> => let '(P1, PA1, ac1) := static_tracking_naive P PA pc c1 in
+                     let '(P2, PA2, ac2) := static_tracking_naive P1 PA1 pc c2 in
+                     (P2, PA2, <[ ac1; ac2 ]>)
+  | <{ if be then c1 else c2 end }> =>
+      let lbe := label_of_bexp P be in
+      let '(P1, PA1, ac1) := static_tracking_naive P PA (join pc lbe) c1 in
+      let '(P2, PA2, ac2) := static_tracking_naive P PA (join pc lbe) c2 in
+      (join_total_maps P1 P2, join_total_maps PA1 PA2,
+        <[ if be@lbe then ac1 else ac2 end ]>)
+  | <{ while be do c1 end }> =>
+      let lbe := label_of_bexp P be in
+      let '(P1, PA1, ac1) := static_tracking_naive P PA (join pc lbe) c1 in
+      (join_total_maps P1 P, join_total_maps PA1 PA,
+        <[ while be@lbe do ac1 end ]>)
+      (* We can't be sure we converged so quickly.  Having only two security
+         levels doesn't seem enough!  In the worst case need to iterate over all
+         assigned vars + arrs (see below) *)
+  | <{ X <- a[[i]] }> =>
+      let li := label_of_aexp P i in
+      let lx := join pc (join li (apply PA a)) in
+      (X !-> lx; P, PA, <[ X@@lx <- a[[i@li]] ]>)
+  | <{ a[i] <- e }> =>
+      let li := label_of_aexp P i in
+      let la := join (apply PA a) (join pc (join li (label_of_aexp P e))) in
+      (* It seems likely that the arrays will all become private quite quickly *)
+      (P, a !-> la; PA, <[ a[i@li] <- e ]>)
+  end.
+
+Fixpoint eq_aexp (a1 a2 : aexp) : bool :=
+  match a1, a2 with
+  | ANum n1, ANum n2 => Nat.eqb n1 n2
+  | AId x1, AId x2 => String.eqb x1 x2
+  | APlus a11 a12, APlus a21 a22 => andb (eq_aexp a11 a21) (eq_aexp a12 a22)
+  | AMinus a11 a12, AMinus a21 a22 => andb (eq_aexp a11 a21) (eq_aexp a12 a22)
+  | AMult a11 a12, AMult a21 a22 => andb (eq_aexp a11 a21) (eq_aexp a12 a22)
+  | ACTIf b1 a11 a12, ACTIf b2 a21 a22 =>
+      andb (eq_bexp b1 b2) (andb (eq_aexp a11 a21) (eq_aexp a12 a22))
+  | _, _ => false
+  end
+with eq_bexp (b1 b2 : bexp) : bool :=
+  match b1, b2 with
+  | BTrue, BTrue => true
+  | BFalse, BFalse => true
+  | BEq a11 a12, BEq a21 a22 => andb (eq_aexp a11 a21) (eq_aexp a12 a22)
+  | BNeq a11 a12, BNeq a21 a22 => andb (eq_aexp a11 a21) (eq_aexp a12 a22)
+  | BLe a11 a12, BLe a21 a22 => andb (eq_aexp a11 a21) (eq_aexp a12 a22)
+  | BGt a11 a12, BGt a21 a22 => andb (eq_aexp a11 a21) (eq_aexp a12 a22)
+  | BNot b1, BNot b2 => eq_bexp b1 b2
+  | BAnd b11 b12, BAnd b21 b22 => andb (eq_bexp b11 b21) (eq_bexp b12 b22)
+  | _, _ => false
+  end.
+
+Fixpoint eq_com (c1 c2 : com) : bool :=
+  match c1, c2 with
+  | Skip, Skip => true
+  | Asgn x1 e1, Asgn x2 e2 => andb (String.eqb x1 x2) (eq_aexp e1 e2)
+  | Seq c11 c12, Seq c21 c22 => andb (eq_com c11 c21) (eq_com c12 c22)
+  | If be1 c11 c12, If be2 c21 c22 =>
+      andb (eq_bexp be1 be2) (andb (eq_com c11 c21) (eq_com c12 c22))
+  | While be1 c1, While be2 c2 => andb (eq_bexp be1 be2) (eq_com c1 c2)
+  | ARead x1 a1 i1, ARead x2 a2 i2 =>
+      andb (String.eqb x1 x2) (andb (String.eqb a1 a2) (eq_aexp i1 i2))
+  | AWrite a1 i1 e1, AWrite a2 i2 e2 =>
+      andb (String.eqb a1 a2) (andb (eq_aexp i1 i2) (eq_aexp e1 e2))
+  | _, _ => false
+  end.
+
+QuickChick (forAll (sized gen_com) (fun c =>
+    forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
+    let '(_,_,ac) := static_tracking_naive P PA public c in
+    checker (eq_com (erase ac) c))))).
+
+(* Extract Constant defNumTests => "5000000". *)
+
+(* Noninterference for source sequential execution -- SHOULD FAIL! *)
+QuickChick (forAllShrinkNonDet 100 (sized gen_com) shrink (fun c =>
+    forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
+    let '(P',PA',_) := static_tracking_naive P PA public c in
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+    forAll gen_astate (fun a1 =>
+    forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
+      let r1 := cteval_engine 10 c s1 a1 in
+      let r2 := cteval_engine 10 c s2 a2 in
+      match (r1, r2) with
+      | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
+          checker ((pub_equivb P' s1' s2') && (pub_equivb_astate PA' a1' a2'))
+      | _ => checker tt (* discard *)
+      end
+  )))))))).
+(* This one finds counterexample, but needs millions of tests for that: *)
+(* (while (X1 <= 1) do ((X1 := X0) ; (X0 <- A0[[0]])) end) *)
+(* (false, [("X0", true); ("X1", true); ("X2", false); ("X3", false); ("X4", true); ("X5", true)]) *)
+(* (true, [("A0", false); ("A1", true); ("A2", true)]) *)
+
+(* To implement a sound flow-sensitive static IFC tracking we need a better
+   story for while loops *)
+
+Fixpoint assigned_vars (c:com) : list string :=
+  match c with
+  | <{ skip }> => []
+  | <{ X := ae }> => [var_id_to_string X]
+  | <{ c1; c2 }> => assigned_vars c1 ++ assigned_vars c2
+  | <{ if be then c1 else c2 end }> => assigned_vars c1 ++ assigned_vars c2
+  | <{ while be do c1 end }> => assigned_vars c1
+  | <{ X <- a[[i]] }> => [var_id_to_string  X]
+  | <{ a[i] <- e }> => []
+  end.
+
+Fixpoint assigned_arrs (c:com) : list string :=
+  match c with
+  | <{ skip }> => []
+  | <{ X := ae }> => []
+  | <{ c1; c2 }> => assigned_arrs c1 ++ assigned_arrs c2
+  | <{ if be then c1 else c2 end }> => assigned_arrs c1 ++ assigned_arrs c2
+  | <{ while be do c1 end }> => assigned_arrs c1
+  | <{ X <- a[[i]] }> => []
+  | <{ a[i] <- e }> => [arr_id_to_string a]
+  end.
+
+Definition list_eqb l1 l2 := if list_eq_dec string_dec l1 l2 then true else false.
+
+Fixpoint static_tracking (P:pub_vars) (PA:pub_arrs) (pc:label) (c:com)
+  : (pub_vars*pub_arrs*acom) :=
+  match c with
+  | <{ skip }> => (P, PA, <[skip]>)
+  | <{ X := ae }> => (X !-> (join pc (label_of_aexp P ae)); P, PA, <[X := ae]>)
+  | <{ c1; c2 }> => let '(P1, PA1, ac1) := static_tracking P PA pc c1 in
+                    let '(P2, PA2, ac2) := static_tracking P1 PA1 pc c2 in
+                     (P2, PA2, <[ ac1; ac2 ]>)
+  | <{ if be then c1 else c2 end }> =>
+      let lbe := label_of_bexp P be in
+      let '(P1, PA1, ac1) := static_tracking P PA (join pc lbe) c1 in
+      let '(P2, PA2, ac2) := static_tracking P PA (join pc lbe) c2 in
+      (join_total_maps P1 P2, join_total_maps PA1 PA2,
+        <[ if be@lbe then ac1 else ac2 end ]>)
+  | <{ while be do c1 end }> =>
+      let avars := remove_dupes String.eqb (assigned_vars c1) in
+      let aarrs := remove_dupes String.eqb (assigned_arrs c1) in
+      let pvars := filter (apply P) avars in
+      let parrs := filter (apply PA) aarrs in
+      let max_iters := List.length pvars + List.length parrs in
+      let fix aux (i:nat) (P:pub_vars) (PA:pub_arrs) (pc:label)
+          : (pub_vars*pub_arrs*label*acom) :=
+         let lbe := label_of_bexp P be in
+         let '(P1, PA1, ac1) := static_tracking P PA (join pc lbe) c1 in
+         let P1 := join_total_maps P1 P in
+         let PA1 := join_total_maps PA1 PA in
+         let pvars' := filter (apply P1) avars in
+         let parrs' := filter (apply PA1) aarrs in
+         let stop := list_eqb pvars pvars' && list_eqb parrs parrs' in
+         match i, stop with
+         | _,true (* Stopping if a fixpoint was already reached *)
+         | 0,_ => (P1, PA1, lbe, ac1)
+         | S i',false => aux i' P1 PA1 lbe
+         end in 
+      let '(P', PA', lbe, ac1) := aux max_iters P PA pc in
+      (P', PA', <[ while be@lbe do ac1 end ]>)
+  | <{ X <- a[[i]] }> =>
+      let li := label_of_aexp P i in
+      let lx := join pc (join li (apply PA a)) in
+      (X !-> lx; P, PA, <[ X@@lx <- a[[i@li]] ]>)
+  | <{ a[i] <- e }> =>
+      let li := label_of_aexp P i in
+      let la := join (apply PA a) (join pc (join li (label_of_aexp P e))) in
+      (* It seems likely that the arrays will all become private quite quickly *)
+      (P, a !-> la; PA, <[ a[i@li] <- e ]>)
+  end.
+
+QuickChick (forAll (sized gen_com) (fun c =>
+    forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
+    let '(_,_,ac) := static_tracking P PA public c in
+    checker (eq_com (erase ac) c))))).
+
+(* Noninterference for source sequential execution -- should work this time *)
+QuickChick (forAll (sized gen_com) (fun c =>
+    forAll gen_pub_vars (fun P =>
+    forAll gen_pub_arrs (fun PA =>
+    let '(P',PA',_) := static_tracking P PA public c in
+    forAll gen_state (fun s1 =>
+    forAll (gen_pub_equiv P s1) (fun s2 =>
+    forAll gen_astate (fun a1 =>
+    forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
+      let r1 := cteval_engine 10 c s1 a1 in
+      let r2 := cteval_engine 10 c s2 a2 in
+      match (r1, r2) with
+      | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
+          checker ((pub_equivb P' s1' s2') && (pub_equivb_astate PA' a1' a2'))
+      | _ => checker tt (* discard *)
+      end
+  )))))))).
+
+Fixpoint flex_slh_acom (ac:acom) : com :=
+  (match ac with
+  | <[skip]> => <{skip}>
+  | <[x := e]> => <{x := e}>
+  | <[c1; c2]> => <{ flex_slh_acom c1; flex_slh_acom c2}>
+  | <[if be@lbe then c1 else c2 end]> =>
+      if lbe
+      then (* Selective SLH -- static_trackinging speculation, but not masking *)
+        <{if be then "b" := be ? "b" : 1; flex_slh_acom c1
+                else "b" := be ? 1 : "b"; flex_slh_acom c2 end}>
+      else (* Ultimate SLH -- static_trackinging speculation and also masking *)
+        <{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; flex_slh_acom c1
+                           else "b" := ("b" = 0 && be) ? 1 : "b"; flex_slh_acom c2 end}>
+  | <[while be@lbe do c end]> =>
+      if lbe
+      then (* Selective SLH -- static_trackinging speculation, but not masking *)
+        <{while be do "b" := be ? "b" : 1; flex_slh_acom c end;
+           "b" := be ? 1 : "b"}>
+      else (* Ultimate SLH -- static_trackinging speculation and also masking *)
+        <{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; flex_slh_acom c end;
+           "b" := ("b" = 0 && be) ? 1 : "b"}>
+  | <[x@@lx <- a[[i@li]]]> =>
+    if li
+    then (* Selective SLH -- mask the value of public loads *)
+      if lx then <{x <- a[[i]]; x := ("b" = 1) ? 0 : x}>
+                   else <{x <- a[[i]]}>
+    else (* Ultimate SLH -- mask private address of load *)
+      <{x <- a[[("b" = 1) ? 0 : i]] }>
+  | <[a[i@li] <- e]> =>
+    if li
+    then (* Selective SLH *)
+      <{a[i] <- e}> (* <- Doing nothing here okay for Spectre v1,
+         but problematic for return address or code pointer overwrites *)
+    else (* Ultimate SLH *)
+      <{a[("b" = 1) ? 0 : i] <- e}>
+  end)%string.
+
+QuickChick (forAll (sized gen_com) (fun c =>
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  let '(P',PA',ac) := static_tracking P PA public c in
+  check_speculative_noninterference P PA P' PA' c (flex_slh_acom ac))))).
+
+Extract Constant defNumTests => "1000000".
+
+QuickChick (forAll (sized gen_com) (fun c =>
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  let '(_,_,ac) := static_tracking P PA public c in
+  check_relative_security P PA c (flex_slh_acom ac))))).
+
+QuickChick (forAll (sized gen_com) (fun c =>
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  let '(_,_,ac) := static_tracking P PA public c in
+  forAll gen_state (fun s1 =>
+  forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
+  check_gilles_lemma (flex_slh_acom ac) s1 s2)))))).
