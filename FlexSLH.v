@@ -1316,6 +1316,8 @@ QuickChick (forAllShrinkNonDet 100 (sized gen_com) shrink (fun c =>
 (* (while (X1 <= 1) do ((X1 := X0) ; (X0 <- A0[[0]])) end) *)
 (* (false, [("X0", true); ("X1", true); ("X2", false); ("X3", false); ("X4", true); ("X5", true)]) *)
 (* (true, [("A0", false); ("A1", true); ("A2", true)]) *)
+(* TODO: Sometimes this one is not found even with 10 million tests.
+         Can we improve our testing so that it's better at finding this? *)
 
 (* To implement a sound flow-sensitive static IFC tracking we need a better
    story for while loops *)
@@ -1395,11 +1397,15 @@ QuickChick (forAll (sized gen_com) (fun c =>
     forAll gen_pub_vars (fun P =>
     forAll gen_pub_arrs (fun PA =>
     let '(P',PA',ac) := static_tracking P PA public c in
-    let pvars := filter (apply P') (map_dom (snd  P)) in
+    let pvars := filter (apply P') (map_dom (snd P)) in
     let parrs := filter (apply PA') (map_dom (snd PA)) in
-    collect (List.length pvars + List.length parrs) (
-    (* Looking at these ^ statistics it doesn't seem we're overtainting *)
+    collect (List.length pvars) (
+    (* Looking at these ^ statistics it doesn't seem we're overtainting.
+       For arrays from 1.5 initially to 1 / 3 finally.
+       For vars from 3 initially to 2.6 / 6 finally. *)
     checker (eq_com (erase ac) c)))))).
+
+(* Extract Constant defNumTests => "10000000". *)
 
 (* Noninterference for source sequential execution -- should work this time *)
 QuickChick (forAll (sized gen_com) (fun c =>
@@ -1452,6 +1458,7 @@ Fixpoint flex_slh_acom (ac:acom) : com :=
     then (* Selective SLH *)
       <{a[i] <- e}> (* <- Doing nothing here okay for Spectre v1,
          but problematic for return address or code pointer overwrites *)
+        (* !!! For fixed-size arrays can also do `mod size` to keep things in bound *)
     else (* Ultimate SLH *)
       <{a[("b" = 1) ? 0 : i] <- e}>
   end)%string.
@@ -1461,8 +1468,6 @@ QuickChick (forAll (sized gen_com) (fun c =>
   forAll gen_pub_arrs (fun PA =>
   let '(P',PA',ac) := static_tracking P PA public c in
   check_speculative_noninterference P PA P' PA' c (flex_slh_acom ac))))).
-
-Extract Constant defNumTests => "1000000".
 
 QuickChick (forAll (sized gen_com) (fun c =>
   forAll gen_pub_vars (fun P =>
