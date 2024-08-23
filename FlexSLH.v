@@ -1293,7 +1293,7 @@ QuickChick (forAll (sized gen_com) (fun c =>
     let '(_,_,ac) := static_tracking_naive P PA public c in
     checker (eq_com (erase ac) c))))).
 
-(* Extract Constant defNumTests => "5000000". *)
+(* Extract Constant defNumTests => "10000000". *)
 
 (* Noninterference for source sequential execution -- SHOULD FAIL! *)
 QuickChick (forAllShrinkNonDet 100 (sized gen_com) shrink (fun c =>
@@ -1312,12 +1312,19 @@ QuickChick (forAllShrinkNonDet 100 (sized gen_com) shrink (fun c =>
       | _ => checker tt (* discard *)
       end
   )))))))).
-(* This one finds counterexample, but needs millions of tests for that: *)
+(* This one finds counterexample, but sometimes needs millions of tests for that: *)
+
 (* (while (X1 <= 1) do ((X1 := X0) ; (X0 <- A0[[0]])) end) *)
 (* (false, [("X0", true); ("X1", true); ("X2", false); ("X3", false); ("X4", true); ("X5", true)]) *)
 (* (true, [("A0", false); ("A1", true); ("A2", true)]) *)
-(* TODO: Sometimes this one is not found even with 10 million tests.
-         Can we improve our testing so that it's better at finding this? *)
+
+(* (while (7 > X3) do ((X3 := (X1 * 3)) ; (X1 <- A0[[X0]])) end) *)
+(* (false, [("X0", true); ("X1", true); ("X2", false); ("X3", true); ("X4", true); ("X5", true)]) *)
+(* (false, [("A0", false); ("A1", true); ("A2", false)]) *)
+
+(* TODO: Can we improve our testing so that it's better at finding this?
+         We basically need loops where the read variables are also assigned? *)
+
 
 (* To implement a sound flow-sensitive static IFC tracking we need a better
    story for while loops *)
@@ -1404,8 +1411,6 @@ QuickChick (forAll (sized gen_com) (fun c =>
        For arrays from 1.5 initially to 1 / 3 finally.
        For vars from 3 initially to 2.6 / 6 finally. *)
     checker (eq_com (erase ac) c)))))).
-
-(* Extract Constant defNumTests => "10000000". *)
 
 (* Noninterference for source sequential execution -- should work this time *)
 QuickChick (forAll (sized gen_com) (fun c =>
