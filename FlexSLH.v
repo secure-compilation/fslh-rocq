@@ -1143,7 +1143,10 @@ QuickChick (
   forAll gen_state (fun s2 =>
   check_gilles_lemma (exorcised_slh c) s1 s2)))).
 
-(* New idea for applying flex_slh to all program, without rejecting anything as "ill-typed" *)
+(** * Flow-sensitive IFC tracking for flex_slh *)
+
+(* Since we want to apply flex_slh to all programs, without rejecting anything
+   as "ill-typed", we implement flow-sensitive static IFC tracking: *)
 
 Inductive acom : Type :=
   | ASkip
@@ -1244,7 +1247,8 @@ Fixpoint static_tracking_naive (P:pub_vars) (PA:pub_arrs) (pc:label) (c:com)
   | <{ a[i] <- e }> =>
       let li := label_of_aexp P i in
       let la := join (apply PA a) (join pc (join li (label_of_aexp P e))) in
-      (* It seems likely that the arrays will all become private quite quickly *)
+      (* It seems likely that the arrays will all become private quite quickly;
+         but it's not what we see in the experiments below (search for collect). *)
       (P, a !-> la; PA, <[ a[i@li] <- e ]>)
   end.
 
@@ -1408,8 +1412,10 @@ QuickChick (forAll (sized gen_com) (fun c =>
     let parrs := filter (apply PA') (map_dom (snd PA)) in
     collect (List.length pvars) (
     (* Looking at these ^ statistics it doesn't seem we're overtainting.
-       For arrays from 1.5 initially to 1 / 3 finally.
-       For vars from 3 initially to 2.6 / 6 finally. *)
+       - For arrays from 1.5 initially to 1 / 3 finally.
+       - For vars from 3 initially to 2.6 / 6 finally.
+       Could it be that some arrays / variables are never assigned?
+       TODO: use assigned_arrs / vars below to gather better data *)
     checker (eq_com (erase ac) c)))))).
 
 (* Noninterference for source sequential execution -- should work this time *)
@@ -1455,7 +1461,7 @@ Fixpoint flex_slh_acom (ac:acom) : com :=
     if li
     then (* Selective SLH -- mask the value of public loads *)
       if lx then <{x <- a[[i]]; x := ("b" = 1) ? 0 : x}>
-                   else <{x <- a[[i]]}>
+            else <{x <- a[[i]]}>
     else (* Ultimate SLH -- mask private address of load *)
       <{x <- a[[("b" = 1) ? 0 : i]] }>
   | <[a[i@li] <- e]> =>
