@@ -400,7 +400,7 @@ Fixpoint gen_com_rec (gen_asgn : pub_vars -> G com)
                     liftM2 Seq (gen_com_rec gen_asgn gen_aread gen_awrite P PA sz')
                                (gen_com_rec gen_asgn gen_aread gen_awrite P PA sz')));
              (sz, thunkGen (fun _ =>
-                  b <- arbitrarySized 1;;
+                  b <- arbitrarySized 2;;
                   liftM3 If (ret b)
                     (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
                                  (gen_aread_in_ctx gen_aread (label_of_bexp P b))
@@ -411,12 +411,25 @@ Fixpoint gen_com_rec (gen_asgn : pub_vars -> G com)
                                  (gen_awrite_in_ctx gen_awrite (label_of_bexp P b))
                                  P PA sz')));
              (sz, thunkGen (fun _ =>
-                  b <- arbitrarySized 1;;
-                  liftM2 While (ret b)
-                    (gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
-                                 (gen_aread_in_ctx gen_aread (label_of_bexp P b))
-                                 (gen_awrite_in_ctx gen_aread (label_of_bexp P b))
-                       P PA sz')))]
+                  b <- arbitrarySized 2;;
+                  (* Trying to generate assignment to one of the loop variables *)
+                  casgn <- gen_asgn P;;
+                  cend <- match casgn with
+                  | <{y := e}> =>
+                      if existsb (String.eqb y) (vars_bexp b) then ret casgn
+                      else
+                        match find (fun x => Bool.eqb (apply P y)
+                                                      (apply P x)) (vars_bexp b) with
+                        | Some x => ret <{x := e}>
+                        | None => ret <{skip}>
+                        end
+                  | _ => ret <{skip}>
+                  end;;
+                  c <- gen_com_rec (gen_asgn_in_ctx gen_asgn (label_of_bexp P b))
+                                   (gen_aread_in_ctx gen_aread (label_of_bexp P b))
+                                   (gen_awrite_in_ctx gen_aread (label_of_bexp P b))
+                                   P PA sz';;
+                  ret (While b <{c;cend}>)))]
   end.
 
 Definition gen_wt_com := gen_com_rec gen_secure_asgn gen_secure_aread gen_secure_awrite.
@@ -1327,7 +1340,13 @@ QuickChick (forAllShrinkNonDet 100 (sized gen_com) shrink (fun c =>
 (* (false, [("A0", false); ("A1", true); ("A2", false)]) *)
 
 (* TODO: Can we improve our testing so that it's better at finding this?
-         We basically need loops where the read variables are also assigned? *)
+         We basically need loops where the read variables are also assigned?
+         The loops should additionally also be (1) executed at least once; and
+         (2) terminating, since otherwise we discard them.
+         So a loop condition variable should be assigned in the loop.
+         - Implemented: this alone took us from ~10 millions to under 1 million
+         Could gather statistics of how many times are loops executed.
+         - related to fuel? *)
 
 
 (* To implement a sound flow-sensitive static IFC tracking we need a better

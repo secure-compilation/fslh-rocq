@@ -212,38 +212,38 @@ Fixpoint arbitrarySized_impl_bexp (size : nat) : G bexp :=
         returnGen <{ false }>
       ]
   | S size' =>
-      oneOf [
-        returnGen <{ true }>;
-        returnGen <{ false }>;
-        thunkGen (fun _ =>
+      freq [
+        (1,returnGen <{ true }>);
+        (1,returnGen <{ false }>);
+        (4,thunkGen (fun _ =>
           a1 <- arbitrarySized_impl_aexp size';;
           a2 <- arbitrarySized_impl_aexp size';;
           returnGen <{ a1 = a2 }>
-        );
-        thunkGen (fun _ =>
+        ));
+        (4,thunkGen (fun _ =>
           a1 <- arbitrarySized_impl_aexp size';;
           a2 <- arbitrarySized_impl_aexp size';;
           returnGen <{ a1 <> a2 }>
-        );
-        thunkGen (fun _ =>
+        ));
+        (4,thunkGen (fun _ =>
           a1 <- arbitrarySized_impl_aexp size';;
           a2 <- arbitrarySized_impl_aexp size';;
           returnGen <{ a1 <= a2 }>
-        );
-        thunkGen (fun _ =>
+        ));
+        (4,thunkGen (fun _ =>
           a1 <- arbitrarySized_impl_aexp size';;
           a2 <- arbitrarySized_impl_aexp size';;
           returnGen <{ a1 > a2 }>
-        );
-        thunkGen (fun _ =>
+        ));
+        (4,thunkGen (fun _ =>
           b <- arbitrarySized_impl_bexp size';;
           returnGen <{ ~b }>
-        );
-        thunkGen (fun _ =>
+        ));
+        (4,thunkGen (fun _ =>
           b1 <- arbitrarySized_impl_bexp size';;
           b2 <- arbitrarySized_impl_bexp size';;
           returnGen <{ b1 && b2 }>
-        )
+        ))
       ]
   end
 with arbitrarySized_impl_aexp (size : nat) : G aexp :=
