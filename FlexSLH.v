@@ -413,7 +413,7 @@ Fixpoint gen_com_rec (gen_asgn : pub_vars -> G com)
              (sz, thunkGen (fun _ =>
                   b <- arbitrarySized 2;;
                   (* Trying to generate assignment to one of the loop variables *)
-                  casgn <- gen_asgn P;;
+                  casgn <- gen_asgn_in_ctx gen_asgn (label_of_bexp P b) P;;
                   cend <- match casgn with
                   | <{y := e}> =>
                       if existsb (String.eqb y) (vars_bexp b) then ret casgn
