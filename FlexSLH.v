@@ -477,7 +477,7 @@ QuickChick (forAll gen_pub_vars (fun P =>
 
 (* Noninterference for source sequential execution *)
 
-Definition check_sequential_noninterference P PA c P' PA' : Checker :=
+Definition check_sequential_noninterference P PA P' PA' c : Checker :=
   forAll gen_state (fun s1 =>
   forAll (gen_pub_equiv P s1) (fun s2 =>
   forAll gen_astate (fun a1 =>
@@ -494,7 +494,7 @@ Definition check_sequential_noninterference P PA c P' PA' : Checker :=
 QuickChick (forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
   forAll (sized (gen_wt_com P PA)) (fun c =>
-    check_sequential_noninterference P PA c P PA)))).
+    check_sequential_noninterference P PA P PA c)))).
 
 (* For testing relative security we do taint tracking of sequential executions
    (as a variant of Lucie's interpreter). We use this to track which initial
@@ -1321,7 +1321,7 @@ QuickChick (forAllShrinkNonDet 100 (sized gen_com) shrink (fun c =>
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
   let '(P',PA',_) := static_tracking_naive P PA public c in
-    check_sequential_noninterference P PA c P' PA')))).
+    check_sequential_noninterference P PA P' PA' c)))).
 (* This one finds counterexample, but sometimes needs millions of tests for that: *)
 
 (* (while (X1 <= 1) do ((X1 := X0) ; (X0 <- A0[[0]])) end) *)
@@ -1435,7 +1435,7 @@ QuickChick (forAll (sized gen_com) (fun c =>
   forAll gen_pub_vars (fun P =>
   forAll gen_pub_arrs (fun PA =>
   let '(P',PA',_) := static_tracking P PA public c in
-    check_sequential_noninterference P PA c P' PA')))).
+    check_sequential_noninterference P PA P' PA' c)))).
 
 Fixpoint flex_slh_acom (ac:acom) : com :=
   (match ac with
