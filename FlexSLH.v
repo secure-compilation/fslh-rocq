@@ -476,21 +476,25 @@ QuickChick (forAll gen_pub_vars (fun P =>
              wt_typechecker P PA public c)))))).
 
 (* Noninterference for source sequential execution *)
+
+Definition check_sequential_noninterference P PA c P' PA' : Checker :=
+  forAll gen_state (fun s1 =>
+  forAll (gen_pub_equiv P s1) (fun s2 =>
+  forAll gen_astate (fun a1 =>
+  forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
+    let r1 := cteval_engine 10 c s1 a1 in
+    let r2 := cteval_engine 10 c s2 a2 in
+    match (r1, r2) with
+    | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
+        checker ((pub_equivb P' s1' s2') && (pub_equivb_astate PA' a1' a2'))
+    | _ => checker tt (* discard *)
+    end
+)))).
+
 QuickChick (forAll gen_pub_vars (fun P =>
-    forAll gen_pub_arrs (fun PA =>
-    forAll (sized (gen_wt_com P PA)) (fun c =>
-    forAll gen_state (fun s1 =>
-    forAll (gen_pub_equiv P s1) (fun s2 =>
-    forAll gen_astate (fun a1 =>
-    forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
-      let r1 := cteval_engine 10 c s1 a1 in
-      let r2 := cteval_engine 10 c s2 a2 in
-      match (r1, r2) with
-      | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
-          checker ((pub_equivb P s1' s2') && (pub_equivb_astate PA a1' a2'))
-      | _ => checker tt (* discard *)
-      end
-  )))))))).
+  forAll gen_pub_arrs (fun PA =>
+  forAll (sized (gen_wt_com P PA)) (fun c =>
+    check_sequential_noninterference P PA c P PA)))).
 
 (* For testing relative security we do taint tracking of sequential executions
    (as a variant of Lucie's interpreter). We use this to track which initial
@@ -1314,21 +1318,10 @@ QuickChick (forAll (sized gen_com) (fun c =>
 
 (* Noninterference for source sequential execution -- SHOULD FAIL! *)
 QuickChick (forAllShrinkNonDet 100 (sized gen_com) shrink (fun c =>
-    forAll gen_pub_vars (fun P =>
-    forAll gen_pub_arrs (fun PA =>
-    let '(P',PA',_) := static_tracking_naive P PA public c in
-    forAll gen_state (fun s1 =>
-    forAll (gen_pub_equiv P s1) (fun s2 =>
-    forAll gen_astate (fun a1 =>
-    forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
-      let r1 := cteval_engine 10 c s1 a1 in
-      let r2 := cteval_engine 10 c s2 a2 in
-      match (r1, r2) with
-      | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
-          checker ((pub_equivb P' s1' s2') && (pub_equivb_astate PA' a1' a2'))
-      | _ => checker tt (* discard *)
-      end
-  )))))))).
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  let '(P',PA',_) := static_tracking_naive P PA public c in
+    check_sequential_noninterference P PA c P' PA')))).
 (* This one finds counterexample, but sometimes needs millions of tests for that: *)
 
 (* (while (X1 <= 1) do ((X1 := X0) ; (X0 <- A0[[0]])) end) *)
@@ -1439,21 +1432,10 @@ QuickChick (forAll (sized gen_com) (fun c =>
 
 (* Noninterference for source sequential execution -- should work this time *)
 QuickChick (forAll (sized gen_com) (fun c =>
-    forAll gen_pub_vars (fun P =>
-    forAll gen_pub_arrs (fun PA =>
-    let '(P',PA',_) := static_tracking P PA public c in
-    forAll gen_state (fun s1 =>
-    forAll (gen_pub_equiv P s1) (fun s2 =>
-    forAll gen_astate (fun a1 =>
-    forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
-      let r1 := cteval_engine 10 c s1 a1 in
-      let r2 := cteval_engine 10 c s2 a2 in
-      match (r1, r2) with
-      | (Some (s1', a1', os1), Some (s2', a2', os2)) =>
-          checker ((pub_equivb P' s1' s2') && (pub_equivb_astate PA' a1' a2'))
-      | _ => checker tt (* discard *)
-      end
-  )))))))).
+  forAll gen_pub_vars (fun P =>
+  forAll gen_pub_arrs (fun PA =>
+  let '(P',PA',_) := static_tracking P PA public c in
+    check_sequential_noninterference P PA c P' PA')))).
 
 Fixpoint flex_slh_acom (ac:acom) : com :=
   (match ac with
