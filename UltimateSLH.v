@@ -489,6 +489,43 @@ Conjecture ideal_prefix_dirs :
   |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
   ds1 = ds2.
 
+Lemma ideal_dirs_split : forall c st ast b ds stt astt bt os,
+  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  b = false ->
+  bt = true ->
+  exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds.
+Proof.
+  intros c st ast b ds stt astt bt os Hev Hb Hbt.
+  induction Hev; subst; simpl; eauto; try discriminate.
+  - destruct b' eqn:Eqb'.
+    + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
+      apply IHHev1 in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
+      exists ds3; exists (ds4 ++ ds2). split; auto.
+      rewrite app_comm_cons. rewrite app_assoc. rewrite Heq. reflexivity.
+    + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
+      apply IHHev2 in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
+      exists (ds1 ++ ds3); exists ds4. split.
+      * intros d H. apply in_app_or in H as [Hds1 | Hds3]; auto.
+        eapply ideal_eval_final_bit_false in Hev1; [| eapply Hds1]. auto.
+      * rewrite <- app_assoc. rewrite Heq. reflexivity.
+  - (* IF non-speculative *)
+    simpl in Hev. destruct (beval st be) eqn:Eqbe.
+    + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
+      apply IHHev in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
+      exists (DStep::ds3); exists ds4. split; simpl.
+      * intros d H; destruct H; auto.
+      * rewrite Heq. reflexivity.
+    + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
+      apply IHHev in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
+      exists (DStep::ds3); exists ds4. split; simpl.
+      * intros d H; destruct H; auto.
+      * rewrite Heq. reflexivity.
+  - (* IF speculative *)
+    exists []; exists ds. split; simpl.
+    + intros d H; destruct H.
+    + reflexivity.
+Qed.
+
 Lemma ideal_relative_secure : forall c st1 st2 ast1 ast2,
   unused "b" c ->
   st1 "b" = 0 ->
