@@ -547,15 +547,13 @@ Proof.
     + reflexivity.
 Qed.
 
+
 Lemma ideal_relative_secure : forall c st1 st2 ast1 ast2,
-  unused "b" c ->
-  st1 "b" = 0 ->
-  st2 "b" = 0 ->
   seq_same_obs c st1 st2 ast1 ast2 ->
   ideal_same_obs c st1 st2 ast1 ast2.
 Proof.
-  unfold ideal_same_obs. intros c st1 st2 ast1 ast2 Hunused 
-  Hst1b Hst2b Hsec ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
+  unfold ideal_same_obs. intros c st1 st2 ast1 ast2 Hsec 
+  ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
   eapply ideal_eval_bit_deterministic in Hev1 as SameB; try eassumption. subst.
   destruct bt1 eqn:Eqbt1.
   - (* with speculation *)
