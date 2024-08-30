@@ -489,6 +489,27 @@ Conjecture ideal_prefix_dirs :
   |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
   ds1 = ds2.
 
+Lemma ideal_spec_needs_force : forall c st ast b ds stt astt bt os,
+  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  b = false ->
+  bt = true ->
+  In DForce ds.
+Proof.
+  intros c st ast b ds stt astt bt os Heval Hb Hbt.
+  induction Heval; subst; simpl; eauto; try discriminate.
+  apply in_or_app. destruct b'; eauto.
+Qed.
+
+Lemma ideal_eval_dirs : forall c st ast b ds stt astt bt os,
+  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  (forall d, In d ds -> d = DStep \/ d = DForce).
+Proof.
+  intros c sst ast b ds stt astt bt os Hev.
+  induction Hev; intros d Hin; simpl in Hin; try (now destruct Hin; auto).
+  - apply in_app_or in Hin as [Hds1 | Hds2]; auto.
+  - apply IHHev; auto.
+Qed.
+
 Lemma ideal_dirs_split : forall c st ast b ds stt astt bt os,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   b = false ->
