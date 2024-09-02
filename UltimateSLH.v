@@ -67,6 +67,8 @@ Fixpoint ultimate_slh (c:com) :=
   | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
+(** * Ideal big-step evaluation relation *)
+
 Reserved Notation
          "'|-i' '<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
          (at level 40, c custom com at level 99,
@@ -120,6 +122,60 @@ Definition ideal_same_obs c st1 st2 ast1 ast2 : Prop :=
     |-i <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
     |-i <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
     os1 = os2.
+
+(** * Ideal small-step evaluation relation *)
+
+Reserved Notation
+         "'<(' st , ast , b , ds , os ')>' c '-->i' ct '<(' stt , astt , bt , dst , ost ')>'"
+         (at level 40, c custom com at level 99, ct custom com at level 99,
+          st constr, ast constr, stt constr, astt constr at next level).
+
+Inductive ideal_eval_small_step :
+    com -> state -> astate -> bool -> dirs -> obs->
+           com -> state -> astate -> bool -> dirs -> obs -> Prop :=
+  | ISM_Asgn  : forall st ast b ds os e n x,
+      aeval st e = n ->
+      <(st, ast, b, ds, os)> x := e -->i skip <(x !-> n; st, ast, b, ds, os)>
+  | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt dst ost c2,
+      <(st, ast, b, ds, os)> c1 -->i c1t <(stt, astt, bt, dst, ost)>  ->
+      <(st, ast, b, ds, os)> c1;c2 -->i c1t;c2 <(stt, astt, bt, dst, ost)>
+  | ISM_Seq_Skip : forall c1 st ast b ds os stt astt bt dst ost c2,
+      <(st, ast, b, ds, os)> c1 -->i skip <(stt, astt, bt, dst, ost)>  ->
+      <(st, ast, b, ds, os)> c1;c2 -->i c2 <(stt, astt, bt, dst, ost)>
+  | ISM_If : forall be ct cf st ast b ds os,
+      <(st, ast, b, DStep :: ds, os)> if be then ct else cf end -->i
+      match negb b && beval st be  with 
+      | true => ct 
+      | false => cf end <(st, ast, b, ds, OBranch (negb b && beval st be)::os)>
+  | ISM_If_F : forall be ct cf st ast b ds os,
+      <(st, ast, b, DForce :: ds, os)> if be then ct else cf end -->i
+      match negb b && beval st be  with 
+      | true => cf 
+      | false => ct end <(st, ast, b, ds, OBranch (negb b && beval st be)::os)>
+  | ISM_While : forall be c st ast b ds os,
+      <(st, ast, b, DStep::ds, os)> while be do c end -->i
+      match negb b && beval st be  with 
+        | true => <{{c; while be do c end}}> 
+        | false => <{{skip}}> end <(st, ast, b, ds, OBranch (negb b && beval st be)::os)>
+  | ISM_While_F : forall be c st ast b ds os,
+      <(st, ast, b, DForce::ds, os)> while be do c end -->i
+      match negb b && beval st be  with 
+        | true => <{{skip}}>
+        | false => <{{c; while be do c end}}> end  <(st, ast, b, ds, OBranch (negb b && beval st be)::os)>
+  | ISM_ARead : forall x a ie st ast (b :bool) ds os i,
+      (if b then 0 else (aeval st ie)) = i ->
+      i < length (ast a) ->
+      <(st, ast, b, DStep::ds, os)> x <- a[[ie]] -->i skip <(x !-> nth i (ast a) 0; st, ast, b, ds, (OARead a i)::os)>
+  | ISM_Write : forall a ie e st ast (b :bool) ds os i n,
+      aeval st e = n ->
+      (if b then 0 else (aeval st ie)) = i ->
+      i < length (ast a) ->
+      <(st, ast, b, DStep::ds, os)> a[ie] <- e -->i skip <(st, a !-> upd i (ast a) n; ast, b, ds, (OAWrite a i)::os)>   
+  
+  where "<( st , ast , b , ds , os )> c -->i ct <( stt , astt , bt , dst , ost )>" :=
+    (ideal_eval_small_step c st ast b ds os ct stt astt bt dst ost).
+
+(** * Relative Security of Ultimate Speculative Load Hardening *)
 
 (* HIDE *)
 (* Some intuition about Gilles lemma, but now we plan to prove it directly, like determinism *)
