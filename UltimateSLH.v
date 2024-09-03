@@ -649,6 +649,19 @@ Proof.
   - rewrite app_length; simpl. lia.    
 Qed.
 
+Lemma prefix_eq_length : forall {X:Type} (ds1 ds2 : list X),
+  length ds1 = length ds2 ->
+  prefix ds1 ds2 \/ prefix ds2 ds1 ->
+  ds1 = ds2.
+Proof.
+  intros X ds1. induction ds1 as [| d1 ds1' IH]; intros ds2 Hlen Hpre; simpl in *.
+  - symmetry in Hlen. apply length_zero_iff_nil in Hlen. auto.
+  - destruct ds2 as [| d2 ds2'] eqn:Eqds2; simpl in *.
+    + discriminate Hlen.
+    + destruct Hpre as [Hpre | Hpre]; apply prefix_heads_and_tails in Hpre as [Heq Hpre];
+      subst; inversion Hlen; apply IH in H0; auto; subst; reflexivity.    
+Qed.
+
 Lemma ideal_dirs_split : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds
@@ -731,10 +744,13 @@ Proof.
   - (* without speculation *)
     assert (Hds: forall d, In d ds -> d = DStep).
     { intros; eapply ideal_eval_final_bit_false in Hev1; eauto. }
+    apply ideal_obs_length in Hev1 as Hos1.
+    apply ideal_obs_length in Hev2 as Hos2.
+    rewrite Hos1 in Hos2.
     eapply ideal_eval_no_spec in Hev1; try assumption.
     eapply ideal_eval_no_spec in Hev2; try assumption.
-    eauto. admit. (* <- This fails after change to seq_same_obs
-                   Need to additionally show that |ds| = |os1| = |os2| *)
+    eapply Hsec in Hev1; eapply Hev1 in Hev2.
+    apply prefix_eq_length; auto.
 Admitted.
 
 Theorem ultimate_slh_relative_secure :
