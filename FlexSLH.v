@@ -531,10 +531,10 @@ Module TaintTracking.
 Definition tstate := total_map taint.
 Definition tastate := total_map taint.
 
-Definition input_st : Type := state * astate * tstate * tastate.
+Definition input_st : Type := state * astate * tstate * tastate * taint.
 Inductive output_st (A : Type) : Type :=
-  | ROutOfFuel : output_st A
-  | ROutOfBounds : output_st A
+  | ROutOfFuel : obs -> input_st -> output_st A
+  | ROutOfBounds : obs -> input_st -> output_st A
   | ROk : A -> obs -> input_st -> output_st A.
 
 (* An 'evaluator A'. This is the monad.
@@ -553,10 +553,11 @@ Definition interpreter: Type := evaluator unit.
         | ROk _ value os1 ist'  =>
             match evaluate B (f value) ist' with
             | ROk _ value os2 ist'' => ROk B value (os1 ++ os2) ist''
-            | ret => ret
+            | ROutOfFuel _ os2 ist'' => ROutOfFuel B (os1 ++ os2) ist''
+            | ROutOfBounds _ os2 ist'' => ROutOfBounds B (os1 ++ os2) ist''
             end
-        | ROutOfBounds _ => ROutOfBounds B
-        | ROutOfFuel _ => ROutOfFuel B
+        | ROutOfFuel _ os ist' => ROutOfFuel B os ist'
+        | ROutOfBounds _ os ist' => ROutOfBounds B os ist'
         end
       )
    }.
@@ -566,45 +567,45 @@ Definition finish : interpreter := ret tt.
 
 Definition get_var (name : string): evaluator nat :=
   mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, _, _, _) := ist in
+    let '(st, _, _, _, _) := ist in
     evaluate _ (ret (apply st name)) ist
   ).
 Definition get_arr (name : string): evaluator (list nat) :=
   mkEvaluator _ (fun (ist : input_st) =>
-    let '(_, ast, _, _) := ist in
+    let '(_, ast, _, _, _) := ist in
     evaluate _ (ret (apply ast name)) ist
   ).
 Definition set_var (name : string) (value : nat) : interpreter :=
   mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, ast, tst, tast) := ist in
+    let '(st, ast, tst, tast, tobs) := ist in
     let new_st := (name !-> value ; st) in
-    evaluate _ finish (new_st, ast, tst, tast)
+    evaluate _ finish (new_st, ast, tst, tast, tobs)
   ).
 Definition set_arr (name : string) (value : list nat) : interpreter :=
   mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, ast, tst, tast) := ist in
+    let '(st, ast, tst, tast, tobs) := ist in
     let new_ast := (name !-> value ; ast) in
-    evaluate _ finish (st, new_ast, tst, tast)
+    evaluate _ finish (st, new_ast, tst, tast, tobs)
   ).
 Definition eval_aexp (a : aexp) : evaluator nat :=
   mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, _, _, _) := ist in
+    let '(st, _, _, _, _) := ist in
     let v := aeval st a in
     evaluate _ (ret v) ist
   ).
 Definition eval_bexp (b : bexp) : evaluator bool :=
   mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, _, _, _) := ist in
+    let '(st, _, _, _, _) := ist in
     let v := beval st b in
     evaluate _ (ret v) ist
   ).
 Definition raise_out_of_bounds {a:Type} : evaluator a :=
-  mkEvaluator _ (fun _ =>
-    ROutOfBounds _
+  mkEvaluator _ (fun (ist : input_st) =>
+    ROutOfBounds _ [] ist
   ).
 Definition raise_out_of_fuel {a:Type} : evaluator a :=
-  mkEvaluator _ (fun _ =>
-    ROutOfFuel _
+  mkEvaluator _ (fun (ist : input_st) =>
+    ROutOfFuel _ [] ist
   ).
 Definition observe (o : observation) : interpreter :=
   mkEvaluator _ (fun (ist : input_st) =>
@@ -613,51 +614,56 @@ Definition observe (o : observation) : interpreter :=
 
 Definition get_taint_of_vars (xs:list string) : evaluator taint :=
   mkEvaluator _ (fun (ist : input_st) =>
-    let '(_, _, tst, _) := ist in
+    let '(_, _, tst, _, _) := ist in
     evaluate _ (ret (remove_dupes sum_eqb (List.concat (map (apply tst) xs)))) ist).
 
 Definition get_taint_of_arr (a:string) : evaluator taint :=
   mkEvaluator _ (fun (ist : input_st) =>
-    let '(_, _, _, tast) := ist in
+    let '(_, _, _, tast, _) := ist in
     evaluate _ (ret (apply tast a)) ist).
 
 Definition set_var_taint (x : string) (t : taint) : interpreter :=
   mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, ast, tst, tast) := ist in
+    let '(st, ast, tst, tast, tobs) := ist in
     let new_tst := (x !-> remove_dupes sum_eqb t ; tst) in
-    evaluate _ finish (st, ast, new_tst, tast)).
+    evaluate _ finish (st, ast, new_tst, tast, tobs)).
 
 Definition add_arr_taint (a : string) (t : taint) : interpreter :=
   mkEvaluator _ (fun (ist : input_st) =>
-    let '(st, ast, tst, tast) := ist in
+    let '(st, ast, tst, tast, tobs) := ist in
     let new_tast := (a !-> (join_taints t (apply tast a)); tast) in
-    evaluate _ finish (st, ast, tst, new_tast)).
+    evaluate _ finish (st, ast, tst, new_tast, tobs)).
 
-Fixpoint taint_track (f : nat) (c : com) : evaluator taint :=
+Definition add_obs_taint (t : taint) : interpreter :=
+  mkEvaluator _ (fun (ist : input_st) =>
+    (* trace ("add_obs_taint:"++show t++nl) ( *)
+    let '(st, ast, tst, tast, tobs) := ist in
+    let new_tobs := join_taints t tobs in
+    evaluate _ finish (st, ast, tst, tast, new_tobs)).
+
+Fixpoint taint_track (f : nat) (c : com) : interpreter :=
   match f with
   | O => raise_out_of_fuel
   | S f =>
 
   match c with
   | <{ skip }> =>
-      ret []
+      finish
   | <{ x := e }> =>
       v <- eval_aexp e;;
       set_var x v;;
       t <- get_taint_of_vars (vars_aexp e);;
-      set_var_taint x t;;
-      ret []
+      set_var_taint x t
   | <{ c1 ; c2 }> =>
-      t1 <- taint_track f c1;;
-      t2 <- taint_track f c2;;
-      ret (join_taints t1 t2)
+      taint_track f c1;;
+      taint_track f c2
   | <{ if b then ct else cf end }> =>
       condition <- eval_bexp b;;
       let next_c := if Bool.eqb condition true then ct else cf in
       observe (OBranch condition);;
       tb <- get_taint_of_vars (vars_bexp b);;
-      t <- taint_track f next_c;;
-      ret (join_taints tb t)
+      add_obs_taint tb;;
+      taint_track f next_c
   | <{ while be do c end }> =>
     taint_track f <{
       if be then
@@ -674,9 +680,9 @@ Fixpoint taint_track (f : nat) (c : com) : evaluator taint :=
         observe (OARead a i);;
         set_var x (nth i l 0);;
         ti <- get_taint_of_vars (vars_aexp ie);;
+        add_obs_taint ti;;
         ta <- get_taint_of_arr a;;
-        set_var_taint x (join_taints ti ta);;
-        (ret ti)
+        set_var_taint x (join_taints ti ta)
       else
         raise_out_of_bounds
   | <{ a[ie] <- e }> =>
@@ -687,9 +693,9 @@ Fixpoint taint_track (f : nat) (c : com) : evaluator taint :=
         observe (OAWrite a i);;
         set_arr a (upd i l n);;
         ti <- get_taint_of_vars (vars_aexp ie);;
+        add_obs_taint ti;;
         te <- get_taint_of_vars (vars_aexp e);;
-        add_arr_taint a (join_taints ti te);;
-        (ret ti)
+        add_arr_taint a (join_taints ti te)
       else
         raise_out_of_bounds
   end
@@ -705,15 +711,16 @@ Fixpoint split_sum_list {A B : Type} (l : list (A + B)) : (list A * list B) :=
   end.
 
 Definition taint_tracking (f : nat) (c : com) (st : state) (ast : astate)
-    : option (state * astate * obs * list string * list string) :=
+    : option (obs * list string * list string) :=
   let tst := ([], map (fun x => (x,[@inl var_id arr_id (Var x)])) (map_dom (snd st))) in
   let tast := ([], map (fun a => (a,[@inr var_id arr_id (Arr a)])) (map_dom (snd ast))) in
-  let ist := (st, ast, tst, tast) in
+  let ist := (st, ast, tst, tast, []) in
   match TaintTracking.evaluate _ (TaintTracking.taint_track f c) ist with
-  | TaintTracking.ROk _ t os (st', ast', _, _) =>
-      let (vars, arrs) := split_sum_list t in
-      Some (st', ast', os, remove_dupes String.eqb (map var_id_to_string vars),
-                           remove_dupes String.eqb (map arr_id_to_string arrs))
+  | TaintTracking.ROk _ tt os (_, _, _, _, tobs) =>
+  (* | TaintTracking.ROutOfFuel _ os (_, _, _, _, tobs) => *)
+      let (vars, arrs) := split_sum_list tobs in
+      Some (os, remove_dupes String.eqb (map var_id_to_string vars),
+                remove_dupes String.eqb (map arr_id_to_string arrs))
   | _ => None
   end.
 
@@ -721,13 +728,15 @@ Definition taint_tracking (f : nat) (c : com) (st : state) (ast : astate)
    the initial values of the leaked variables/arrays public we can vary all the
    remaining secret variables/arrays and still obtain the same CT leakage. *)
 
-QuickChick(
-  forAll (sized gen_com) (fun c =>
+(* Extract Constant defNumTests => "1000000". *)
+
+QuickChick (
+  forAllShrink (sized gen_com) shrink (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_astate (fun a1 =>
   let r1 := taint_tracking 10 c s1 a1 in
   match r1 with
-  | Some (s1', a1', os1', tvars, tarrs) =>
+  | Some (os1', tvars, tarrs) =>
       (* trace ("Leaked vars: " ++ show tvars ++ " arrs: " ++ show tarrs ++ nl) ( *)
       (* collect (show (List.length tvars + List.length tarrs)) ( *)
       let P := (false, map (fun x => (x,true)) tvars) in
@@ -736,8 +745,8 @@ QuickChick(
       forAll (gen_pub_equiv_and_same_length PA a1) (fun a2 =>
       let r2 := cteval_engine 10 c s2 a2 in
       match r2 with
-      | Some (s2', a2', os2') => checker (obs_eqb os1' os2')
-      | None => checker tt (* discard *)
+      | Some (_, _, os2') => checker (*trace (if obs_eqb os1' os2' then "" else "os1':"++show os1'++"os2':"++show os2'++nl*) (obs_eqb os1' os2')
+      | None => checker false (* fail *)
       end))
    | None => checker tt (* discard *)
    end)))).
@@ -753,8 +762,8 @@ Definition check_speculative_noninterference P PA P' PA' c hardened : Checker :=
   forAll gen_astate (fun a1 =>
   let r1 := taint_tracking 10 c s1 a1 in
   match r1 with
-  | Some (_s1', _a1', os1', tvars, tarrs) =>
-      collect (show (List.length os1')) (
+  | Some (os1', tvars, tarrs) =>
+      (* collect (show (List.length os1')) ( *)
       (* collect (show (List.length (tvars ++ tarrs))) ( *)
       forAll (gen_pub_equiv (extend_pub P tvars) s1) (fun s2 =>
       let s2 := ("b" !-> 0; s2) in
@@ -765,6 +774,7 @@ Definition check_speculative_noninterference P PA P' PA' c hardened : Checker :=
           (* implication (obs_eqb os1' os2') -- no longer needed *)
           (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
              (fun '(ds, s1', a1', b', os1) =>
+                (* collect (show (List.length ds)) ( *)
                 match spec_eval_engine hardened s2 a2 false ds with
                 | Some (s2', a2', b'', os2) =>
                     checker (Bool.eqb b' b'' && (pub_equivb P' s1' s2') &&
@@ -773,7 +783,7 @@ Definition check_speculative_noninterference P PA P' PA' c hardened : Checker :=
                 | None => checker tt (* discard -- doesn't seem to happen *)
                 end))
       | None => checker tt (* discard -- doesn't seem to happen *)
-      end)))
+      end))
   | None => checker tt (* discard *)
   end)).
 
@@ -816,7 +826,7 @@ Definition check_relative_security P PA c hardened : Checker :=
   forAll gen_astate (fun a1 =>
   let r1 := taint_tracking 10 c s1 a1 in
   match r1 with
-  | Some (s1', a1', os1', tvars, tarrs) =>
+  | Some (os1', tvars, tarrs) =>
       collect (show (List.length os1')) (
       (* collect (show (List.length (tvars ++ tarrs))) ( *)
       forAll (gen_pub_equiv (extend_pub P tvars) s1) (fun s2 =>
@@ -1337,7 +1347,7 @@ QuickChick (forAllShrinkNonDet 100 (sized gen_com) shrink (fun c =>
          The loops should additionally also be (1) executed at least once; and
          (2) terminating, since otherwise we discard them.
          So a loop condition variable should be assigned in the loop.
-         - Implemented: this alone took us from ~10 millions to under 1 million
+         - Implemented: this alone took us from ~10 millions to around 1 million
          Could gather statistics of how many times are loops executed.
          - related to fuel? *)
 
