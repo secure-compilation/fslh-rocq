@@ -28,15 +28,17 @@ Set Default Goal Selector "!".
 (** We formalize this as a relative security property that doesn't label data at
     all as public or secret. *)
 
-(* We need to define [seq_same_obs] below wrt a small-step semantics, so that this
-   hypothesis also gives us something for sequentially infinite executions. *)
+(** We need to define [seq_same_obs] below wrt a small-step semantics, so that
+    this hypothesis also gives us something for sequentially infinite
+    executions, and also for executions that sequentially get stuck because of
+    out of bound accesses. *)
 
-(** * Sequential small-step evaluation *)
+(** Sequential small-step semantics *)
 
 Reserved Notation
-         "'<((' c , st , ast '))>' '-->^' os '<((' ct , stt , astt '))>'"
-         (at level 40, c custom com at level 99, ct custom com at level 99,
-          st constr, ast constr, stt constr, astt constr at next level).
+  "'<((' c , st , ast '))>' '-->^' os '<((' ct , stt , astt '))>'"
+  (at level 40, c custom com at level 99, ct custom com at level 99,
+   st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive seq_eval_small_step :
     com -> state -> astate ->
@@ -102,14 +104,10 @@ Definition spec_same_obs c st1 st2 ast1 ast2 : Prop :=
     <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
     os1 = os2.
 
-Definition relative_secure (trans : com -> com) (c:com) (st1 st2 :state) (ast1 ast2 :astate): Prop :=
+Definition relative_secure (trans : com -> com) (c:com)
+    (st1 st2 : state) (ast1 ast2 : astate): Prop :=
   seq_same_obs c st1 st2 ast1 ast2 ->
   spec_same_obs (trans c) st1 st2 ast1 ast2.
-
-(** Additional Property on [astaste]'s *)
-
-Definition nonempty_arrs (ast :astate) :Prop :=
-  forall a, 0 < length (ast a).
 
 (** * Ultimate Speculative Load Hardening *)
 
@@ -129,12 +127,20 @@ Fixpoint ultimate_slh (c:com) :=
   | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
-(** * Ideal big-step evaluation relation *)
+(** The masking USLH does for indices requires that our arrays are nonempty. *)
+
+Definition nonempty_arrs (ast : astate) :Prop :=
+  forall a, 0 < length (ast a).
+
+(** * Ideal big-step evaluation *)
+
+(** As in SpecCT, we define an ideal big-step evaluation relation, which
+    abstractly captures the masking done by USLH. *)
 
 Reserved Notation
-         "'|-i' '<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
-         (at level 40, c custom com at level 99,
-          st constr, ast constr, stt constr, astt constr at next level).
+  "'|-i' '<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
+  (at level 40, c custom com at level 99,
+   st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive ideal_eval :
     com -> state -> astate -> bool -> dirs ->
@@ -185,12 +191,12 @@ Definition ideal_same_obs c st1 st2 ast1 ast2 : Prop :=
     |-i <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
     os1 = os2.
 
-(** * Ideal small-step evaluation relation *)
+(** * Ideal small-step evaluation *)
 
 Reserved Notation
- "'<((' c , st , ast , b '))>' '-->i_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
- (at level 40, c custom com at level 99, ct custom com at level 99,
-  st constr, ast constr, stt constr, astt constr at next level).
+  "'<((' c , st , ast , b '))>' '-->i_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
+  (at level 40, c custom com at level 99, ct custom com at level 99,
+   st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive ideal_eval_small_step :
     com -> state -> astate -> bool ->
@@ -232,9 +238,9 @@ Inductive ideal_eval_small_step :
     (ideal_eval_small_step c st ast b ct stt astt bt ds os).
 
 Reserved Notation
-         "'<((' c , st , ast , b '))>' '-->i*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
-         (at level 40, c custom com at level 99, ct custom com at level 99,
-          st constr, ast constr, stt constr, astt constr at next level).
+  "'<((' c , st , ast , b '))>' '-->i*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
+  (at level 40, c custom com at level 99, ct custom com at level 99,
+   st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
@@ -252,7 +258,9 @@ Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
 (** * Relative Security of Ultimate Speculative Load Hardening *)
 
 (* HIDE *)
-(* Some intuition about Gilles lemma, but now we plan to prove it directly, like determinism *)
+(* Some intuition about Gilles lemma 1 from the USLH paper,
+   but now we plan to prove it directly, like determinism *)
+
 Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
   match c with
   | <{{skip}}> => Some ([],ds)
@@ -324,6 +332,10 @@ Lemma gilles_lemma : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2
   os1 = os2.
 Admitted.
 
+(** As in SpecCT and Spectre Declassified, an important step in the proof is
+    relating the ideal semantics with the speculative semantics of the hardened
+    program, by means of a backwards compiler correctness (BCC) result. *)
+
 Lemma ideal_unused_update : forall st ast b ds c st' ast' b' os X n,
   unused X c ->
   |-i <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)> ->
@@ -362,7 +374,6 @@ Proof.
  rewrite Hflag in Heqb; simpl in Heqb; discriminate.
 Qed.
 
-
 Definition ultimate_slh_flag_prop (c :com) (ds :dirs) :Prop :=
   forall st ast (b:bool) st' ast' (b':bool) os,
   unused "b" c ->
@@ -384,6 +395,7 @@ Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
 
 (* LATER: Prove the used lemmas [ultimate_slh_flag], [ideal_unused_update_rev],
    [spec_eval_preserves_nonempty_arrs] and [ideal_unused_update] *)
+
 Lemma ultimate_slh_bcc : forall c ds,
   ultimate_slh_bcc_prop c ds.
 Proof.
@@ -672,6 +684,7 @@ Proof.
     apply prefix_cons; apply H.
 Qed.
 
+(* This is no longer used, since we generalized it to [ideal_exec_split] *)
 Lemma ideal_dirs_split : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds .
