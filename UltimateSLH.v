@@ -662,14 +662,19 @@ Proof.
       subst; inversion Hlen; apply IH in H0; auto; subst; reflexivity.    
 Qed.
 
+Lemma prefix_app_end : forall {X:Type} {ds1 ds2 ds3 : list X},
+  prefix ds2 ds3 \/ prefix ds3 ds2 ->
+  prefix (ds1 ++ ds2) (ds1 ++ ds3) \/ prefix (ds1 ++ ds3) (ds1 ++ ds2).
+Proof.
+  intros X ds1. induction ds1 as [| d1 ds1' IH]; intros ds2 ds3 H; simpl.
+  - auto.
+  - apply IH in H. destruct H as [H | H]; [left | right];
+    apply prefix_cons; apply H.
+Qed.
+
 Lemma ideal_dirs_split : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
-  exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds
-  (* /\ exists c' st' ast' c'' st'' ast'' os1 os2 os', *)
-  (*   os2 ++ (os' ++ os1) = os /\ *)
-  (*   <((c, st, ast, b))> -->i*_(ds1,os1) <((c', st', ast', b))> /\ *)
-  (*   <((c', st', ast', b))>  -->i_([DForce],os') <((c'', st'', ast'', true))> /\ *)
-  (*   |-i <(st'', ast'', true, ds2)> =[ c'' ]=> <(stt, astt, bt, os2)> *).
+  exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds .
 Proof.
   intros c st ast ds stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
@@ -703,6 +708,13 @@ Proof.
     + reflexivity.
 Qed.
 
+Conjecture ideal_exec_split :  forall c st ast ds stt astt os,
+  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
+  exists c1 st1 ast1 os1 c2 st2 ast2 ds2 os2 os3, 
+    <((c, st, ast))> -->*_(os1) <((c1, st1, ast1))> /\ 
+    <((c1, st1, ast1, false))>  -->i_([DForce],os2) <((c2, st2, ast2, true))> /\ 
+    |-i <(st2, ast2, true, ds2)> =[ c2 ]=> <(stt, astt, true, os3)> /\
+    os3 ++ os2 ++ os1 = os.
 
 Lemma ideal_relative_secure : forall c st1 st2 ast1 ast2,
   seq_same_obs c st1 st2 ast1 ast2 ->
@@ -713,34 +725,20 @@ Proof.
   eapply ideal_eval_bit_deterministic in Hev1 as SameB; try eassumption. subst.
   destruct bt1 eqn:Eqbt1.
   - (* with speculation *)
-    destruct c as [| X e | c1 c2 | be ct cf | be cw | X a ie | a ie e ] eqn:Eqnc;
-    try (now inversion Hev1).
-    + (* Seq *)
-      inversion Hev1; subst; clear Hev1; inversion Hev2; subst; clear Hev2.
-      assert (Hdirs: ds0 = ds1 /\ ds3 = ds2).
-      { assert (L: prefix (ds0 ++ ds3) (ds1++ds2)) by (rewrite H2; apply prefix_refl).
-        apply prefix_app in L. destruct L as [Hdir | Hdir].
-        - eapply ideal_prefix_dirs in H1; eauto. subst.
-          apply app_inv_head_iff in H2. subst. auto.
-        - eapply ideal_prefix_dirs in H6; eauto. subst.
-          apply app_inv_head_iff in H2. subst. auto. }
-      destruct Hdirs; subst.
-      eapply ideal_eval_bit_deterministic in H1 as SameB; try eassumption. subst.
-      destruct b' eqn:Eqb'.
-      (* HIDE: Analog cases to the destruct of bt1. Therefore same issues with using
-         <(_, _, false, _)> =[c]=> <(_, _, true, _)> . *)
-      * admit.
-      * admit.
-    + (* If *)
-      inversion Hev1; subst; clear Hev1; inversion Hev2; subst; clear Hev2.
-      * destruct (beval st1 be) eqn:Eqst1be; destruct (beval st2 be) eqn:Eqst2be; simpl in *.
-        { (* HIDE: Hard to relate ideal to sequential execution. But without relating, how
-             to use seq_obs_sec. *) admit. }
-        { admit. }
-        { admit. }
-        { admit. }
-      * admit.
-    + (* While *) admit. 
+    assert (Hlen: length os1 = length os2).
+    { apply ideal_obs_length in Hev1, Hev2. rewrite Hev1 in Hev2. apply Hev2. }
+    eapply ideal_exec_split in Hev1, Hev2.
+    destruct Hev1  as [c11 [st21 [ast21 [os21 [c21 [st31 [ast31 [ds21 [os31 [os41 [H11 [H21 [H31 H41] ] ] ] ] ] ] ] ] ] ] ] ].
+    destruct Hev2  as [c12 [st22 [ast22 [os22 [c22 [st32 [ast32 [ds22 [os32 [os42 [H12 [H22 [H32 H42] ] ] ] ] ] ] ] ] ] ] ] ].
+    eapply Hsec in H11 as L; eapply L in H12 as Hpre.
+    (* SOONER: Following conjectures need the uniqueness of the splitting, i.e. the dirs and coms are equal *)
+    assert (Conj1: os31 = os32).
+    { admit. (* Needs a lemma that c11 = c12 *) }
+    assert (Conj2: os41 = os42).
+    { eapply gilles_lemma in H32; admit. (* needs lemma that c21 = c22 *) }
+    subst.
+    apply prefix_eq_length; auto. 
+    do 2 rewrite app_assoc. apply prefix_app_end. apply Hpre.
   - (* without speculation *)
     assert (Hds: forall d, In d ds -> d = DStep).
     { intros; eapply ideal_eval_final_bit_false in Hev1; eauto. }
