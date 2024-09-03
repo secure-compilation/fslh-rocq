@@ -567,13 +567,12 @@ Conjecture ideal_prefix_dirs :
   |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
   ds1 = ds2.
 
-Lemma ideal_spec_needs_force : forall c st ast b ds stt astt bt os,
-  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  b = false ->
-  bt = true ->
+Lemma ideal_spec_needs_force : forall c st ast ds stt astt os,
+  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   In DForce ds.
 Proof.
-  intros c st ast b ds stt astt bt os Heval Hb Hbt.
+  intros c st ast ds stt astt os Heval.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Heval; subst; simpl; eauto; try discriminate.
   apply in_or_app. destruct b'; eauto.
 Qed.
@@ -588,10 +587,8 @@ Proof.
   - apply IHHev; auto.
 Qed.
 
-Lemma ideal_dirs_split : forall c st ast b ds stt astt bt os,
-  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  b = false ->
-  bt = true ->
+Lemma ideal_dirs_split : forall c st ast ds stt astt os,
+  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds
   (* /\ exists c' st' ast' c'' st'' ast'' os1 os2 os', *)
   (*   os2 ++ (os' ++ os1) = os /\ *)
@@ -599,7 +596,8 @@ Lemma ideal_dirs_split : forall c st ast b ds stt astt bt os,
   (*   <((c', st', ast', b))>  -->i_([DForce],os') <((c'', st'', ast'', true))> /\ *)
   (*   |-i <(st'', ast'', true, ds2)> =[ c'' ]=> <(stt, astt, bt, os2)> *).
 Proof.
-  intros c st ast b ds stt astt bt os Hev Hb Hbt.
+  intros c st ast ds stt astt os Hev.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev; subst; simpl; eauto; try discriminate.
   - destruct b' eqn:Eqb'.
     + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
