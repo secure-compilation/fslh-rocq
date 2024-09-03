@@ -639,6 +639,16 @@ Proof.
   - apply IHHev; auto.
 Qed.
 
+Lemma ideal_obs_length : forall c st ast b ds stt astt bt os,
+  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  length ds = length os.
+Proof.
+  intros c st ast b ds stt astt bt os Hev. induction Hev; simpl; auto.
+  - do 2 rewrite app_length. lia.
+  - rewrite app_length; simpl. lia.
+  - rewrite app_length; simpl. lia.    
+Qed.
+
 Lemma ideal_dirs_split : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds
