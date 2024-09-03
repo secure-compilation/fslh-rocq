@@ -28,15 +28,67 @@ Set Default Goal Selector "!".
 (** We formalize this as a relative security property that doesn't label data at
     all as public or secret. *)
 
+(** * Sequential samll-step evaluation *)
+
+Reserved Notation
+         "'<((' c , st , ast '))>' '-->_(' os ')' '<((' ct , stt , astt '))>'"
+         (at level 40, c custom com at level 99, ct custom com at level 99,
+          st constr, ast constr, stt constr, astt constr at next level).
+
+Inductive seq_eval_small_step :
+    com -> state -> astate -> 
+    com -> state -> astate -> obs -> Prop :=
+  | SSM_Asgn  : forall st ast e n x,
+      aeval st e = n ->
+      <((x := e, st, ast))> -->_([]) <((skip, x !-> n; st, ast))>
+  | SSM_Seq : forall c1 st ast os c1t stt astt c2,
+      <((c1, st, ast))>  -->_(os) <((c1t, stt, astt))>  ->
+      <(((c1;c2), st, ast))>  -->_(os) <(((c1t;c2), stt, astt))>
+  | SSM_Seq_Skip : forall st ast c2,
+      <(((skip;c2), st, ast))>  -->_([]) <((c2, st, ast))>
+  | SSM_If : forall be ct cf st ast,
+      <((if be then ct else cf end, st, ast))> -->_([OBranch (beval st be)])
+      <((match beval st be with
+        | true => ct
+        | false => cf end, st, ast))>
+  | SSM_While : forall be c st ast,
+      <((while be do c end, st, ast))> -->_([])
+      <((if be then c; while be do c end else skip end, st, ast))>
+  | SSM_ARead : forall x a ie st ast i,
+      aeval st ie = i ->
+      i < length (ast a) ->
+      <((x <- a[[ie]], st, ast))> -->_([OARead a i])
+      <((skip, x !-> nth i (ast a) 0; st, ast))>
+  | SSM_Write : forall a ie e st ast i n,
+      aeval st e = n ->
+      aeval st ie = i ->
+      i < length (ast a) ->
+      <((a[ie] <- e, st, ast))> -->_([OAWrite a i])
+      <((skip, st, a !-> upd i (ast a) n; ast))>
+  
+  where "<(( c , st , ast ))> -->_( os )  <(( ct ,  stt , astt ))>" :=
+    (seq_eval_small_step c st ast ct stt astt os).
+
 (* We need to define [seq_same_obs] wrt a small-step semantics, so that this
    hypothesis also gives us something for sequentially infinite executions. *)
 
-Axiom multi_seq : com -> state -> astate -> com -> state -> astate -> obs -> Prop.
+Reserved Notation
+   "'<((' c , st , ast '))>' '-->*_(' os ')' '<((' ct , stt , astt '))>'"
+   (at level 40, c custom com at level 99, ct custom com at level 99,
+    st constr, ast constr, stt constr, astt constr at next level).
 
-Notation "'<((' c , st , ast '))>' '-->*_(' os ')' '<((' ct , stt , astt '))>'"
-  := (multi_seq c st ast ct stt astt os)
-       (at level 40, c custom com at level 99, ct custom com at level 99,
-           st constr, ast constr, stt constr, astt constr at next level).
+Inductive multi_seq (c:com) (st:state) (ast:astate) :
+    com -> state -> astate -> obs -> Prop :=
+  | multi_seq_refl : <((c, st, ast))> -->*_([]) <((c, st, ast))>
+  | multi_seq_trans (c':com) (st':state) (ast':astate) 
+                (c'':com) (st'':state) (ast'':astate)
+                (ds1 ds2 : dirs) (os1 os2 : obs) :
+      <((c, st, ast))> -->_(os1) <((c', st', ast'))> ->
+      <((c', st', ast'))> -->*_(os2) <((c'', st'', ast''))> ->
+      <((c, st, ast))> -->*_(os2++os1) <((c'', st'', ast''))>
+
+  where "<(( c , st , ast ))> -->*_( os )  <(( ct ,  stt , astt ))>" :=
+    (multi_seq c st ast ct stt astt os).
 
 Definition seq_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall stt1 stt2 astt1 astt2 os1 os2 c1 c2,
@@ -186,8 +238,8 @@ Reserved Notation
 
 Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
-  | multi_refl : <((c, st, ast, b))> -->i*_([],[]) <((c, st, ast, b))>
-  | multi_trans (c':com) (st':state) (ast':astate) (b':bool)
+  | multi_ideal_refl : <((c, st, ast, b))> -->i*_([],[]) <((c, st, ast, b))>
+  | multi_ideal_trans (c':com) (st':state) (ast':astate) (b':bool)
                 (c'':com) (st'':state) (ast'':astate) (b'':bool)
                 (ds1 ds2 : dirs) (os1 os2 : obs) :
       <((c, st, ast, b))> -->i_(ds1,os1) <((c', st', ast', b'))> ->
