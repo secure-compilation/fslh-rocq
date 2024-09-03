@@ -139,9 +139,8 @@ Inductive ideal_eval_small_step :
   | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt dst ost c2,
       <(st, ast, b, ds, os)> c1 -->i c1t <(stt, astt, bt, dst, ost)>  ->
       <(st, ast, b, ds, os)> c1;c2 -->i c1t;c2 <(stt, astt, bt, dst, ost)>
-  | ISM_Seq_Skip : forall c1 st ast b ds os stt astt bt dst ost c2,
-      <(st, ast, b, ds, os)> c1 -->i skip <(stt, astt, bt, dst, ost)>  ->
-      <(st, ast, b, ds, os)> c1;c2 -->i c2 <(stt, astt, bt, dst, ost)>
+  | ISM_Seq_Skip : forall st ast b ds os c2,
+      <(st, ast, b, ds, os)> skip;c2 -->i c2 <(st, ast, b, ds, os)>
   | ISM_If : forall be ct cf st ast b ds os,
       <(st, ast, b, DStep :: ds, os)> if be then ct else cf end -->i
       match negb b && beval st be  with 
