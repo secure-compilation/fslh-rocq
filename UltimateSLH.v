@@ -28,11 +28,21 @@ Set Default Goal Selector "!".
 (** We formalize this as a relative security property that doesn't label data at
     all as public or secret. *)
 
+(* We need to define [seq_same_obs] wrt a small-step semantics, so that this
+   hypothesis also gives us something for sequentially infinite executions. *)
+
+Axiom multi_seq : com -> state -> astate -> com -> state -> astate -> obs -> Prop.
+
+Notation "'<((' c , st , ast '))>' '-->*_(' os ')' '<((' ct , stt , astt '))>'"
+  := (multi_seq c st ast ct stt astt os)
+       (at level 40, c custom com at level 99, ct custom com at level 99,
+           st constr, ast constr, stt constr, astt constr at next level).
+
 Definition seq_same_obs c st1 st2 ast1 ast2 : Prop :=
-  forall stt1 stt2 astt1 astt2 os1 os2,
-    <(st1, ast1)> =[ c ]=> <(stt1, astt1, os1)> ->
-    <(st2, ast2)> =[ c ]=> <(stt2, astt2, os2)> ->
-    os1 = os2.
+  forall stt1 stt2 astt1 astt2 os1 os2 c1 c2,
+    <((c, st1, ast1))> -->*_(os1) <((c1, stt1, astt1))> ->
+    <((c, st2, ast2))> -->*_(os2) <((c2, stt2, astt2))> ->
+    (prefix os1 os2) \/ (prefix os2 os1).
 
 Definition spec_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
@@ -126,53 +136,66 @@ Definition ideal_same_obs c st1 st2 ast1 ast2 : Prop :=
 (** * Ideal small-step evaluation relation *)
 
 Reserved Notation
-         "'<(' st , ast , b , ds , os ')>' c '-->i' ct '<(' stt , astt , bt , dst , ost ')>'"
+         "'<((' c , st , ast , b '))>' '-->i_(' ds , os ')' '<((' ct , stt , astt , bt '))>'"
          (at level 40, c custom com at level 99, ct custom com at level 99,
           st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive ideal_eval_small_step :
-    com -> state -> astate -> bool -> dirs -> obs->
-           com -> state -> astate -> bool -> dirs -> obs -> Prop :=
-  | ISM_Asgn  : forall st ast b ds os e n x,
+    com -> state -> astate -> bool ->
+    com -> state -> astate -> bool -> dirs -> obs -> Prop :=
+  | ISM_Asgn  : forall st ast b e n x,
       aeval st e = n ->
-      <(st, ast, b, ds, os)> x := e -->i skip <(x !-> n; st, ast, b, ds, os)>
-  | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt dst ost c2,
-      <(st, ast, b, ds, os)> c1 -->i c1t <(stt, astt, bt, dst, ost)>  ->
-      <(st, ast, b, ds, os)> c1;c2 -->i c1t;c2 <(stt, astt, bt, dst, ost)>
-  | ISM_Seq_Skip : forall st ast b ds os c2,
-      <(st, ast, b, ds, os)> skip;c2 -->i c2 <(st, ast, b, ds, os)>
-  | ISM_If : forall be ct cf st ast b ds os,
-      <(st, ast, b, DStep :: ds, os)> if be then ct else cf end -->i
-      match negb b && beval st be  with 
-      | true => ct 
-      | false => cf end <(st, ast, b, ds, OBranch (negb b && beval st be)::os)>
-  | ISM_If_F : forall be ct cf st ast b ds os,
-      <(st, ast, b, DForce :: ds, os)> if be then ct else cf end -->i
-      match negb b && beval st be  with 
-      | true => cf 
-      | false => ct end <(st, ast, b, ds, OBranch (negb b && beval st be)::os)>
-  | ISM_While : forall be c st ast b ds os,
-      <(st, ast, b, DStep::ds, os)> while be do c end -->i
-      match negb b && beval st be  with 
-        | true => <{{c; while be do c end}}> 
-        | false => <{{skip}}> end <(st, ast, b, ds, OBranch (negb b && beval st be)::os)>
-  | ISM_While_F : forall be c st ast b ds os,
-      <(st, ast, b, DForce::ds, os)> while be do c end -->i
-      match negb b && beval st be  with 
-        | true => <{{skip}}>
-        | false => <{{c; while be do c end}}> end  <(st, ast, b, ds, OBranch (negb b && beval st be)::os)>
-  | ISM_ARead : forall x a ie st ast (b :bool) ds os i,
+      <((x := e, st, ast, b))> -->i_([],[]) <((skip, x !-> n; st, ast, b))>
+  | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt c2,
+      <((c1, st, ast, b))>  -->i_(ds, os) <((c1t, stt, astt, bt))>  ->
+      <(((c1;c2), st, ast, b))>  -->i_(ds, os) <(((c1t;c2), stt, astt, bt))>
+  | ISM_Seq_Skip : forall st ast b c2,
+      <(((skip;c2), st, ast, b))>  -->i_([],[]) <((c2, st, ast, b))>
+  | ISM_If : forall be ct cf st ast b,
+      <((if be then ct else cf end, st, ast, b))> -->i_([DStep],[OBranch (negb b && beval st be)])
+      <((match negb b && beval st be with
+        | true => ct
+        | false => cf end, st, ast, b))>
+  | ISM_If_F : forall be ct cf st ast b,
+      <((if be then ct else cf end, st, ast, b))> -->i_([DForce],[OBranch (negb b && beval st be)])
+      <((match negb b && beval st be with
+        | true => cf
+        | false => ct end, st, ast, b))>
+  | ISM_While : forall be c st ast b,
+      <((while be do c end, st, ast, b))> -->i_([],[])
+      <((if be then c; while be do c end else skip end, st, ast, b))>
+  | ISM_ARead : forall x a ie st ast (b :bool) i,
       (if b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
-      <(st, ast, b, DStep::ds, os)> x <- a[[ie]] -->i skip <(x !-> nth i (ast a) 0; st, ast, b, ds, (OARead a i)::os)>
-  | ISM_Write : forall a ie e st ast (b :bool) ds os i n,
+      <((x <- a[[ie]], st, ast, b))> -->i_([DStep],[OARead a i])
+      <((skip, x !-> nth i (ast a) 0; st, ast, b))>
+  | ISM_Write : forall a ie e st ast (b :bool) i n,
       aeval st e = n ->
       (if b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
-      <(st, ast, b, DStep::ds, os)> a[ie] <- e -->i skip <(st, a !-> upd i (ast a) n; ast, b, ds, (OAWrite a i)::os)>   
+      <((a[ie] <- e, st, ast, b))> -->i_([DStep],[OAWrite a i])
+      <((skip, st, a !-> upd i (ast a) n; ast, b))>
   
-  where "<( st , ast , b , ds , os )> c -->i ct <( stt , astt , bt , dst , ost )>" :=
-    (ideal_eval_small_step c st ast b ds os ct stt astt bt dst ost).
+  where "<(( c , st , ast , b ))> -->i_( ds , os )  <(( ct ,  stt , astt , bt ))>" :=
+    (ideal_eval_small_step c st ast b ct stt astt bt ds os).
+
+Reserved Notation
+         "'<((' c , st , ast , b '))>' '-->i*_(' ds , os ')' '<((' ct , stt , astt , bt '))>'"
+         (at level 40, c custom com at level 99, ct custom com at level 99,
+          st constr, ast constr, stt constr, astt constr at next level).
+
+Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
+    com -> state -> astate -> bool -> dirs -> obs -> Prop :=
+  | multi_refl : <((c, st, ast, b))> -->i*_([],[]) <((c, st, ast, b))>
+  | multi_trans (c':com) (st':state) (ast':astate) (b':bool)
+                (c'':com) (st'':state) (ast'':astate) (b'':bool)
+                (ds1 ds2 : dirs) (os1 os2 : obs) :
+      <((c, st, ast, b))> -->i_(ds1,os1) <((c', st', ast', b'))> ->
+      <((c', st', ast', b'))> -->i*_(ds2,os2) <((c'', st'', ast'', b''))> ->
+      <((c, st, ast, b))> -->i*_(ds1++ds2,os2++os1) <((c'', st'', ast'', b''))>
+
+  where "<(( c , st , ast , b ))> -->i*_( ds , os )  <(( ct ,  stt , astt , bt ))>" :=
+    (multi_ideal c st ast b ct stt astt bt ds os).
 
 (** * Relative Security of Ultimate Speculative Load Hardening *)
 
@@ -535,7 +558,7 @@ Conjecture ideal_eval_final_bit_false : forall c st ast ds stt astt os,
 Conjecture ideal_eval_no_spec : forall c st ast ds stt astt bt os,
   (forall d, In d ds -> d = DStep) ->
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  <(st, ast )> =[ c ]=> <(stt, astt, os)>.
+  <((c, st, ast ))> -->*_(os) <((skip, stt, astt))>.
 
 Conjecture ideal_prefix_dirs : 
   forall c st1 st2 ast1 ast2 b1 b2 ds1 ds2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
@@ -569,7 +592,12 @@ Lemma ideal_dirs_split : forall c st ast b ds stt astt bt os,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   b = false ->
   bt = true ->
-  exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds.
+  exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds
+  (* /\ exists c' st' ast' c'' st'' ast'' os1 os2 os', *)
+  (*   os2 ++ (os' ++ os1) = os /\ *)
+  (*   <((c, st, ast, b))> -->i*_(ds1,os1) <((c', st', ast', b))> /\ *)
+  (*   <((c', st', ast', b))>  -->i_([DForce],os') <((c'', st'', ast'', true))> /\ *)
+  (*   |-i <(st'', ast'', true, ds2)> =[ c'' ]=> <(stt, astt, bt, os2)> *).
 Proof.
   intros c st ast b ds stt astt bt os Hev Hb Hbt.
   induction Hev; subst; simpl; eauto; try discriminate.
@@ -645,7 +673,8 @@ Proof.
     { intros; eapply ideal_eval_final_bit_false in Hev1; eauto. }
     eapply ideal_eval_no_spec in Hev1; try assumption.
     eapply ideal_eval_no_spec in Hev2; try assumption.
-    eauto.
+    eauto. admit. (* <- This fails after change to seq_same_obs
+                   Need to additionally show that |ds| = |os1| = |os2| *)
 Admitted.
 
 Theorem ultimate_slh_relative_secure :

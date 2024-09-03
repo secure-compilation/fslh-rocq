@@ -753,7 +753,7 @@ Definition check_speculative_noninterference P PA P' PA' c hardened : Checker :=
   forAll gen_astate (fun a1 =>
   let r1 := taint_tracking 10 c s1 a1 in
   match r1 with
-  | Some (s1', a1', os1', tvars, tarrs) =>
+  | Some (_s1', _a1', os1', tvars, tarrs) =>
       collect (show (List.length os1')) (
       (* collect (show (List.length (tvars ++ tarrs))) ( *)
       forAll (gen_pub_equiv (extend_pub P tvars) s1) (fun s2 =>
@@ -761,7 +761,7 @@ Definition check_speculative_noninterference P PA P' PA' c hardened : Checker :=
       forAll (gen_pub_equiv_and_same_length (extend_pub PA tarrs) a1) (fun a2 =>
       let r2 := cteval_engine 10 c s2 a2 in
       match r2 with
-      | Some (s2', a2', os2') =>
+      | Some (_s2', _a2', os2') =>
           (* implication (obs_eqb os1' os2') -- no longer needed *)
           (forAllMaybe (gen_spec_eval_sized hardened s1 a1 false 100)
              (fun '(ds, s1', a1', b', os1) =>
