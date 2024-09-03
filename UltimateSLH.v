@@ -82,7 +82,7 @@ Inductive multi_seq (c:com) (st:state) (ast:astate) :
   | multi_seq_refl : <((c, st, ast))> -->*_([]) <((c, st, ast))>
   | multi_seq_trans (c':com) (st':state) (ast':astate) 
                 (c'':com) (st'':state) (ast'':astate)
-                (ds1 ds2 : dirs) (os1 os2 : obs) :
+                (os1 os2 : obs) :
       <((c, st, ast))> -->_(os1) <((c', st', ast'))> ->
       <((c', st', ast'))> -->*_(os2) <((c'', st'', ast''))> ->
       <((c, st, ast))> -->*_(os2++os1) <((c'', st'', ast''))>
