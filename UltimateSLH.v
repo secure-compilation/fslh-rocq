@@ -16,7 +16,7 @@ Set Default Goal Selector "!".
 
 (** * Relative security *)
 
-(** We would like to also enforce security for arbitrary programs that are do
+(** We would like to also enforce security for arbitrary programs that do
     not follow the cryptographic constant time programming discipline
     (i.e. which do not satisfy [ct_well_typed]). The goal is to achieve a
     relative notion of security which intuitively ensures that the protected
@@ -104,8 +104,8 @@ Definition spec_same_obs c st1 st2 ast1 ast2 : Prop :=
     <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
     os1 = os2.
 
-Definition relative_secure (trans : com -> com) (c:com)
-    (st1 st2 : state) (ast1 ast2 : astate): Prop :=
+Definition relative_secure (trans : com -> com)
+    (c:com) (st1 st2 : state) (ast1 ast2 : astate): Prop :=
   seq_same_obs c st1 st2 ast1 ast2 ->
   spec_same_obs (trans c) st1 st2 ast1 ast2.
 
@@ -210,12 +210,14 @@ Inductive ideal_eval_small_step :
   | ISM_Seq_Skip : forall st ast b c2,
       <(((skip;c2), st, ast, b))>  -->i_[]^^[] <((c2, st, ast, b))>
   | ISM_If : forall be ct cf st ast b,
-      <((if be then ct else cf end, st, ast, b))> -->i_[DStep]^^[OBranch (negb b && beval st be)]
+      <((if be then ct else cf end, st, ast, b))>
+      -->i_[DStep]^^[OBranch (negb b && beval st be)]
       <((match negb b && beval st be with
         | true => ct
         | false => cf end, st, ast, b))>
   | ISM_If_F : forall be ct cf st ast b,
-      <((if be then ct else cf end, st, ast, b))> -->i_[DForce]^^[OBranch (negb b && beval st be)]
+      <((if be then ct else cf end, st, ast, b))>
+      -->i_[DForce]^^[OBranch (negb b && beval st be)]
       <((match negb b && beval st be with
         | true => cf
         | false => ct end, st, ast, b))>
@@ -259,7 +261,7 @@ Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
 
 (* HIDE *)
 (* Some intuition about Gilles lemma 1 from the USLH paper,
-   but now we plan to prove it directly, like determinism *)
+   but now we plan to prove it directly, like determinism (see below) *)
 
 Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
   match c with
@@ -292,7 +294,9 @@ Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
       match ds with
       | DStep :: ds' => Some ([OBranch false],ds')
       | DForce :: ds' =>
-          match observations c (* <- should actually be: while be do c end *) ds' with
+          (* `c` below should actually be `while be do c end`,
+              but then termination no longer obvious  *)
+          match observations c ds' with
           | Some (os,ds'') => Some (os++[OBranch true],ds'')
           | None => None
           end
@@ -333,8 +337,8 @@ Lemma gilles_lemma : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2
 Admitted.
 
 (** As in SpecCT and Spectre Declassified, an important step in the proof is
-    relating the ideal semantics with the speculative semantics of the hardened
-    program, by means of a backwards compiler correctness (BCC) result. *)
+    relating the speculative semantics of the hardened program with the ideal
+    semantics, by means of a backwards compiler correctness (BCC) result. *)
 
 Lemma ideal_unused_update : forall st ast b ds c st' ast' b' os X n,
   unused X c ->
@@ -385,6 +389,9 @@ Lemma ultimate_slh_flag : forall c ds,
   ultimate_slh_flag_prop c ds.
 Admitted.
 
+(* LATER: Prove the used lemmas [ultimate_slh_flag], [ideal_unused_update_rev],
+   [spec_eval_preserves_nonempty_arrs] and [ideal_unused_update] *)
+
 Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
   forall st ast (b: bool) st' ast' b' os,
     nonempty_arrs ast ->
@@ -392,9 +399,6 @@ Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
     st "b" = (if b then 1 else 0) ->
     <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
     |-i <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
-
-(* LATER: Prove the used lemmas [ultimate_slh_flag], [ideal_unused_update_rev],
-   [spec_eval_preserves_nonempty_arrs] and [ideal_unused_update] *)
 
 Lemma ultimate_slh_bcc : forall c ds,
   ultimate_slh_bcc_prop c ds.
@@ -684,7 +688,8 @@ Proof.
     apply prefix_cons; apply H.
 Qed.
 
-(* This is no longer used, since we generalized it to [ideal_exec_split] *)
+(* This is no longer used, since we generalized it to [ideal_exec_split]?
+   (unclear, see next comment) *)
 Lemma ideal_dirs_split : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds .
@@ -721,6 +726,9 @@ Proof.
     + reflexivity.
 Qed.
 
+(* SOONER: Do we really need nothing about the ds in the conclusion?
+   I was expecting to see `DForce::ds2 = ds`.
+   Without that execution of c2 could be quite different? *)
 Conjecture ideal_exec_split :  forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   exists c1 st1 ast1 os1 c2 st2 ast2 ds2 os2 os3,
@@ -739,7 +747,7 @@ Proof.
   destruct bt1 eqn:Eqbt1.
   - (* with speculation *)
     assert (Hlen: length os1 = length os2).
-    { apply ideal_obs_length in Hev1, Hev2. rewrite Hev1 in Hev2. apply Hev2. }
+    { apply ideal_obs_length in Hev1, Hev2. congruence. }
     eapply ideal_exec_split in Hev1, Hev2.
     destruct Hev1  as [c11 [st21 [ast21 [os21 [c21 [st31 [ast31 [ds21 [os31 [os41 [H11 [H21 [H31 H41] ] ] ] ] ] ] ] ] ] ] ] ].
     destruct Hev2  as [c12 [st22 [ast22 [os22 [c22 [st32 [ast32 [ds22 [os32 [os42 [H12 [H22 [H32 H42] ] ] ] ] ] ] ] ] ] ] ] ].
@@ -770,7 +778,6 @@ Theorem ultimate_slh_relative_secure :
     unused "b" c ->
     st1 "b" = 0 ->
     st2 "b" = 0 ->
-    (* extra assumptions on astates *)
     nonempty_arrs ast1 ->
     nonempty_arrs ast2 ->
     relative_secure ultimate_slh c st1 st2 ast1 ast2.
