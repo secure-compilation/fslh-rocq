@@ -122,8 +122,7 @@ Fixpoint ultimate_slh (c:com) :=
   | <{{while be do c end}}> =>
       <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c end;
          "b" := ("b" = 0 && be) ? 1 : "b"}}>
-  | <{{x <- a[[i]]}}> =>
-    <{{x <- a[[("b" = 1) ? 0 : i]] }}>
+  | <{{x <- a[[i]]}}> => <{{x <- a[[("b" = 1) ? 0 : i]] }}>
   | <{{a[i] <- e}}> => <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 

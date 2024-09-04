@@ -204,6 +204,8 @@ where "P '&' PA ',' pc '|--' c" := (well_typed P PA pc c).
 Definition nonempty_arrs (ast :astate) :Prop :=
   forall a, 0 < length (apply ast a).
 
+(* TODO: This hypothesis is too weak and needs to be changed to execution
+   prefixes in small-step semantics, like in UltimateSHL.v *)
 Definition seq_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall stt1 stt2 astt1 astt2 os1 os2,
     <(st1, ast1)> =[ c ]=> <(stt1, astt1, os1)> ->
