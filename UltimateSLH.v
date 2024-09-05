@@ -92,6 +92,21 @@ Inductive multi_seq (c:com) (st:state) (ast:astate) :
   where "<(( c , st , ast ))> -->*^ os <(( ct ,  stt , astt ))>" :=
     (multi_seq c st ast ct stt astt os).
 
+Lemma seq_big_to_small_step : forall c st ast stt astt os,
+  <(st, ast)> =[ c ]=> <(stt, astt, os)> ->
+  <((c, st, ast))> -->*^os <((skip, stt, astt))>.
+Proof.
+Admitted.
+
+Lemma seq_small_to_big_step : forall c st ast stt astt os,
+  <((c, st, ast))> -->*^os <((skip, stt, astt))> ->
+  <(st, ast)> =[ c ]=> <(stt, astt, os)>.
+Proof.
+Admitted.
+
+
+(** * Defintion of Relative Secure *)
+
 Definition seq_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall stt1 stt2 astt1 astt2 os1 os2 c1 c2,
     <((c, st1, ast1))> -->*^os1 <((c1, stt1, astt1))> ->
@@ -255,6 +270,19 @@ Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
 
   where "<(( c , st , ast , b ))> -->i*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (multi_ideal c st ast b ct stt astt bt ds os).
+
+
+Lemma ideal_big_to_small_step : forall c st ast b stt astt bt ds os,
+  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  <((c, st, ast, b))> -->i*_ds^^os <((skip, stt, astt, bt))>.
+Proof.
+Admitted.
+
+Lemma ideal_small_to_big_step : forall c st ast b stt astt bt ds os,
+  <((c, st, ast, b))> -->i*_ds^^os <((skip, stt, astt, bt))> ->
+  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)>.
+Proof.
+Admitted.
 
 (** * Relative Security of Ultimate Speculative Load Hardening *)
 
@@ -687,8 +715,8 @@ Proof.
     apply prefix_cons; apply H.
 Qed.
 
-(* This is no longer used, since we generalized it to [ideal_exec_split]?
-   (unclear, see next comment) *)
+(* HIDE *)
+(* HIDE: No longer used but maybe helpful to proof [ideal_exec_split] *)
 Lemma ideal_dirs_split : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds .
@@ -724,6 +752,8 @@ Proof.
     + intros d H; destruct H.
     + reflexivity.
 Qed.
+
+(* /HIDE *)
 
 (* SOONER: Do we really need nothing about the ds in the conclusion?
    I was expecting to see `DForce::ds2 = ds`.
