@@ -315,7 +315,7 @@ Definition obs := list observation.
    observations. *)
 
 (** [[[
-        
+
           ----------------------------------------     (CTE_Skip)
           <(st , ast)> =[ skip ]=> <(st, ast, [])>
 
@@ -323,7 +323,7 @@ Definition obs := list observation.
       --------------------------------------------------    (CTE_Asgn)
       <(st, ast)> =[ x := e ]=> <(x !-> n; st, ast, [])>
 
-            <(st, ast)> =[ c1 ]=> <(st', ast', os1)>    
+            <(st, ast)> =[ c1 ]=> <(st', ast', os1)>
             <(st', ast')> =[ c2 ]=> <(st'', ast'', os2)>
       -----------------------------------------------------   (CTE_Seq)
       <(st, ast)>  =[ c1 ; c2 ]=> <(st'', ast'', os2++os1)>
@@ -346,7 +346,7 @@ Definition obs := list observation.
                     i < length (ast a)
   --------------------------------------------------------------------------------    (* CTE_AREad *)
   <(st, ast)> =[ x <- a[[ie]] ]=> <(x !-> nth i (ast a) 0; st, ast, [OARead a i])>
-  
+
                                 aeval st e = n
                                 aeval st ie = i
                                 i < length (ast a)
@@ -458,13 +458,13 @@ Proof.
   remember (A!-> [1;2;3]; _!-> []) as ast.
   assert (Heval1: <(st1, ast)> =[ct_insecure_prog]=> <(X!->2; st1, ast, [OARead A 1])>).
   { unfold ct_insecure_prog; subst.
-    replace (X !-> 2; Y !-> 1; _ !-> 0) 
+    replace (X !-> 2; Y !-> 1; _ !-> 0)
       with (X !-> nth 1 ((A!-> [1;2;3]; _!-> []) A) 0; Y !-> 1; _ !-> 0)
         by (reflexivity).
     eapply CTE_ARead; simpl; auto. }
   assert (Heval2: <(st2, ast)> =[ct_insecure_prog]=> <(X!->3; st2, ast, [OARead A 2])>).
   { unfold ct_insecure_prog; subst.
-    replace (X !-> 3; Y !-> 2; _ !-> 0) 
+    replace (X !-> 3; Y !-> 2; _ !-> 0)
       with (X !-> nth 2 ((A!-> [1;2;3]; _!-> []) A) 0; Y !-> 2; _ !-> 0)
         by (reflexivity).
       eapply CTE_ARead; simpl; auto. }
@@ -877,7 +877,7 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
    two IEEE SP 2023 papers. The fact that their rule [Seq-Skip] requires a step
    seems wrong if first command in the sequence is already skip. Also the way
    they define final results seem wrong for stuck fences, and that would either
-   need to be fixed to include stuck fences deep inside as final results 
+   need to be fixed to include stuck fences deep inside as final results
    or to bubble up stuck fences to the top (error monad, see prev point). *)
 
 (* HIDE: One design decision here is to neither consume DSteps not to generate
@@ -904,7 +904,7 @@ Definition spec_ct_secure P PA c :=
 
 (** ** Example constant-time program that is insecure under speculative execution. *)
 
-Definition spec_insecure_prog := 
+Definition spec_insecure_prog :=
   <{{ if Z <= 0 then
         X <- AP[[Z]];
         if X <= 5 then Y := 1 else Y := 0 end
@@ -927,14 +927,14 @@ Proof.
     remember (DForce :: ([DLoad "AS" 1] ++ [DStep])) as ds.
     remember (([OBranch true] ++ [OARead "AP" 1]) ++ [OBranch false]) as os1.
     remember (([OBranch false] ++ [OARead "AP" 1])++ [OBranch false]) as os2.
-    assert (Heval1: 
+    assert (Heval1:
     <(st, ast1, false, ds )> =[ spec_insecure_prog ]=> <( Y!-> 1; X!-> 3; st, ast1, true, os1)>).
     { unfold spec_insecure_prog; subst.
       eapply Spec_If_F. eapply Spec_Seq.
       - eapply Spec_ARead_U; simpl; eauto.
       - replace ([OBranch true]) with ([] ++ [OBranch true]) by reflexivity.
         eapply Spec_If; simpl. eapply Spec_Asgn; eauto. }
-    assert (Heval2: 
+    assert (Heval2:
       <(st, ast2, false, ds )> =[ spec_insecure_prog ]=> <( Y!-> 0; X!-> 7; st, ast2, true, os2)>).
       { unfold spec_insecure_prog; subst.
         eapply Spec_If_F. eapply Spec_Seq.
@@ -948,7 +948,7 @@ Proof.
       destruct (String.eqb_spec "AS" x) as [HeqAS | HneqAS].
       * subst. do 2 rewrite t_update_eq. reflexivity.
       * subst. do 2 rewrite t_update_eq. reflexivity.
-      * subst. rewrite t_update_neq in Hx; [| assumption]. 
+      * subst. rewrite t_update_neq in Hx; [| assumption].
         rewrite t_update_eq in Hx. discriminate.
       * do 4 (rewrite t_update_neq; [| assumption]). reflexivity.
 Qed.
@@ -1045,33 +1045,33 @@ Proof.
       apply (Hstep (DStore a' i')). apply in_eq.
   - (* <- *)
     induction H.
-    + (* CTE_Skip *) 
+    + (* CTE_Skip *)
       exists []; split; [| eapply Spec_Skip].
       simpl. intros d Contra; destruct Contra.
     + (* CTE_Asgn *)
       exists []; split; [| eapply Spec_Asgn; assumption].
       simpl. intros d Contra; destruct Contra.
     + (* CTE_Seq *)
-      destruct IHcteval1 as [ds1 [Hds1 Heval1] ]. 
+      destruct IHcteval1 as [ds1 [Hds1 Heval1] ].
       destruct IHcteval2 as [ds2 [Hds2 Heval2] ].
       exists (ds1 ++ ds2). split; [| eapply Spec_Seq; eassumption].
-      intros d HdIn. apply in_app_or in HdIn. destruct HdIn as [Hin1 | Hin2]. 
+      intros d HdIn. apply in_app_or in HdIn. destruct HdIn as [Hin1 | Hin2].
       * apply Hds1 in Hin1. assumption.
       * apply Hds2 in Hin2. assumption.
     + (* CTE_IfTrue *)
       destruct IHcteval as [ds [Hds Heval] ]. exists (DStep :: ds). split.
-      * intros d HdIn. apply in_inv in HdIn. 
-        destruct HdIn as [Heq | HIn]; [symmetry; assumption | apply Hds; assumption]. 
+      * intros d HdIn. apply in_inv in HdIn.
+        destruct HdIn as [Heq | HIn]; [symmetry; assumption | apply Hds; assumption].
       * rewrite <- H. eapply Spec_If. rewrite H; simpl. assumption.
     + (* CTE_IfFalse *)
       destruct IHcteval as [ds [Hds Heval] ]. exists (DStep :: ds). split.
-      * intros d HdIn. apply in_inv in HdIn. 
-        destruct HdIn as [Heq | HIn]; [symmetry; assumption | apply Hds; assumption]. 
+      * intros d HdIn. apply in_inv in HdIn.
+        destruct HdIn as [Heq | HIn]; [symmetry; assumption | apply Hds; assumption].
       * rewrite <- H. eapply Spec_If. rewrite H; simpl. assumption.
     + (* CTE_While *)
-      destruct IHcteval as [ds [Hds Heval] ]. exists ds. 
+      destruct IHcteval as [ds [Hds Heval] ]. exists ds.
       split; [assumption |]. eapply Spec_While; assumption.
-    + (* CTE_ARead *) 
+    + (* CTE_ARead *)
       exists [DStep]. split.
       * simpl. intros d HdIn. destruct HdIn as [Heq | Contra]; [| destruct Contra].
         symmetry. assumption.
@@ -1081,7 +1081,7 @@ Proof.
       * simpl. intros d HdIn. destruct HdIn as [Heq | Contra]; [| destruct Contra].
         symmetry. assumption.
       * eapply Spec_Write; assumption.
-Qed. 
+Qed.
 
 (* HIDE: This is Lemma 2 from Spectre Declassified *)
 
@@ -1096,7 +1096,7 @@ Lemma ct_well_typed_seq_spec_eval_ct_secure :
 Proof.
   intros P PA c st1 st2 ast1 ast2 st1' st2' ast1' ast2' os1 os2 Hwt
     HP HPA Heval1 Heval2.
-  apply cteval_equiv_seq_spec_eval in Heval1, Heval2. 
+  apply cteval_equiv_seq_spec_eval in Heval1, Heval2.
   apply ct_well_typed_ct_secure in Hwt. eapply Hwt; eauto.
 Qed.
 
@@ -1215,11 +1215,11 @@ Proof.
     assert (contra : DForce = DStep). { apply Hds. left. reflexivity. }
     inversion contra.
   - (* ARead *)
-    destruct b eqn:Eqb; [discriminate |].  
+    destruct b eqn:Eqb; [discriminate |].
     replace (x !-> nth i (ast a) 0; st)
       with (x !-> if b && P x then 0 else nth i (ast a) 0; st)
         by (rewrite Eqb; simpl; reflexivity).
-    rewrite <- Eqb. eapply Ideal_ARead; eauto. 
+    rewrite <- Eqb. eapply Ideal_ARead; eauto.
   - (* AREad_U *) discriminate.
 Qed.
 
@@ -1243,7 +1243,7 @@ Lemma seq_eval_ideal_eval_ind2 : forall P c s a b ds s' a' b' os,
 Proof. (* proof really the same as gen1 *)
   intros P c s a b ds s' a' b' os Hds H Eb Eb'.
   induction H; try constructor; eauto.
-  - (* Seq *) 
+  - (* Seq *)
     assert(b' = false).
     { destruct b' eqn:Eqb'; [| reflexivity].
       apply speculation_needs_force_ideal in H; try tauto.
@@ -1259,8 +1259,8 @@ Proof. (* proof really the same as gen1 *)
     inversion contra.
   - (* ARead *)
     destruct b eqn:Eqb; [discriminate |]; simpl.
-    eapply Spec_ARead; eauto. 
-  - discriminate. 
+    eapply Spec_ARead; eauto.
+  - discriminate.
 Qed.
 
 (* HIDE: This is Lemma 3 from Spectre Declassified *)
@@ -1328,7 +1328,7 @@ Qed.
 Lemma prefix_app : forall {X:Type} {ds1 ds2 ds0 ds3 : list X},
   prefix (ds1 ++ ds2) (ds0 ++ ds3) ->
   prefix ds1 ds0 \/ prefix ds0 ds1.
-Proof. 
+Proof.
   intros X ds1. induction ds1 as [| d1 ds1' IH]; intros ds2 ds0 ds3 H.
   - left. apply prefix_nil.
   - destruct ds0 as [| d0 ds0'] eqn:D0.
@@ -1351,7 +1351,7 @@ Qed.
 Lemma app_eq_prefix : forall {X:Type} {ds1 ds2 ds1' ds2' : list X},
   ds1 ++ ds2 = ds1' ++ ds2' ->
   prefix ds1 ds1' \/ prefix ds1' ds1.
-Proof. 
+Proof.
   intros X ds1. induction ds1 as [| h1 t1 IH]; intros ds2 ds1' ds2' H.
   - left. apply prefix_nil.
   - destruct ds1' as [| h1' t1'] eqn:D1'.
@@ -1374,7 +1374,7 @@ Proof.
   destruct (String.eqb_spec X x) as [Heq | Hneq].
   - subst. do 2 rewrite t_update_eq. reflexivity.
   - do 2 (rewrite t_update_neq;[| auto]). eapply Hequiv; eauto.
-Qed. 
+Qed.
 
 Lemma pub_equiv_update_secret : forall P {A:Type}
     (t1 t2 : total_map A) (X :string) (a1 a2 :A),
@@ -1411,10 +1411,10 @@ Proof.
   - (* Skip *) auto.
   - (* Asgn *) split4; auto.
     destruct (P x) eqn:EqPx.
-    + eapply pub_equiv_update_public; eauto. 
-      eapply noninterferent_aexp; eauto. 
+    + eapply pub_equiv_update_public; eauto.
+      eapply noninterferent_aexp; eauto.
       destruct l; [auto | simpl in H14; discriminate].
-    + eapply pub_equiv_update_secret; eauto. 
+    + eapply pub_equiv_update_secret; eauto.
   - (* Seq *)
     destruct Hds as [Hpre | Hpre]; apply prefix_app in Hpre as Hds1.
     + (* prefix (ds1 ++ ds2) (ds0 ++ ds3) *)
@@ -1437,7 +1437,7 @@ Proof.
       firstorder; congruence.
     + apply pub_equiv_sym. eassumption.
     + eassumption.
-  - (* IF; contra *) 
+  - (* IF; contra *)
     apply prefix_or_heads in Hds; inversion Hds.
   - (* IF; contra *)
      apply prefix_or_heads in Hds; inversion Hds.
@@ -1460,32 +1460,32 @@ Proof.
       destruct b2' eqn:Eqb2'; simpl; [reflexivity |].
       unfold can_flow in H18. eapply orb_true_iff in H18.
       destruct H18 as [Hapub | Contra]; [| simpl in Contra; discriminate].
-      eapply Haeq in Hapub; [| reflexivity]. rewrite Hapub. 
+      eapply Haeq in Hapub; [| reflexivity]. rewrite Hapub.
       eapply noninterferent_aexp in Heq; eauto. rewrite Heq.
       reflexivity.
     + eapply pub_equiv_update_secret; eauto.
   - (* ARead_U *) split4; eauto.
     + destruct (P x) eqn:EqPx.
       * simpl. eapply pub_equiv_update_public; eauto.
-      * eapply pub_equiv_update_secret; eauto.  
+      * eapply pub_equiv_update_secret; eauto.
     + apply prefix_or_heads in Hds. inversion Hds.
   - (* ARead *) split4; eauto.
     + destruct (P x) eqn:EqPx.
       * eapply pub_equiv_update_public; eauto.
       * eapply pub_equiv_update_secret; eauto.
-    + apply prefix_or_heads in Hds. inversion Hds. 
+    + apply prefix_or_heads in Hds. inversion Hds.
   - (* Aread_U *) split4; eauto.
     + destruct (P x) eqn:EqPx.
       * eapply pub_equiv_update_public; eauto.
       * eapply pub_equiv_update_secret; eauto.
-    + apply prefix_or_heads in Hds. inversion Hds. reflexivity. 
+    + apply prefix_or_heads in Hds. inversion Hds. reflexivity.
   - (* Write *) split4; eauto. intro Hb2'.
     destruct (PA a) eqn:EqPAa.
     + eapply pub_equiv_update_public; eauto.
       destruct l eqn:Eql.
       * eapply noninterferent_aexp in H19, H20; eauto. rewrite H19, H20.
         apply Haeq in Hb2'. apply Hb2' in EqPAa. rewrite EqPAa. reflexivity.
-      * simpl in H21. discriminate.  
+      * simpl in H21. discriminate.
     + eapply pub_equiv_update_secret; eauto.
   - (* Write_U; contra *) apply prefix_or_heads in Hds. inversion Hds.
   - (* Write; contra *) apply prefix_or_heads in Hds. inversion Hds.
@@ -1619,7 +1619,7 @@ Open Scope string_scope.
 (* Even something as simple as [sel_slh_flag] below turns out to be hard
    to prove by induction on [com] or [spec_eval], in the [While] or [Spec_While] case,
    since it has the flavour of backwards compiler correctness (BCC).
-   Therefore we use the induction principal [prog_size_ind], which 
+   Therefore we use the induction principal [prog_size_ind], which
    is statet further below. *)
 
 (* CH: Here are a couple of failed attempts at generalizing to while loops. *)
@@ -1670,7 +1670,7 @@ Lemma sel_slh_flag_gen : forall cc P s a (b:bool) ds s' a' (b':bool) os,
     s "b" = (if b then 1 else 0) ->
     s' "b" = (if b' then 1 else 0).
 Proof.
-  intros cc P s a b ds s' a' b' os H. induction H; intros sc Hequiv Hunused Hsb. 
+  intros cc P s a b ds s' a' b' os H. induction H; intros sc Hequiv Hunused Hsb.
   6:{ (* While case now provable *)
   eapply IHspec_eval; eauto. eapply cequiv_trans; eauto.
   apply cequiv_while_step. }
@@ -1707,12 +1707,12 @@ Definition prog_size (c :com) (ds :dirs) :nat := com_size c + length ds.
 
 (** The induction principle on [prog_size] *)
 
-Axiom prog_size_ind : 
+Axiom prog_size_ind :
   forall P : com -> dirs -> Prop,
-  (forall c ds, 
-    ( forall c' ds', 
-      prog_size c' ds' < prog_size c ds -> 
-      P c' ds') -> P c ds  ) -> 
+  (forall c ds,
+    ( forall c' ds',
+      prog_size c' ds' < prog_size c ds ->
+      P c' ds') -> P c ds  ) ->
   (forall c ds, P c ds).
 
 (* SOONER: we should prove this *)
@@ -1720,15 +1720,15 @@ Axiom prog_size_ind :
 (** The proof of [sel_slh_flag] *)
 
 Lemma prog_size_monotonic: forall c1 ds1 c2 ds2,
-  (com_size c1 < com_size c2 /\ length ds1 <= length ds2 ) \/ 
+  (com_size c1 < com_size c2 /\ length ds1 <= length ds2 ) \/
   (com_size c1 <= com_size c2 /\ length ds1 < length ds2) ->
   prog_size c1 ds1 < prog_size c2 ds2.
 Proof.
-  intros c1 ds1 c2 ds2 [ [Hcom Hdir] | [Hcom Hdir] ]; 
+  intros c1 ds1 c2 ds2 [ [Hcom Hdir] | [Hcom Hdir] ];
   unfold prog_size; lia.
 Qed.
 
-(** Based on the Lemma [prog_size_monotonic] we can build a tactic to solve 
+(** Based on the Lemma [prog_size_monotonic] we can build a tactic to solve
     the subgoals in the form of [prog_size c' ds' < prog_size c ds],
     which will be produced by [prog_size_ind].*)
 
@@ -1739,7 +1739,7 @@ Ltac prog_size_auto :=
         [| repeat rewrite app_length]; lia);
   try ( apply prog_size_monotonic; left; split; simpl;
         [auto | repeat rewrite app_length; lia] ).
-    
+
 (** To properly apply [prog_size_ind], we need to state [sel_slh_flag]
     as a proposition of type [com -> dirs -> Prop]. Therefore we define the
     following: *)
@@ -1760,7 +1760,7 @@ Proof.
   - (* Asgn *)
     inversion Heval; subst. rewrite t_update_neq; tauto.
   - (* Seq *)
-    inversion Heval; subst; clear Heval. 
+    inversion Heval; subst; clear Heval.
     apply IH in H1; try tauto.
     + apply IH in H10; try tauto. prog_size_auto.
     + prog_size_auto.
@@ -1790,7 +1790,7 @@ Proof.
         inversion H1; subst; clear H1.
         apply IH in H11; try tauto.
         { prog_size_auto. }
-        { rewrite t_update_eq. simpl. rewrite Eqnbe. reflexivity. } 
+        { rewrite t_update_eq. simpl. rewrite Eqnbe. reflexivity. }
   - (* While *)
       inversion Heval; subst; clear Heval.
       inversion H1; subst; clear H1.
@@ -1798,7 +1798,7 @@ Proof.
       + (* non-speculative *)
         destruct (beval st be) eqn:Eqnbe.
         * inversion H12; subst; clear H12.
-          assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
+          assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)>
               =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', (os2++os3)%list)> ).
           { simpl. eapply Spec_Seq; eassumption. }
           apply IH in Hwhile; eauto.
@@ -1818,7 +1818,7 @@ Proof.
           inversion H10; subst; simpl.
           rewrite t_update_eq, Eqnbe; simpl. reflexivity.
         * inversion H12; subst; clear H12.
-          assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)> 
+          assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)>
               =[sel_slh P <{{while be do c end}}>]=> <(st', ast', b', (os2++os3)%list )>).
           { simpl. eapply Spec_Seq; eassumption. }
           apply IH in Hwhile; eauto.
@@ -1832,12 +1832,12 @@ Proof.
   - (* ARead *)
     destruct (P x) eqn:Eqnbe.
     + inversion Heval; subst; clear Heval.
-      inversion H10; subst; clear H10. 
+      inversion H10; subst; clear H10.
       rewrite t_update_neq; [| tauto].
       inversion H1; subst;
       try (rewrite t_update_neq; [assumption| tauto]).
     + inversion Heval; subst;
-      try (rewrite t_update_neq; [assumption| tauto]).   
+      try (rewrite t_update_neq; [assumption| tauto]).
 Qed.
 
 (** We now prove that [sel_slh] implies the ideal semantics. *)
@@ -1848,7 +1848,7 @@ Lemma ideal_unused_same : forall P st ast b ds c st' ast' b' os X,
   unused X c ->
   P |- <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> ->
   st' X = st X.
-Proof. 
+Proof.
   intros P st ast b ds c st' ast' b' os X Hu Heval.
   induction Heval; simpl in Hu; try reflexivity; try (rewrite t_update_neq; tauto).
   - (* Seq *) rewrite IHHeval2; [| tauto]. rewrite IHHeval1; [| tauto]. reflexivity.
@@ -1857,17 +1857,17 @@ Proof.
     + apply IHHeval; tauto.
   - (* If_F *) destruct ( beval st be)  eqn:Dbe.
     + apply IHHeval; tauto.
-    + apply IHHeval; tauto. 
+    + apply IHHeval; tauto.
   - (* While *) apply IHHeval. simpl. tauto.
 Qed.
 (* /HIDE *)
 
-Lemma aeval_beval_unused_update : forall X st n, 
-  (forall ae, a_unused X ae -> 
+Lemma aeval_beval_unused_update : forall X st n,
+  (forall ae, a_unused X ae ->
     aeval (X !-> n; st) ae = aeval st ae) /\
-  (forall be, b_unused X be -> 
+  (forall be, b_unused X be ->
     beval (X !-> n; st) be = beval st be).
-Proof. 
+Proof.
   intros X st n. apply aexp_bexp_mutind; intros;
   simpl in *; try reflexivity;
   try (
@@ -1897,14 +1897,14 @@ Proof.
   intros P st ast b ds c st' ast' b' os X n Hu H.
   induction H; simpl in Hu.
   - (* Skip *) econstructor.
-  - (* Asgn *) 
+  - (* Asgn *)
     rewrite t_update_permute; [| tauto].
     econstructor. rewrite aeval_unused_update; tauto.
   - (* Seq *)
-    econstructor. 
+    econstructor.
     + apply IHideal_eval1; tauto.
     + apply IHideal_eval2; tauto.
-  - (* If *) 
+  - (* If *)
     rewrite <- beval_unused_update with (X:=X) (n:=n); [| tauto].
     econstructor.
     rewrite beval_unused_update; [ | tauto].
@@ -1937,7 +1937,7 @@ Lemma ideal_unused_update : forall P st ast b ds c st' ast' b' os X n,
   P |- <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)> ->
   P |- <(st, ast, b, ds)> =[ c ]=> <(X !-> st X; st', ast', b', os)>.
 Proof.
-  intros P st ast b ds c st' ast' b' os X n Hu Heval. 
+  intros P st ast b ds c st' ast' b' os X n Hu Heval.
   eapply ideal_unused_overwrite with (X:=X) (n:=(st X)) in Heval; [| assumption].
   do 2 rewrite t_update_shadow in Heval. rewrite t_update_same in Heval. assumption.
 Qed.
@@ -1968,11 +1968,11 @@ Proof.
   try (destruct (P x); discriminate).
   - (* Skip *)
     rewrite t_update_same. apply Ideal_Skip.
-  - (* Asgn *) 
+  - (* Asgn *)
     rewrite t_update_permute; [| tauto].
     rewrite t_update_same.
     constructor. reflexivity.
-  - (* Seq *) 
+  - (* Seq *)
     eapply Ideal_Seq.
     + apply IH in H1; try tauto.
       * eassumption.
@@ -1982,11 +1982,11 @@ Proof.
       * eapply ideal_unused_update_rev; try tauto.
       * prog_size_auto.
   (* IF *)
-  - (* non-speculative *) 
-    destruct (beval st be) eqn:Eqnbe; inversion H10; 
+  - (* non-speculative *)
+    destruct (beval st be) eqn:Eqnbe; inversion H10;
     inversion H1; subst; clear H10; clear H1; simpl in *.
     + apply IH in H11; try tauto.
-      * replace (OBranch true) with (OBranch (beval st be)) 
+      * replace (OBranch true) with (OBranch (beval st be))
           by (rewrite <- Eqnbe; reflexivity).
         apply Ideal_If. rewrite Eqnbe.
         rewrite Eqnbe in H11. rewrite t_update_same in H11.
@@ -1995,7 +1995,7 @@ Proof.
       * rewrite t_update_eq. rewrite Eqnbe. assumption.
     + (* analog to true case *)
       apply IH in H11; try tauto.
-      * replace (OBranch false) with (OBranch (beval st be)) 
+      * replace (OBranch false) with (OBranch (beval st be))
           by (rewrite <- Eqnbe; reflexivity).
         apply Ideal_If. rewrite Eqnbe. rewrite Eqnbe in H11.
         rewrite t_update_same in H11. rewrite app_nil_r.
@@ -2005,21 +2005,21 @@ Proof.
   - (* speculative *)
     destruct (beval st be) eqn:Eqnbe; inversion H10; inversion H1;
     subst; simpl in *; clear H10; clear H1; rewrite Eqnbe in H11.
-    + replace (OBranch true) with (OBranch (beval st be)) 
+    + replace (OBranch true) with (OBranch (beval st be))
          by (rewrite <- Eqnbe; reflexivity).
       apply Ideal_If_F. rewrite Eqnbe. apply IH in H11; try tauto.
       * rewrite t_update_eq in H11.
         apply ideal_unused_update in H11; try tauto.
         rewrite app_nil_r. apply H11.
-      * prog_size_auto. 
+      * prog_size_auto.
     + (* analog to true case *)
-      replace (OBranch false) with (OBranch (beval st be)) 
+      replace (OBranch false) with (OBranch (beval st be))
         by (rewrite <- Eqnbe; reflexivity).
       apply Ideal_If_F. rewrite Eqnbe. apply IH in H11; try tauto.
       * rewrite t_update_eq in H11.
         apply ideal_unused_update in H11; try tauto.
         rewrite app_nil_r. apply H11.
-      * prog_size_auto. 
+      * prog_size_auto.
   - (* While *)
     eapply Ideal_While.
     inversion H1; subst; clear H1.
@@ -2033,7 +2033,7 @@ Proof.
       * inversion H12; subst; clear H12.
         inversion H1; subst; clear H1.
         inversion H2; subst; clear H2; simpl in *.
-        assert(Hwhile: <(st'1, ast'1, b'1, ds2)> 
+        assert(Hwhile: <(st'1, ast'1, b'1, ds2)>
           =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
         { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
           replace os2 with ([] ++ os2)%list by reflexivity.
@@ -2056,7 +2056,7 @@ Proof.
       assert(Lnil: os2 = [] /\ ds2 = []).
       { inversion H10; subst; eauto. }
       destruct Lnil; subst; simpl.
-      apply Ideal_If_F. 
+      apply Ideal_If_F.
       destruct (beval st be) eqn:Eqnbe.
       * inversion H12; subst; clear H12.
         inversion H10; subst; clear H10; simpl in *.
@@ -2065,7 +2065,7 @@ Proof.
       * inversion H12; subst; clear H12.
         inversion H1; subst; clear H1.
         inversion H2; subst; clear H2; simpl in *.
-        assert(Hwhile: <(st'1, ast'1, b'1, ds2)> 
+        assert(Hwhile: <(st'1, ast'1, b'1, ds2)>
           =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
         { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
           replace os2 with ([] ++ os2)%list by reflexivity.
@@ -2075,18 +2075,18 @@ Proof.
           apply IH in H13; try tauto.
           - rewrite t_update_eq in H13.
             apply ideal_unused_update in H13; [| tauto].
-            eassumption. 
+            eassumption.
           - prog_size_auto. }
         { apply IH in Hwhile; auto.
           - rewrite Eqnbe in H13.
             apply IH in H13; try tauto.
             + apply ideal_unused_update_rev; eauto.
-            + prog_size_auto.  
+            + prog_size_auto.
           - prog_size_auto.
           - apply sel_slh_flag in H13; try tauto.
             rewrite Eqnbe. rewrite t_update_eq. reflexivity. }
   (* ARead *)
-  - (* Spec_ARead; public *) 
+  - (* Spec_ARead; public *)
     destruct (P x) eqn:Heq; try discriminate H.
     injection H; intros; subst; clear H.
     inversion H1; clear H1; subst. repeat rewrite <- app_nil_end in *.
@@ -2105,14 +2105,14 @@ Proof.
       simpl. rewrite <- Hstb at 1. rewrite t_update_same.
       replace (x !-> 0; st) with (x !-> if P x then 0 else nth i' (ast' a') 0; st)
         by (rewrite Heq; reflexivity).
-      eapply Ideal_ARead_U; eauto. 
+      eapply Ideal_ARead_U; eauto.
   - (* Spec_ARead; secret*)
     destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
     rewrite t_update_permute; [| tauto]. rewrite t_update_same.
     replace (x !-> nth (aeval st i) (ast' a) 0; st)
       with (x !-> if b' && P x then 0 else nth (aeval st i) (ast' a) 0; st)
         by (rewrite Heq; destruct b'; reflexivity).
-    eapply Ideal_ARead; eauto.  
+    eapply Ideal_ARead; eauto.
   - (* Spec_Read_U *)
     destruct (P x) eqn:Heq; try discriminate H. inversion H; clear H; subst.
     rewrite t_update_permute; [| tauto]. rewrite t_update_same.
@@ -2120,10 +2120,10 @@ Proof.
       with (x !-> if P x then 0 else nth i' (ast' a') 0; st)
         by (rewrite Heq; reflexivity).
     eapply Ideal_ARead_U; eauto.
-  (* AWrite *)  
-  - (* Spec_Write *) 
+  (* AWrite *)
+  - (* Spec_Write *)
     rewrite t_update_same. apply Ideal_Write; tauto.
-  - (* Spec_Write_U *) 
+  - (* Spec_Write_U *)
     rewrite t_update_same. apply Ideal_Write_U; tauto.
 Qed.
 
@@ -2157,27 +2157,27 @@ Qed.
 Lemma spec_seq_assoc3 : forall st ast b ds c1 c2 c3 st' ast' b' os,
   <( st, ast, b, ds )> =[ c1; c2; c3 ]=> <( st', ast', b', os )> ->
   <( st, ast, b, ds )> =[ (c1; c2); c3 ]=> <( st', ast', b', os )>.
-Proof. 
+Proof.
   intros st ast b ds c1 c2 c3 st' ast' b' os Heval.
   inversion Heval; subst; clear Heval. inversion H10; subst; clear H10.
   replace ((os3++os0)++os1)%list with (os3++os0++os1)%list
     by (rewrite app_assoc; reflexivity).
   replace (ds1++ds0++ds3)%list with ((ds1++ds0)++ds3)%list
     by (rewrite app_assoc; reflexivity).
-  repeat eapply Spec_Seq; eassumption.  
+  repeat eapply Spec_Seq; eassumption.
 Qed.
 
 Lemma spec_seq_assoc4 : forall st ast b ds c1 c2 c3 c4 st' ast' b' os,
   <( st, ast, b, ds )> =[ c1; c2; c3; c4 ]=> <( st', ast', b', os )> ->
   <( st, ast, b, ds )> =[ (c1; c2; c3); c4 ]=> <( st', ast', b', os )>.
-Proof. 
+Proof.
   intros st ast b ds c1 c2 c3 c4 st' ast' b' os Heval.
-  inversion Heval; subst; clear Heval. inversion H10; subst; clear H10. 
+  inversion Heval; subst; clear Heval. inversion H10; subst; clear H10.
   inversion H12; subst; clear H12.
   replace (ds1++ds0++ds2++ds4)%list with ((ds1++ds0++ds2)++ds4)%list
     by (do 2 rewrite <- app_assoc; reflexivity).
   replace (((os4++os2)++os0)++os1)%list with (os4++(os2++os0)++os1)%list
-    by (do 2 rewrite app_assoc; reflexivity). 
+    by (do 2 rewrite app_assoc; reflexivity).
   repeat eapply Spec_Seq; eassumption.
 Qed.
 
@@ -2190,7 +2190,7 @@ Proof.
   replace os with ([] ++ os)%list by reflexivity.
   inversion Heval; inversion H10; subst; simpl.
   do 2 rewrite app_nil_r in H1; subst. assumption.
-Qed. 
+Qed.
 
 Lemma ideal_sel_slh : forall P st ast b ds c st' ast' b' os,
   unused "b" c ->
@@ -2204,21 +2204,21 @@ Proof.
   - (* Asgn *)
     rewrite t_update_permute; [| tauto].
     econstructor. rewrite aeval_unused_update; tauto.
-  - (* Seq *) 
+  - (* Seq *)
     econstructor.
       + eapply IHHeval1. tauto.
       + eapply IHHeval2. tauto.
-  - (* If *) 
+  - (* If *)
     replace (beval st be) with (beval ("b" !-> (if b then 1 else 0); st) be)
       by (apply beval_unused_update; tauto).
     apply Spec_If. rewrite beval_unused_update; [| tauto].
     destruct (beval st be) eqn:Eqbeval.
-    + (* true *) 
+    + (* true *)
       rewrite <- (app_nil_l ds); rewrite <- (app_nil_r os1).
       econstructor.
       * apply Spec_Asgn. reflexivity.
       * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
-        rewrite t_update_same. apply IHHeval. tauto. 
+        rewrite t_update_same. apply IHHeval. tauto.
     + (* false ; provable in the same way as the true case *)
       rewrite <- (app_nil_l ds); rewrite <- (app_nil_r os1).
       eapply Spec_Seq.
@@ -2244,7 +2244,7 @@ Proof.
     assert(G : b_unused "b" be /\
       (unused "b" c /\ b_unused "b" be /\ unused "b" c) /\ True) by tauto.
     specialize (IHHeval G). clear G.
-    inversion IHHeval; clear IHHeval; subst. 
+    inversion IHHeval; clear IHHeval; subst.
     + (* no misspeculation in while execution (Spec_If) *)
       rewrite beval_unused_update in H10; [ | tauto].
       destruct (beval st be) eqn:Eqbeval.
@@ -2258,7 +2258,7 @@ Proof.
           by (rewrite app_comm_cons; reflexivity).
         replace (([] ++ os0) ++ [OBranch (beval ("b" !-> (if b then 1 else 0); st) be)])%list
           with ([] ++ (os0 ++ [OBranch (beval ("b" !-> (if b then 1 else 0); st) be)]))%list
-            by (rewrite <- app_assoc; reflexivity).        
+            by (rewrite <- app_assoc; reflexivity).
         eapply Spec_Seq; [| eassumption].
         apply Spec_While. eapply Spec_If.
         rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
@@ -2270,7 +2270,7 @@ Proof.
         apply Spec_While. eapply Spec_If.
         rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
         apply Spec_Skip.
-    + (* mispeculation in while execution (Spec_If_f) ; 
+    + (* mispeculation in while execution (Spec_If_f) ;
          provable analog to the no misspeculation case *)
       rewrite beval_unused_update in H10; [ | tauto].
       destruct (beval st be) eqn:Eqbeval.
@@ -2280,7 +2280,7 @@ Proof.
         eapply Spec_Seq; [| eassumption].
         apply Spec_While. eapply Spec_If_F.
         rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
-        apply Spec_Skip. 
+        apply Spec_Skip.
       * (* false *)
         apply spec_seq_assoc4 in H10.
         inversion H10; subst.
@@ -2295,7 +2295,7 @@ Proof.
         eapply Spec_Seq; [| eassumption].
         apply Spec_While. eapply Spec_If_F.
         rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
-        apply spec_seq_assoc3. assumption. 
+        apply spec_seq_assoc3. assumption.
   - (* ARead *)
     rewrite t_update_permute; [| tauto].
     destruct (P x) eqn:EqPx.
@@ -2306,7 +2306,7 @@ Proof.
       * destruct b eqn:Eqb; simpl.
         { (* speculating *)
           replace (x !-> 0; "b" !-> 1; st)
-            with (x !-> aeval 
+            with (x !-> aeval
                           (x !-> nth i (ast a) 0; "b" !-> 1; st)
                           <{{("b" = 1) ? 0 : x }}> ;
                   x !-> nth i (ast a) 0; "b" !-> 1; st).
@@ -2317,7 +2317,7 @@ Proof.
             reflexivity. }
         { (* non speculating *)
           replace (x !-> nth i (ast a) 0; "b" !-> 0; st)
-            with (x !-> aeval 
+            with (x !-> aeval
                       (x !-> nth i (ast a) 0; "b" !-> 0; st)
                       <{{("b" = 1) ? 0 : x }}> ;
                   x !-> nth i (ast a) 0; "b" !-> 0; st)
@@ -2329,7 +2329,7 @@ Proof.
               reflexivity. }
     + (* secret *)
       rewrite andb_false_r.
-      eapply Spec_ARead; eauto. 
+      eapply Spec_ARead; eauto.
       rewrite aeval_unused_update; tauto.
   - (* ARead_U *)
     rewrite t_update_permute; [| tauto].
@@ -2339,7 +2339,7 @@ Proof.
       eapply Spec_Seq.
       * apply Spec_ARead_U;  try tauto. rewrite aeval_unused_update; tauto.
       * replace (x !-> 0; "b" !-> 1; st)
-          with (x !-> aeval 
+          with (x !-> aeval
                         (x !-> nth i' (ast a') 0; "b" !-> 1; st)
                         <{{("b" = 1) ? 0 : x }}> ;
                 x!-> nth i' (ast a') 0; "b" !-> 1; st).
@@ -2367,7 +2367,7 @@ Qed.
 (* The totality is not currently true, but could be made true by extending the final
    configurations with errors for wrong directions or out of bounds accesses. *)
 Axiom ideal_total : forall P c st ast b ds, exists stt astt bb os,
-  P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>. 
+  P |- <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>.
 
 Lemma spec_eval_deterministic_gen : forall c st ast b ds1 ds2 stt1 astt1 bb1 os1 stt2 astt2 bb2 os2,
   <( st , ast , b , ds1 )> =[ c ]=> <( stt1 , astt1 , bb1 , os1 )> ->
@@ -2376,12 +2376,12 @@ Lemma spec_eval_deterministic_gen : forall c st ast b ds1 ds2 stt1 astt1 bb1 os1
   stt1 = stt2 /\ astt1 = astt2 /\ bb1 = bb2 /\ os1 = os2 /\ ds1 = ds2.
 Proof.
   intros c st ast b ds1 ds2 stt1 astt1 bb1 os1 stt2 astt2 bb2 os2 Heval1.
-  generalize dependent os2; generalize dependent bb2; 
+  generalize dependent os2; generalize dependent bb2;
   generalize dependent astt2; generalize dependent stt2;
   generalize dependent ds2.
   induction Heval1; intros ds2' stt2 astt2 bb2 os2' Heval2 Hpre;
   try (now inversion Heval2; subst; auto).
-  - (* Spec_Seq *) 
+  - (* Spec_Seq *)
     inversion Heval2; subst.
     destruct Hpre as [Hpre | Hpre]; apply prefix_app in Hpre as L; destruct L as [Hds1 | Hds0].
     + apply IHHeval1_1 in H1; subst; auto.
@@ -2407,7 +2407,7 @@ Proof.
   - (* Spec_If *)
     inversion Heval2; subst.
     + destruct Hpre as [Hpre | Hpre]; apply prefix_cons in Hpre;
-      apply IHHeval1 in H10; auto; 
+      apply IHHeval1 in H10; auto;
       destruct H10 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst; auto.
     + destruct Hpre as [Hpre | Hpre]; apply prefix_heads in Hpre;
       discriminate Hpre.
@@ -2416,9 +2416,9 @@ Proof.
     + destruct Hpre as [Hpre | Hpre]; apply prefix_heads in Hpre;
       discriminate Hpre.
     + destruct Hpre as [Hpre | Hpre]; apply prefix_cons in Hpre;
-      apply IHHeval1 in H10; auto; 
+      apply IHHeval1 in H10; auto;
       destruct H10 as [Hst [Hast [Hb [Hos Hds] ] ] ]; subst; auto.
-  - (* Spec_ARead *) 
+  - (* Spec_ARead *)
     inversion Heval2; subst.
     * auto.
     * destruct Hpre as [Hpre | Hpre]; apply prefix_heads in Hpre;
@@ -2455,7 +2455,7 @@ Qed.
 
 Require Import ClassicalFacts.
 
-Lemma decidability_ouput_tuple : forall (st st' : state) (ast ast' :astate) 
+Lemma decidability_ouput_tuple : forall (st st' : state) (ast ast' :astate)
   (b b' :bool) (os os' :obs),
   excluded_middle ->
   (st, ast, b, os) = (st', ast', b', os') \/ ~ ((st, ast, b, os) = (st', ast', b', os')).
@@ -2465,18 +2465,18 @@ Lemma sel_slh_ideal' : forall c P st ast (b:bool) ds st' ast' (b':bool) os,
   excluded_middle ->
   unused "b" c ->
   <("b"!-> (if b then 1 else 0); st, ast, b, ds)> =[ sel_slh P c ]=> <(st', ast', b', os)> ->
-  P |- <("b"!-> (if b then 1 else 0); st, ast, b, ds)> =[ c ]=> 
+  P |- <("b"!-> (if b then 1 else 0); st, ast, b, ds)> =[ c ]=>
     <("b" !-> (if b then 1 else 0); st', ast', b', os)>.
 Proof.
   intros c P st ast b ds st' ast' b' os Hexc Hunused Heval.
-  assert (Ldet : forall st1 ast1 (b1 :bool) os1, 
+  assert (Ldet : forall st1 ast1 (b1 :bool) os1,
     ("b" !-> (if b1 then 1 else 0); st1, ast1, b1, os1) <> (st', ast', b', os)   ->
-    ~ <("b" !-> (if b then 1 else 0); st, ast, b, ds )> =[ (sel_slh P c) ]=> 
+    ~ <("b" !-> (if b then 1 else 0); st, ast, b, ds )> =[ (sel_slh P c) ]=>
           <("b"!-> (if b1 then 1 else 0); st1, ast1, b1, os1 )> ).
     { intros st1 ast1 b1 os2 Hneq Hev.
           eapply spec_eval_deterministic in Hev; [| eapply Heval].
           destruct Hev as [ Hst [ Hast [ Hb Hos ] ] ]. subst. eauto. }
-  assert(LFcc : forall st1 ast1 (b1 : bool) os1, 
+  assert(LFcc : forall st1 ast1 (b1 : bool) os1,
     ("b" !-> (if b1 then 1 else 0); st1, ast1, b1, os1) <> (st', ast', b', os)   ->
     ~ P |- <( st, ast, b, ds )> =[ c ]=> <(st1, ast1, b1, os1 )>).
     { intros st1 ast1 b1 os2 Hneq Hev.
@@ -2519,20 +2519,20 @@ Definition interpreter : Type := evaluator unit.
 
 Definition ret {A : Type} (value : A) : evaluator A :=
   fun (pst: prog_st) => OST_Finished A value pst.
-    
+
 Definition bind {A : Type} {B : Type} (e : evaluator A) (f : A -> evaluator B): evaluator B :=
   fun (pst: prog_st) =>
     match e pst with
-    | OST_Finished _ value (st', ast', b', ds', os1)  => 
+    | OST_Finished _ value (st', ast', b', ds', os1)  =>
         match (f value) (st', ast', b', ds', os1) with
-        | OST_Finished _ value (st'', ast'', b'', ds'', os2) => 
+        | OST_Finished _ value (st'', ast'', b'', ds'', os2) =>
             OST_Finished B value (st'', ast'', b'', ds'', os2)
         | ret => ret
         end
     | OST_Error _ => OST_Error B
     | OST_OutOfFuel _ => OST_OutOfFuel B
     end.
-    
+
 Notation "e >>= f" := (bind e f) (at level 58, left associativity).
 Notation "e >> f" := (bind e (fun _ => f)) (at level 58, left associativity).
 
@@ -2542,24 +2542,24 @@ Definition finish : interpreter := ret tt.
 
 Definition get_var (name : string): evaluator nat :=
   fun (pst : prog_st) =>
-    let 
+    let
       '(st, _, _, _, _) := pst
     in
       ret (st name) pst.
 
 Definition set_var (name : string) (value : nat) : interpreter :=
   fun (pst: prog_st) =>
-    let 
+    let
       '(st, ast, b, ds, os) := pst
     in
       let
-        new_st := (name !-> value; st) 
+        new_st := (name !-> value; st)
       in
         finish (new_st, ast, b, ds, os).
 
 Definition get_arr (name : string): evaluator (list nat) :=
   fun (pst: prog_st) =>
-    let 
+    let
       '(_, ast, _, _, _) := pst
     in
       ret (ast name) pst.
@@ -2596,10 +2596,10 @@ Definition raise_error : interpreter :=
   fun _ => OST_Error unit.
 
 Definition observe (o : observation) : interpreter :=
-  fun (pst : prog_st) => 
+  fun (pst : prog_st) =>
     let '(st, ast, b, ds, os) := pst in
     OST_Finished unit tt (st, ast, b, ds, (o :: os)%list).
-    
+
 Definition fetch_direction : evaluator (option direction) :=
   fun (pst : prog_st) =>
     let '(st, ast, b, ds, os) := pst in
@@ -2614,21 +2614,21 @@ Definition fetch_direction : evaluator (option direction) :=
 Fixpoint spec_eval_engine_aux (fuel : nat) (c : com) : interpreter :=
   match fuel with
   | O => fun _ => OST_OutOfFuel unit
-  | S fuel => 
+  | S fuel =>
     match c with
-    | <{ skip }> => finish 
+    | <{ skip }> => finish
     | <{ x := e }> => eval_aexp e >>= fun v => set_var x v
     | <{ c1 ; c2 }> =>
         spec_eval_engine_aux fuel c1 >>
         spec_eval_engine_aux fuel c2
     | <{ if be then ct else cf end }> =>
-        eval_bexp be >>= fun bool_value => observe (OBranch bool_value) >> fetch_direction >>= 
-        fun dop => 
+        eval_bexp be >>= fun bool_value => observe (OBranch bool_value) >> fetch_direction >>=
+        fun dop =>
           match dop with
-          | Some DStep => 
-              if bool_value then spec_eval_engine_aux fuel ct 
-              else spec_eval_engine_aux fuel cf 
-          | Some DForce => 
+          | Some DStep =>
+              if bool_value then spec_eval_engine_aux fuel ct
+              else spec_eval_engine_aux fuel cf
+          | Some DForce =>
               start_speculating >>
               if bool_value then spec_eval_engine_aux fuel cf
               else spec_eval_engine_aux fuel ct
@@ -2637,30 +2637,30 @@ Fixpoint spec_eval_engine_aux (fuel : nat) (c : com) : interpreter :=
     | <{ while be do c end }> =>
         spec_eval_engine_aux fuel <{if be then c; while be do c end else skip end}>
     | <{ x <- a[[ie]] }> =>
-        eval_aexp ie >>= fun i => observe (OARead a i) >> get_arr a >>= 
-        fun arr_a => is_speculating >>= fun b => fetch_direction >>= 
+        eval_aexp ie >>= fun i => observe (OARead a i) >> get_arr a >>=
+        fun arr_a => is_speculating >>= fun b => fetch_direction >>=
         fun dop =>
           match dop with
           | Some DStep =>
               if (i <? List.length arr_a)%nat then set_var x (nth i arr_a 0)
               else raise_error
           | Some (DLoad a' i') =>
-              get_arr a' >>= fun arr_a' => 
+              get_arr a' >>= fun arr_a' =>
                 if negb (i <? List.length arr_a)%nat && (i' <? List.length arr_a')%nat && b then
                   set_var x (nth i' arr_a' 0)
                 else raise_error
           | _ => raise_error
           end
     | <{ a[ie] <- e }> =>
-        eval_aexp ie >>= fun i => observe (OAWrite a i) >> get_arr a >>=   
+        eval_aexp ie >>= fun i => observe (OAWrite a i) >> get_arr a >>=
         fun arr_a => eval_aexp e >>= fun n => is_speculating >>= fun b => fetch_direction >>=
         fun dop =>
           match dop with
-          | Some DStep => 
+          | Some DStep =>
               if (i <? List.length arr_a)%nat then set_arr a (upd i arr_a n)
               else raise_error
           | Some (DStore a' i') =>
-              get_arr a' >>= fun arr_a' => 
+              get_arr a' >>= fun arr_a' =>
                 if negb (i <? List.length arr_a)%nat && (i' <? List.length arr_a')%nat && b then
                   set_arr a' (upd i' arr_a' n)
                 else raise_error
@@ -2684,7 +2684,7 @@ Definition compute_fuel (c :com) (ds :dirs) :=
   | _ => length ds * com_size c
   end.
 
-Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs) 
+Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs)
       : option (state * astate * bool * obs) :=
     match spec_eval_engine_aux (compute_fuel c ds) c (st, ast, b, ds, []) with
     | OST_Finished _ _ (st', ast', b', ds', os) =>
@@ -2743,7 +2743,7 @@ Proof. unfold spec_eval_engine; simpl; intro H; inversion H. Qed.
 
 (** ** Soundness of the interpreter*)
 
-Lemma ltb_reflect : forall n m :nat, 
+Lemma ltb_reflect : forall n m :nat,
   reflect (n < m) (n <? m)%nat.
 Proof.
   intros n m. apply iff_reflect. rewrite ltb_lt. reflexivity.
@@ -2758,23 +2758,23 @@ Qed.
 Lemma spec_eval_engine_aux_sound : forall n c st ast b ds os st' ast' b' ds' os' u,
   spec_eval_engine_aux n c (st, ast, b, ds, os)
     = OST_Finished unit u (st', ast', b', ds', os') ->
-  (exists dsn osn, 
-  (dsn++ds')%list = ds /\ (osn++os)%list = os' /\ 
+  (exists dsn osn,
+  (dsn++ds')%list = ds /\ (osn++os)%list = os' /\
       <(st, ast, b, dsn)> =[ c ]=> <(st', ast', b', osn)> ).
 Proof.
-  induction n as [| n' IH]; intros c st ast b ds os st' ast' b' ds' os' u Haux; 
+  induction n as [| n' IH]; intros c st ast b ds os st' ast' b' ds' os' u Haux;
   simpl in Haux; [discriminate |].
   destruct c as [| X e | c1 c2 | be ct cf | be cw | X a ie | a ie e ] eqn:Eqnc;
   unfold ">>=" in Haux; simpl in Haux.
   - (* Skip *)
-    inversion Haux; subst. 
+    inversion Haux; subst.
     exists []; exists []; split;[| split]; try reflexivity.
     apply Spec_Skip.
   - (* Asgn *)
-    simpl in Haux. inversion Haux; subst. 
+    simpl in Haux. inversion Haux; subst.
     exists []; exists []; split;[| split]; try reflexivity.
     apply Spec_Asgn. reflexivity.
-  - destruct (spec_eval_engine_aux _ c1 _) eqn:Hc1; 
+  - destruct (spec_eval_engine_aux _ c1 _) eqn:Hc1;
     try discriminate; simpl in Haux.
     destruct p as [ [ [ [stm astm] bm] dsm] osm]; simpl in Haux.
     destruct (spec_eval_engine_aux _ c2 _) eqn:Hc2;
@@ -2782,12 +2782,12 @@ Proof.
     destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
     apply IH in Hc1. destruct Hc1 as [ds1 [ os1 [Hds1 [Hos1 Heval1] ] ] ].
     apply IH in Hc2. destruct Hc2 as [ds2 [ os2 [Hds2 [Hos2 Heval2] ] ] ].
-    inversion Haux; subst. exists (ds1++ds2)%list; exists (os2++os1)%list; 
+    inversion Haux; subst. exists (ds1++ds2)%list; exists (os2++os1)%list;
     split; [| split].
     + rewrite <- app_assoc. reflexivity.
     + rewrite <- app_assoc. reflexivity.
     + eapply Spec_Seq; eauto.
-  - (* IF *) 
+  - (* IF *)
     destruct ds as [| d ds_tl] eqn:Eqnds; simpl in Haux; try discriminate.
     destruct d eqn:Eqnd; try discriminate; simpl in Haux.
     + (* DStep *)
@@ -2833,30 +2833,30 @@ Proof.
   - (* ARead *)
     destruct ds as [| d ds_tl] eqn:Eqnds; simpl in Haux; try discriminate.
     destruct d eqn:Eqnd; try discriminate; simpl in Haux.
-    + (* DStep *) 
+    + (* DStep *)
       destruct (aeval st ie <? Datatypes.length (ast a))%nat eqn:Eqnindex; try discriminate.
       destruct (observe (OARead a (aeval st ie)) (st, ast, b, ds_tl, os)) eqn:Eqbobs; try discriminate;
       simpl in Haux. inversion Haux; subst.
       eexists [DStep]; eexists [OARead a (aeval st ie)]; split;[| split]; try reflexivity.
       eapply Spec_ARead; eauto. destruct (ltb_reflect (aeval st ie) (length (ast' a))) as [Hlt | Hgeq].
       * apply Hlt.
-      * discriminate. 
-    + (* DForce *) 
+      * discriminate.
+    + (* DForce *)
       destruct (negb (aeval st ie <? Datatypes.length (ast a))%nat) eqn:Eqnindex1;
-      destruct ((i <? Datatypes.length (ast a0))%nat) eqn:Eqnindex2; 
+      destruct ((i <? Datatypes.length (ast a0))%nat) eqn:Eqnindex2;
       destruct b eqn:Eqnb; try discriminate; simpl in Haux. inversion Haux; subst.
       eexists [DLoad a0 i ]; eexists [OARead a (aeval st ie)]; split;[| split]; try reflexivity.
       eapply Spec_ARead_U; eauto.
       * destruct (ltb_reflect (aeval st ie) (length (ast' a))) as [Hlt | Hgeq].
         { discriminate. }
         { apply not_lt in Hgeq. apply Hgeq. }
-      * destruct (ltb_reflect i (length (ast' a0))) as [Hlt | Hgeq]. 
+      * destruct (ltb_reflect i (length (ast' a0))) as [Hlt | Hgeq].
         { apply Hlt. }
         { discriminate. }
   - (* AWrite *)
   destruct ds as [| d ds_tl] eqn:Eqnds; simpl in Haux; try discriminate.
   destruct d eqn:Eqnd; try discriminate; simpl in Haux.
-  + (* DStep *) 
+  + (* DStep *)
     destruct ((aeval st ie <? Datatypes.length (ast a))%nat) eqn:Eqnindex; try discriminate.
     destruct (observe (OAWrite a (aeval st ie)) (st, ast, b, ds_tl, os)) eqn:Eqbobs; try discriminate;
     simpl in Haux. inversion Haux; subst.
@@ -2864,22 +2864,22 @@ Proof.
     eapply Spec_Write; eauto. destruct (ltb_reflect (aeval st' ie) (length (ast a))) as [Hlt | Hgeq].
     * apply Hlt.
     * discriminate.
-  + (* DForce *) 
+  + (* DForce *)
     destruct  (negb (aeval st ie <? Datatypes.length (ast a))%nat) eqn:Eqnindex1;
-    destruct (i <? Datatypes.length (ast a0))%nat eqn:Eqnindex2; 
+    destruct (i <? Datatypes.length (ast a0))%nat eqn:Eqnindex2;
     destruct b eqn:Eqnb; try discriminate; simpl in Haux. inversion Haux; subst.
     eexists [DStore a0 i]; eexists [OAWrite a (aeval st' ie)]; split;[| split]; try reflexivity.
     eapply Spec_Write_U; eauto.
     * destruct (ltb_reflect (aeval st' ie) (length (ast a))) as [Hlt | Hgeq].
       { discriminate. }
-      {  apply not_lt in Hgeq. apply Hgeq. } 
+      {  apply not_lt in Hgeq. apply Hgeq. }
     * destruct (ltb_reflect i (length (ast a0))) as [Hlt | Hgeq].
       { apply Hlt. }
       { discriminate. }
 Qed.
 
 Theorem spec_eval_engine_sound: forall c st ast b ds st' ast' b' os',
-  spec_eval_engine c st ast b ds = Some (st', ast', b', os') -> 
+  spec_eval_engine c st ast b ds = Some (st', ast', b', os') ->
   <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os')> .
 Proof.
   intros c st ast b ds st' ast' b' os' Hengine.
@@ -2899,7 +2899,7 @@ Definition spec_insecure_prog_2 :=
   <{{ X := 0;
       Y := 0;
       while Y <= 2 do
-        Z <- AP[[Y]]; 
+        Z <- AP[[Y]];
         X := X + Z;
         Y := Y + 1
       end;
@@ -2938,7 +2938,7 @@ Proof.
       destruct (String.eqb_spec "AS" x) as [HeqAS | HneqAS].
       * subst. do 2 rewrite t_update_eq. reflexivity.
       * subst. do 2 rewrite t_update_eq. reflexivity.
-      * subst. rewrite t_update_neq in Hx; [| assumption]. 
+      * subst. rewrite t_update_neq in Hx; [| assumption].
         rewrite t_update_eq in Hx. discriminate.
       * subst. do 4 (rewrite t_update_neq; [| assumption]). reflexivity.
 Qed.

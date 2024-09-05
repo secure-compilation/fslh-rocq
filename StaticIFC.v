@@ -625,9 +625,9 @@ Lemma pc_typechecker_sound : forall P c,
   P |-pc- c.
 (* FOLD *)
 Proof.
-  intros P c. induction c; simpl in *; econstructor; 
+  intros P c. induction c; simpl in *; econstructor;
     try rewrite andb_true_iff in *; try tauto;
-    eauto using label_of_aexp_sound, label_of_bexp_sound. 
+    eauto using label_of_aexp_sound, label_of_bexp_sound.
   - destruct H as [H1 H2]. rewrite andb_true_iff in H1; try tauto.
     destruct H1 as [H11 H12]. apply Bool.eqb_prop in H11.
     rewrite <- H11. apply label_of_bexp_sound.
@@ -899,7 +899,7 @@ Lemma wt_typechecker_sound : forall P pc c,
 (* FOLD *)
 Proof.
   intros P pc c. generalize dependent pc.
-  induction c; intros pc H; simpl in *; econstructor; 
+  induction c; intros pc H; simpl in *; econstructor;
     try rewrite andb_true_iff in *;
     try destruct H as [H1 H2]; try tauto;
     eauto using label_of_aexp_sound, label_of_bexp_sound.
@@ -1143,7 +1143,7 @@ where "P ';;' pc '|-ts-' c" := (ts_well_typed P pc c).
     by our previous theorem also [noninterference].
 
     Then we show that [P;; secret |-ts- c] implies termination.
-    
+
     Then we show that [ts_well_typed] implies equitermination, which
     together with noninterference implies termination-sensitive noninterference.
  *)
