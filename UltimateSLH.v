@@ -234,7 +234,7 @@ Inductive ideal_eval_small_step :
       -->i_[DForce]^^[OBranch (negb b && beval st be)]
       <((match negb b && beval st be with
         | true => cf
-        | false => ct end, st, ast, b))>
+        | false => ct end, st, ast, true))>
   | ISM_While : forall be c st ast b,
       <((while be do c end, st, ast, b))> -->i_[]^^[]
       <((if be then c; while be do c end else skip end, st, ast, b))>
@@ -271,12 +271,48 @@ Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
   where "<(( c , st , ast , b ))> -->i*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (multi_ideal c st ast b ct stt astt bt ds os).
 
-
 Lemma ideal_big_to_small_step : forall c st ast b stt astt bt ds os,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   <((c, st, ast, b))> -->i*_ds^^os <((skip, stt, astt, bt))>.
 Proof.
-Admitted.
+  intros c st ast b stt astt bt ds os Hbig. induction Hbig.
+  - (* Skip *) apply multi_ideal_refl.
+  - (* Asgn*)
+    replace ([] :dirs) with ([]++[] :dirs) by (apply app_nil_r).
+    replace ([] :obs) with ([]++[] :obs) by (apply app_nil_r).
+    eapply multi_ideal_trans.
+    + eapply ISM_Asgn. eapply H.
+    + apply multi_ideal_refl.
+  - (* Seq *) admit.
+  - (* IF *)
+    replace (DStep:: ds) with ([DStep] ++ ds) by reflexivity.
+    eapply multi_ideal_trans.
+    + apply ISM_If.
+    + apply IHHbig.
+  - (* IF_F *)
+    replace (DForce:: ds) with ([DForce] ++ ds) by reflexivity.
+    eapply multi_ideal_trans.
+    + apply ISM_If_F.
+    + apply IHHbig.
+  - (* While *)
+    replace (ds) with ([]++ds) by reflexivity.
+    replace (os) with (os++[]) by (apply app_nil_r).
+    eapply multi_ideal_trans.
+    + eapply ISM_While.
+    + apply IHHbig.
+  - (* ARead *)
+    replace ([DStep]) with ([DStep]++[]) by (apply app_nil_r).
+    replace ([OARead a i]) with ([]++[OARead a i]) by (apply app_nil_l).
+    eapply multi_ideal_trans.
+    + eapply ISM_ARead; auto.
+    + apply multi_ideal_refl.
+  - (* AWrite *)
+    replace ([DStep]) with ([DStep]++[]) by (apply app_nil_r).
+    replace ([OAWrite a i]) with ([]++[OAWrite a i]) by (apply app_nil_l).
+    eapply multi_ideal_trans.
+    + eapply ISM_Write; auto.
+    + rewrite H. apply multi_ideal_refl.
+Qed.
 
 Lemma ideal_small_to_big_step : forall c st ast b stt astt bt ds os,
   <((c, st, ast, b))> -->i*_ds^^os <((skip, stt, astt, bt))> ->
