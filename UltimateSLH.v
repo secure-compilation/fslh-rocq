@@ -867,7 +867,7 @@ Proof.
     destruct Hev1 as [cm1 [stm1 [astm1 [cm2 [stm2 [astm2 [os1_1 [os1_2 [os1_3 [Hsmall1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ].
     eapply ideal_exec_split in Hev2; eauto.
     destruct Hev2 as [cm1' [stm' [astm1' [cm2' [stm2' [astm2' [os2_1 [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
-    (* SOONER: Following conjecture needs the uniqueness of the splitting, i.e. the dirs and coms are equal.*)
+    (* SOONER: Following conjecture needs determinism on com of samll step evaluation, i.e. c ds can only step to a unique c'. *)
     assert (Conj1 : cm1 = cm1' /\ cm2 = cm2'). { admit. }
     destruct Conj1 as [L1 L2]; subst.
     apply ideal_eval_small_step_no_spec in Hsmall1, Hsmall2; auto.
