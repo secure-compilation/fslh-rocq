@@ -427,9 +427,6 @@ Qed.
 (* /HIDE *)
 
 Lemma gilles_lemma : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
-  unused "b" c ->
-  st1 "b" = 1 ->
-  st2 "b" = 1 ->
   |-i <(st1, ast1, true, ds)> =[ c ]=> <(stt1, astt1, true, os1)> ->
   |-i <(st2, ast2, true, ds)> =[ c ]=> <(stt2, astt2, true, os2)> ->
   os1 = os2.
@@ -787,11 +784,9 @@ Proof.
     apply prefix_cons; apply H.
 Qed.
 
-(* HIDE *)
-(* HIDE: No longer used but maybe helpful to proof [ideal_exec_split] *)
 Lemma ideal_dirs_split : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
-  exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds1 ++ (DForce::ds2) = ds .
+  exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds = ds1 ++ [DForce] ++ ds2 .
 Proof.
   intros c st ast ds stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
@@ -800,43 +795,59 @@ Proof.
     + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
       apply IHHev1 in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
       exists ds3; exists (ds4 ++ ds2). split; auto.
-      rewrite app_comm_cons. rewrite app_assoc. rewrite Heq. reflexivity.
+      rewrite app_comm_cons. rewrite app_assoc. simpl in Heq. rewrite Heq. reflexivity.
     + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
       apply IHHev2 in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
       exists (ds1 ++ ds3); exists ds4. split.
       * intros d H. apply in_app_or in H as [Hds1 | Hds3]; auto.
         eapply ideal_eval_final_bit_false in Hev1; [| eapply Hds1]. auto.
-      * rewrite <- app_assoc. rewrite Heq. reflexivity.
+      * rewrite <- app_assoc. simpl in Heq. rewrite Heq. reflexivity.
   - (* IF non-speculative *)
     simpl in Hev. destruct (beval st be) eqn:Eqbe.
     + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
       apply IHHev in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
       exists (DStep::ds3); exists ds4. split; simpl.
       * intros d H; destruct H; auto.
-      * rewrite Heq. reflexivity.
+      * simpl in Heq. rewrite Heq. reflexivity.
     + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
       apply IHHev in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
       exists (DStep::ds3); exists ds4. split; simpl.
       * intros d H; destruct H; auto.
-      * rewrite Heq. reflexivity.
+      * simpl in Heq. rewrite Heq. reflexivity.
   - (* IF speculative *)
     exists []; exists ds. split; simpl.
     + intros d H; destruct H.
     + reflexivity.
 Qed.
 
-(* /HIDE *)
+Conjecture ideal_exec_split_by_dirs : forall c st ast b ds stt astt bt os ds1 ds2,
+  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  ds = ds1 ++ ds2 ->
+  exists cm stm astm bm os1 os2,
+    <((c, st, ast, b))> -->i*_ds1^^os1 <((cm, stm, astm, bm))> /\
+    |-i <(stm, astm, bm, ds2)> =[ cm ]=> <(stt, astt, bt, os2)> /\
+    os = os2++os1.
 
-(* SOONER: Do we really need nothing about the ds in the conclusion?
-   I was expecting to see `DForce::ds2 = ds`.
-   Without that execution of c2 could be quite different? *)
-Conjecture ideal_exec_split :  forall c st ast ds stt astt os,
+Conjecture ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
-  exists c1 st1 ast1 os1 c2 st2 ast2 ds2 os2 os3,
-    <((c, st, ast))> -->*^os1 <((c1, st1, ast1))> /\
-    <((c1, st1, ast1, false))>  -->i_[DForce]^^os2 <((c2, st2, ast2, true))> /\
-    |-i <(st2, ast2, true, ds2)> =[ c2 ]=> <(stt, astt, true, os3)> /\
-    os3 ++ os2 ++ os1 = os.
+  (forall d, In d ds1 -> d = DStep) ->
+  ds = ds1 ++ [DForce] ++ ds2 ->
+  exists cm1 stm1 astm1 cm2 stm2 astm2 os1 os2 os3,
+    <((c, st, ast, false))> -->i*_ds1^^os1 <((cm1, stm1, astm1, false))>  /\
+    <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
+    |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
+    os = os3 ++ os2 ++ os1.
+
+Conjecture ideal_eval_small_step_no_spec : forall c st ast ds ct stt astt bt os,
+    <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+    (forall d, In d ds -> d = DStep) ->
+    <((c, st, ast ))> -->*^os <((ct, stt, astt))>.
+
+(* HIDE: Probably this conjecture needs more assumptions on the starting states *)
+Conjecture ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
+  <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
+  <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct, stt2, astt2, true))> ->
+  os1 = os2.
 
 Lemma ideal_relative_secure : forall c st1 st2 ast1 ast2,
   seq_same_obs c st1 st2 ast1 ast2 ->
@@ -849,16 +860,20 @@ Proof.
   - (* with speculation *)
     assert (Hlen: length os1 = length os2).
     { apply ideal_obs_length in Hev1, Hev2. congruence. }
-    eapply ideal_exec_split in Hev1, Hev2.
-    destruct Hev1  as [c11 [st21 [ast21 [os21 [c21 [st31 [ast31 [ds21 [os31 [os41 [H11 [H21 [H31 H41] ] ] ] ] ] ] ] ] ] ] ] ].
-    destruct Hev2  as [c12 [st22 [ast22 [os22 [c22 [st32 [ast32 [ds22 [os32 [os42 [H12 [H22 [H32 H42] ] ] ] ] ] ] ] ] ] ] ] ].
-    eapply Hsec in H11 as L; eapply L in H12 as Hpre.
-    (* SOONER: Following conjectures need the uniqueness of the splitting, i.e. the dirs and coms are equal *)
-    assert (Conj1: os31 = os32).
-    { admit. (* Needs a lemma that c11 = c12 *) }
-    assert (Conj2: os41 = os42).
-    { eapply gilles_lemma in H32; admit. (* needs lemma that c21 = c22 *) }
-    subst.
+    eapply ideal_dirs_split in Hev1 as L.
+    destruct L as [ds1 [ds2 [Hds1 Heq] ] ].
+    rewrite Heq in Hev1, Hev2.
+    eapply ideal_exec_split in Hev1; eauto.
+    destruct Hev1 as [cm1 [stm1 [astm1 [cm2 [stm2 [astm2 [os1_1 [os1_2 [os1_3 [Hsmall1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ].
+    eapply ideal_exec_split in Hev2; eauto.
+    destruct Hev2 as [cm1' [stm' [astm1' [cm2' [stm2' [astm2' [os2_1 [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
+    (* SOONER: Following conjecture needs the uniqueness of the splitting, i.e. the dirs and coms are equal.*)
+    assert (Conj1 : cm1 = cm1' /\ cm2 = cm2'). { admit. }
+    destruct Conj1 as [L1 L2]; subst.
+    apply ideal_eval_small_step_no_spec in Hsmall1, Hsmall2; auto.
+    eapply gilles_lemma in Hbig1; eauto. subst.
+    eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
+    eapply ideal_one_step_obs in Hone1; eauto. subst.
     apply prefix_eq_length; auto.
     do 2 rewrite app_assoc. apply prefix_app_end. apply Hpre.
   - (* without speculation *)
