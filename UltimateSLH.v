@@ -312,13 +312,49 @@ Proof.
     eapply multi_ideal_trans.
     + eapply ISM_Write; auto.
     + rewrite H. apply multi_ideal_refl.
+Admitted.
+
+Lemma ideal_eval_one_step : forall c1 c2 st stm stt ast astm astt b bm bt ds1 ds2 os1 os2,
+  <((c1, st, ast, b))> -->i_ds1^^os1 <((c2, stm, astm, bm))> ->
+  |-i <(stm, astm, bm, ds2)> =[ c2 ]=> <(stt, astt, bt, os2)> ->
+  |-i <(st, ast, b, ds1++ds2)> =[ c1 ]=> <(stt, astt, bt, os2++os1)>.
+Proof.
+  intros c1 c2 st stm stt ast astm astt b bm bt ds1 ds2 os1 os2 Hsmall.
+  generalize dependent os2; generalize dependent ds2;
+  generalize dependent bt; generalize dependent astt;
+  generalize dependent stt.
+  induction Hsmall; intros stt' astt' bt' ds2 os2 Hbig.
+  - (* ISM_Asgn *)
+    inversion Hbig; subst; simpl in *. apply Ideal_Asgn; auto.
+  - (* ISM_Seq *)
+    inversion Hbig; subst; simpl in *. apply IHHsmall in H1.
+    replace (ds ++ ds1 ++ ds0) with ((ds ++ ds1) ++ ds0) by (rewrite app_assoc; auto).
+    replace ((os0 ++ os1) ++ os) with (os0 ++ os1 ++ os) by (rewrite app_assoc; auto).
+    eapply Ideal_Seq; eauto.
+  - (* ISM_Seq_Skip *)
+    eapply Ideal_Seq; eauto. apply Ideal_Skip.
+  - (* ISM_If *)
+    apply Ideal_If; auto.
+  - (* ISM_If_F *)
+    apply Ideal_If_F; auto.
+  - (* ISM_While *)
+    rewrite app_nil_l; rewrite app_nil_r. apply Ideal_While. apply Hbig.
+  - (* ISM_ARead *)
+    inversion Hbig; subst; simpl in *. apply Ideal_ARead; auto.
+  - (* ISM_Write *)
+  inversion Hbig; subst; simpl in *. apply Ideal_Write; auto.
 Qed.
 
 Lemma ideal_small_to_big_step : forall c st ast b stt astt bt ds os,
   <((c, st, ast, b))> -->i*_ds^^os <((skip, stt, astt, bt))> ->
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)>.
 Proof.
-Admitted.
+  intros c st ast b stt astt bt ds os Hsmall.
+  remember <{{skip}}> as ct eqn:Eqct. induction Hsmall; subst.
+  - apply Ideal_Skip.
+  - assert (L: <{{ skip }}> = <{{ skip }}>) by reflexivity.
+    apply IHHsmall in L. eapply ideal_eval_one_step; eauto.
+Qed.
 
 (** * Relative Security of Ultimate Speculative Load Hardening *)
 
