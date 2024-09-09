@@ -854,10 +854,24 @@ Conjecture ideal_eval_small_step_no_spec : forall c st ast ds ct stt astt bt os,
     (forall d, In d ds -> d = DStep) ->
     <((c, st, ast ))> -->*^os <((ct, stt, astt))>.
 
-Conjecture ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
+Lemma ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
+  seq_same_obs c st1 st2 ast1 ast2 ->
   <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
   <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct, stt2, astt2, true))> ->
   os1 = os2.
+Proof.
+  intros c ct st ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 Hobs Hev1.
+  generalize dependent os2; generalize dependent astt2;
+  generalize dependent stt2; generalize dependent ast2;
+  generalize dependent st2.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
+  induction Hev1; intros st2 ast2 Hobs stt2 astt2 os2 Hev2; try(inversion Hev2; subst; auto);
+  try discriminate.
+  - eapply IHHev1; eauto. admit.
+  - destruct (beval st be) eqn:Eqst; destruct (beval stt2 be) eqn:Eqstt2; simpl in *; auto.
+    + admit.
+    + admit.
+Admitted.
 
 Conjecture ideal_small_step_com_deterministic :
   forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
@@ -920,8 +934,8 @@ Proof.
     apply ideal_eval_small_step_no_spec in Hsmall1, Hsmall2; auto.
     eapply gilles_lemma in Hbig1; eauto. subst.
     eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
-    eapply ideal_one_step_obs in Hone1; eauto. subst.
-    apply prefix_eq_length; auto.
+    eapply ideal_one_step_obs in Hone2; eauto.
+    subst. apply prefix_eq_length; auto.
     do 2 rewrite app_assoc. apply prefix_app_end. apply Hpre.
   - (* without speculation *)
     assert (Hds: forall d, In d ds -> d = DStep).
