@@ -709,35 +709,7 @@ Proof.
     exfalso; auto.
 Qed.
 
-Lemma ideal_spec_needs_force : forall c st ast ds stt astt os,
-  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
-  In DForce ds.
-Proof.
-  intros c st ast ds stt astt os Heval.
-  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-  induction Heval; subst; simpl; eauto; try discriminate.
-  apply in_or_app. destruct b'; eauto.
-Qed.
-
-Lemma ideal_eval_dirs : forall c st ast b ds stt astt bt os,
-  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  (forall d, In d ds -> d = DStep \/ d = DForce).
-Proof.
-  intros c sst ast b ds stt astt bt os Hev.
-  induction Hev; intros d Hin; simpl in Hin; try (now destruct Hin; auto).
-  - apply in_app_or in Hin as [Hds1 | Hds2]; auto.
-  - apply IHHev; auto.
-Qed.
-
-Lemma ideal_obs_length : forall c st ast b ds stt astt bt os,
-  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  length ds = length os.
-Proof.
-  intros c st ast b ds stt astt bt os Hev. induction Hev; simpl; auto.
-  - do 2 rewrite app_length. lia.
-  - rewrite app_length; simpl. lia.
-  - rewrite app_length; simpl. lia.
-Qed.
+(** * More prefix lemmas *)
 
 Lemma prefix_eq_length : forall {X:Type} (ds1 ds2 : list X),
   length ds1 = length ds2 ->
@@ -762,6 +734,28 @@ Proof.
     apply prefix_cons; apply H.
 Qed.
 
+(** * Lemmas about [dirs], [obs] and speculation bits of [ideal_eval] *)
+
+Lemma ideal_eval_dirs : forall c st ast b ds stt astt bt os,
+  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  (forall d, In d ds -> d = DStep \/ d = DForce).
+Proof.
+  intros c sst ast b ds stt astt bt os Hev.
+  induction Hev; intros d Hin; simpl in Hin; try (now destruct Hin; auto).
+  - apply in_app_or in Hin as [Hds1 | Hds2]; auto.
+  - apply IHHev; auto.
+Qed.
+
+Lemma ideal_spec_needs_force : forall c st ast ds stt astt os,
+  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
+  In DForce ds.
+Proof.
+  intros c st ast ds stt astt os Heval.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
+  induction Heval; subst; simpl; eauto; try discriminate.
+  apply in_or_app. destruct b'; eauto.
+Qed.
+
 Lemma ideal_spec_bit_monotonic : forall c st ast ds stt astt bt os,
   |-i <(st, ast, true, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   bt = true.
@@ -784,6 +778,33 @@ Proof.
       * apply IHHev2; auto.
   - apply ideal_spec_bit_monotonic in Hev. discriminate Hev.
 Qed.
+
+Lemma ideal_eval_bit_deterministic :
+  forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
+    |-i <(st1, ast1, b, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
+    |-i <(st2, ast2, b, ds)> =[ c ]=> <(stt2, astt2, bt2, os2 )> ->
+    bt1 = bt2.
+Proof.
+  intros c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
+  destruct b eqn:Eqb.
+  - apply ideal_spec_bit_monotonic in Hev1, Hev2. subst; auto.
+  - destruct bt1 eqn:Eqbt1; destruct bt2 eqn:Eqbt2; auto.
+    + apply ideal_spec_needs_force in Hev1.
+      eapply ideal_eval_final_bit_false in Hev1; eauto. inversion Hev1.
+    + apply ideal_spec_needs_force in Hev2.
+      eapply ideal_eval_final_bit_false in Hev2; eauto. inversion Hev2.
+Qed.
+
+Lemma ideal_obs_length : forall c st ast b ds stt astt bt os,
+  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  length ds = length os.
+Proof.
+  intros c st ast b ds stt astt bt os Hev. induction Hev; simpl; auto.
+  - do 2 rewrite app_length. lia.
+  - rewrite app_length; simpl. lia.
+  - rewrite app_length; simpl. lia.
+Qed.
+
 
 Lemma ideal_dirs_split : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
@@ -823,23 +844,17 @@ Qed.
 
 (** * Conjectures for the proof of ideal_relative_secure *)
 
-Conjecture ideal_eval_bit_deterministic :
-  forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
-    |-i <(st1, ast1, b, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
-    |-i <(st2, ast2, b, ds)> =[ c ]=> <(stt2, astt2, bt2, os2 )> ->
-    bt1 = bt2.
-
-Conjecture ideal_eval_no_spec : forall c st ast ds stt astt bt os,
-  (forall d, In d ds -> d = DStep) ->
-  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  <((c, st, ast ))> -->*^os <((skip, stt, astt))>.
-
 Conjecture ideal_prefix_dirs :
   forall c st1 st2 ast1 ast2 b1 b2 ds1 ds2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
   prefix ds1 ds2 ->
   |-i <(st1, ast1, b1, ds1)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
   |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
   ds1 = ds2.
+
+Conjecture ideal_eval_no_spec : forall c st ast ds stt astt bt os,
+  (forall d, In d ds -> d = DStep) ->
+  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  <((c, st, ast ))> -->*^os <((skip, stt, astt))>.
 
 Conjecture ideal_exec_split_by_dirs : forall c st ast b ds stt astt bt os ds1 ds2,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
@@ -854,6 +869,14 @@ Conjecture ideal_eval_small_step_no_spec : forall c st ast ds ct stt astt bt os,
     (forall d, In d ds -> d = DStep) ->
     <((c, st, ast ))> -->*^os <((ct, stt, astt))>.
 
+Conjecture seq_same_obs_com_seq : forall c1 c2 st1 st2 ast1 ast2,
+  seq_same_obs <{{ c1; c2 }}> st1 st2 ast1 ast2 ->
+  seq_same_obs c1 st1 st2 ast1 ast2.
+
+Conjecture seq_same_obs_com_if : forall be ct cf st1 st2 ast1 ast2,
+  seq_same_obs <{{ if be then ct else cf end }}> st1 st2 ast1 ast2 ->
+  beval st1 be = beval st2 be.
+
 Lemma ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
   seq_same_obs c st1 st2 ast1 ast2 ->
   <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
@@ -867,11 +890,9 @@ Proof.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev1; intros st2 ast2 Hobs stt2 astt2 os2 Hev2; try(inversion Hev2; subst; auto);
   try discriminate.
-  - eapply IHHev1; eauto. admit.
-  - destruct (beval st be) eqn:Eqst; destruct (beval stt2 be) eqn:Eqstt2; simpl in *; auto.
-    + admit.
-    + admit.
-Admitted.
+  - eapply IHHev1; eauto. eapply seq_same_obs_com_seq; eauto.
+  - apply seq_same_obs_com_if in Hobs. rewrite Hobs. reflexivity.
+Qed.
 
 Conjecture ideal_small_step_com_deterministic :
   forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
