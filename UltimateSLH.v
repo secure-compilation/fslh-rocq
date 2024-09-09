@@ -849,6 +849,37 @@ Conjecture ideal_exec_split_by_dirs : forall c st ast b ds stt astt bt os ds1 ds
     |-i <(stm, astm, bm, ds2)> =[ cm ]=> <(stt, astt, bt, os2)> /\
     os = os2++os1.
 
+Conjecture ideal_eval_small_step_no_spec : forall c st ast ds ct stt astt bt os,
+    <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+    (forall d, In d ds -> d = DStep) ->
+    <((c, st, ast ))> -->*^os <((ct, stt, astt))>.
+
+Conjecture ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
+  <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
+  <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct, stt2, astt2, true))> ->
+  os1 = os2.
+
+Conjecture ideal_small_step_com_deterministic :
+  forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
+    seq_same_obs c st1 st2 ast1 ast2 ->
+    <((c, st1, ast1, b))>  -->i_ds^^os1 <((c1, stt1, astt1, bt1))> ->
+    <((c, st2, ast2, b))>  -->i_ds^^os2 <((c2, stt2, astt2, bt2))> ->
+    c1 = c2.
+
+Conjecture multi_ideal_com_deterministic :
+  forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
+    seq_same_obs c st1 st2 ast1 ast2 ->
+    <((c, st1, ast1, b))>  -->i*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
+    <((c, st2, ast2, b))>  -->i*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
+    c1 = c2.
+
+Conjecture multi_seq_preserves_seq_same_obs :
+  forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
+    seq_same_obs c st1 st2 ast1 ast2 ->
+    <((c, st1, ast1))>  -->*^os1 <((ct, stt1, astt1))> ->
+    <((c, st2, ast2))>  -->*^os2 <((ct, stt2, astt2))> ->
+    seq_same_obs ct stt1 stt2 astt1 astt2.
+
 Conjecture ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   (forall d, In d ds1 -> d = DStep) ->
@@ -858,17 +889,6 @@ Conjecture ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
     <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
     |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
     os = os3 ++ os2 ++ os1.
-
-Conjecture ideal_eval_small_step_no_spec : forall c st ast ds ct stt astt bt os,
-    <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
-    (forall d, In d ds -> d = DStep) ->
-    <((c, st, ast ))> -->*^os <((ct, stt, astt))>.
-
-(* HIDE: Probably this conjecture needs more assumptions on the starting states *)
-Conjecture ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
-  <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
-  <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct, stt2, astt2, true))> ->
-  os1 = os2.
 
 (** * Ultimate SLH Relative Secure *)
 
@@ -889,10 +909,14 @@ Proof.
     eapply ideal_exec_split in Hev1; eauto.
     destruct Hev1 as [cm1 [stm1 [astm1 [cm2 [stm2 [astm2 [os1_1 [os1_2 [os1_3 [Hsmall1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ].
     eapply ideal_exec_split in Hev2; eauto.
-    destruct Hev2 as [cm1' [stm' [astm1' [cm2' [stm2' [astm2' [os2_1 [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
-    (* SOONER: Following conjecture needs determinism on com of samll step evaluation, i.e. c ds can only step to a unique c'. *)
-    assert (Conj1 : cm1 = cm1' /\ cm2 = cm2'). { admit. }
-    destruct Conj1 as [L1 L2]; subst.
+    destruct Hev2 as [cm1' [stm1' [astm1' [cm2' [stm2' [astm2' [os2_1 [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
+    assert (L : cm1 = cm1').
+    { eapply multi_ideal_com_deterministic in Hsmall2; eauto. } subst.
+    assert (Hsec2: seq_same_obs cm1' stm1 stm1' astm1 astm1').
+    { apply ideal_eval_small_step_no_spec in Hsmall1, Hsmall2; auto.
+      eapply multi_seq_preserves_seq_same_obs; eauto. }
+    assert (L: cm2 = cm2').
+    { eapply ideal_small_step_com_deterministic in Hone2; eauto. } subst.
     apply ideal_eval_small_step_no_spec in Hsmall1, Hsmall2; auto.
     eapply gilles_lemma in Hbig1; eauto. subst.
     eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
@@ -909,7 +933,7 @@ Proof.
     eapply ideal_eval_no_spec in Hev2; try assumption.
     eapply Hsec in Hev1; eapply Hev1 in Hev2.
     apply prefix_eq_length; now auto.
-Admitted.
+Qed.
 
 Theorem ultimate_slh_relative_secure :
   forall c st1 st2 ast1 ast2,
