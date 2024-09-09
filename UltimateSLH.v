@@ -709,28 +709,6 @@ Proof.
     exfalso; auto.
 Qed.
 
-Conjecture ideal_eval_bit_deterministic :
-  forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
-    |-i <(st1, ast1, b, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
-    |-i <(st2, ast2, b, ds)> =[ c ]=> <(stt2, astt2, bt2, os2 )> ->
-    bt1 = bt2.
-
-Conjecture ideal_eval_final_bit_false : forall c st ast ds stt astt os,
-  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, false, os)> ->
-  (forall d, In d ds -> d = DStep).
-
-Conjecture ideal_eval_no_spec : forall c st ast ds stt astt bt os,
-  (forall d, In d ds -> d = DStep) ->
-  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  <((c, st, ast ))> -->*^os <((skip, stt, astt))>.
-
-Conjecture ideal_prefix_dirs :
-  forall c st1 st2 ast1 ast2 b1 b2 ds1 ds2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
-  prefix ds1 ds2 ->
-  |-i <(st1, ast1, b1, ds1)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
-  |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
-  ds1 = ds2.
-
 Lemma ideal_spec_needs_force : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   In DForce ds.
@@ -784,6 +762,29 @@ Proof.
     apply prefix_cons; apply H.
 Qed.
 
+Lemma ideal_spec_bit_monotonic : forall c st ast ds stt astt bt os,
+  |-i <(st, ast, true, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  bt = true.
+Proof.
+  intros c st ast ds stt astt bt os Heval. remember true as b eqn:Eqb.
+  induction Heval; subst; eauto.
+Qed.
+
+Lemma ideal_eval_final_bit_false : forall c st ast ds stt astt os,
+  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, false, os)> ->
+  (forall d, In d ds -> d = DStep).
+Proof.
+  intros c st ast ds stt astt os Hev. remember false as b eqn:Eqb.
+  induction Hev; intros d Hin; subst; simpl in *; try (now destruct Hin; auto); auto.
+  - (* Seq *)
+    destruct b' eqn:Eqb'.
+    + apply ideal_spec_bit_monotonic in Hev2. discriminate Hev2.
+    + apply in_app_or in Hin as [Hds1 | Hds2].
+      * apply IHHev1; auto.
+      * apply IHHev2; auto.
+  - apply ideal_spec_bit_monotonic in Hev. discriminate Hev.
+Qed.
+
 Lemma ideal_dirs_split : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds = ds1 ++ [DForce] ++ ds2 .
@@ -820,6 +821,26 @@ Proof.
     + reflexivity.
 Qed.
 
+(** * Conjectures for the proof of ideal_relative_secure *)
+
+Conjecture ideal_eval_bit_deterministic :
+  forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
+    |-i <(st1, ast1, b, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
+    |-i <(st2, ast2, b, ds)> =[ c ]=> <(stt2, astt2, bt2, os2 )> ->
+    bt1 = bt2.
+
+Conjecture ideal_eval_no_spec : forall c st ast ds stt astt bt os,
+  (forall d, In d ds -> d = DStep) ->
+  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+  <((c, st, ast ))> -->*^os <((skip, stt, astt))>.
+
+Conjecture ideal_prefix_dirs :
+  forall c st1 st2 ast1 ast2 b1 b2 ds1 ds2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
+  prefix ds1 ds2 ->
+  |-i <(st1, ast1, b1, ds1)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
+  |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
+  ds1 = ds2.
+
 Conjecture ideal_exec_split_by_dirs : forall c st ast b ds stt astt bt os ds1 ds2,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   ds = ds1 ++ ds2 ->
@@ -848,6 +869,8 @@ Conjecture ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt
   <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
   <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct, stt2, astt2, true))> ->
   os1 = os2.
+
+(** * Ultimate SLH Relative Secure *)
 
 Lemma ideal_relative_secure : forall c st1 st2 ast1 ast2,
   seq_same_obs c st1 st2 ast1 ast2 ->
