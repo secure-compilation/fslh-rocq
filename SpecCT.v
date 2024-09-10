@@ -326,17 +326,17 @@ Definition obs := list observation.
             <(st, ast)> =[ c1 ]=> <(st', ast', os1)>
             <(st', ast')> =[ c2 ]=> <(st'', ast'', os2)>
       -----------------------------------------------------   (CTE_Seq)
-      <(st, ast)>  =[ c1 ; c2 ]=> <(st'', ast'', os2++os1)>
+      <(st, ast)>  =[ c1 ; c2 ]=> <(st'', ast'', os1 ++ os2)>
 
                   beval st b = true
                   <(st, ast)> =[ c1 ]=> <(st', ast', os1)>
   ---------------------------------------------------------------------------   (* CTE_IfTrue *)
-  <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', os1 ++ [OBranch true])>
+  <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', [OBranch true] ++ os1)>
 
                   beval st b = false
                   <(st, ast)> =[ c2 ]=> <(st', ast', os1)>
   ----------------------------------------------------------------------------    (* CTE_IfFalse *)
-  <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', os1 ++ [OBranch false])>
+  <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', [OBranch false] ++ os1)>
 
   <(st,ast)> =[ if b then c; while b do c end else skip end ]=> <(st', ast', os)>
   -------------------------------------------------------------------------------   (* CTE_While *)
@@ -372,15 +372,15 @@ Inductive cteval : com -> state -> astate -> state -> astate -> obs -> Prop :=
   | CTE_Seq : forall c1 c2 st ast st' ast' st'' ast'' os1 os2,
       <(st, ast)> =[ c1 ]=> <(st', ast', os1)>  ->
       <(st', ast')> =[ c2 ]=> <(st'', ast'', os2)> ->
-      <(st, ast)>  =[ c1 ; c2 ]=> <(st'', ast'', os2++os1)>
+      <(st, ast)>  =[ c1 ; c2 ]=> <(st'', ast'', os1++os2)>
   | CTE_IfTrue : forall st ast st' ast' b c1 c2 os1,
       beval st b = true ->
       <(st, ast)> =[ c1 ]=> <(st', ast', os1)> ->
-      <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', os1 ++ [OBranch true])>
+      <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', [OBranch true] ++ os1)>
   | CTE_IfFalse : forall st ast st' ast' b c1 c2 os1,
       beval st b = false ->
       <(st, ast)> =[ c2 ]=> <(st', ast', os1)> ->
-      <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', os1 ++ [OBranch false])>
+      <(st, ast)> =[ if b then c1 else c2 end]=> <(st', ast', [OBranch false] ++ os1)>
   | CTE_While : forall b st ast st' ast' os c,
       <(st,ast)> =[ if b then c; while b do c end else skip end ]=>
         <(st', ast', os)> -> (* <^- Nice trick; from small-step semantics *)
@@ -800,19 +800,19 @@ Inductive spec_eval : com -> state -> astate -> bool -> dirs ->
   | Spec_Seq : forall c1 c2 st ast b st' ast' b' st'' ast'' b'' os1 os2 ds1 ds2,
       <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)>  ->
       <(st', ast', b', ds2)> =[ c2 ]=> <(st'', ast'', b'', os2)> ->
-      <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os2++os1)>
+      <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os1++os2)>
   | Spec_If : forall st ast b st' ast' b' be c1 c2 os1 ds,
       <(st, ast, b, ds)> =[ match beval st be with
                        | true => c1
                        | false => c2 end ]=> <(st', ast', b', os1)> ->
       <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', os1 ++ [OBranch (beval st be)])>
+        <(st', ast', b', [OBranch (beval st be)] ++ os1)>
   | Spec_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
       <(st, ast, true, ds)> =[ match beval st be with
                        | true => c2 (* <-- branches swapped *)
                        | false => c1 end ]=> <(st', ast', b', os1)> ->
       <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', os1 ++ [OBranch (beval st be)])>
+        <(st', ast', b', [OBranch (beval st be)] ++ os1)>
   | Spec_While : forall be st ast b ds st' ast' b' os c,
       <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
@@ -925,8 +925,8 @@ Proof.
     remember (AP!-> [1]; AS!-> [1;3]; _ !-> []) as ast1.
     remember (AP!-> [1]; AS!-> [1;7]; _ !-> []) as ast2.
     remember (DForce :: ([DLoad "AS" 1] ++ [DStep])) as ds.
-    remember (([OBranch true] ++ [OARead "AP" 1]) ++ [OBranch false]) as os1.
-    remember (([OBranch false] ++ [OARead "AP" 1])++ [OBranch false]) as os2.
+    remember (([OBranch false] ++ ([OARead "AP" 1]) ++ [OBranch true])) as os1.
+    remember (([OBranch false] ++ ([OARead "AP" 1])++ [OBranch false])) as os2.
     assert (Heval1:
     <(st, ast1, false, ds )> =[ spec_insecure_prog ]=> <( Y!-> 1; X!-> 3; st, ast1, true, os1)>).
     { unfold spec_insecure_prog; subst.
@@ -1144,19 +1144,19 @@ Inductive ideal_eval (P:pub_vars) :
   | Ideal_Seq : forall c1 c2 st ast b st' ast' b' st'' ast'' b'' os1 os2 ds1 ds2,
       P |- <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)>  ->
       P |- <(st', ast', b', ds2)> =[ c2 ]=> <(st'', ast'', b'', os2)> ->
-      P |- <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os2++os1)>
+      P |- <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os1++os2)>
   | Ideal_If : forall st ast b st' ast' b' be c1 c2 os1 ds,
       P |- <(st, ast, b, ds)> =[ match beval st be with
                                  | true => c1
                                  | false => c2 end ]=> <(st', ast', b', os1)> ->
       P |- <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', os1++[OBranch (beval st be)])>
+        <(st', ast', b', [OBranch (beval st be)] ++ os1 )>
   | Ideal_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
       P |- <(st, ast, true, ds)> =[ match beval st be with
                                     | true => c2 (* <-- branches swapped *)
                                     | false => c1 end ]=> <(st', ast', b', os1)> ->
       P |- <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', os1++[OBranch (beval st be)])>
+        <(st', ast', b', [OBranch (beval st be)] ++ os1)>
   | Ideal_While : forall be st ast b ds st' ast' b' os c,
       P |- <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
@@ -1556,16 +1556,16 @@ Proof.
     erewrite IHHeval1_2; [erewrite IHHeval1_1 | | | |];
       try reflexivity; try eassumption.
   - (* If *) f_equal.
-    + eapply IHHeval1; try eassumption; try (destruct (beval st be); eassumption).
-      erewrite noninterferent_bexp; eassumption.
     + f_equal. eapply noninterferent_bexp in Heq; [| eassumption].
       rewrite Heq. reflexivity.
+    + eapply IHHeval1; try eassumption; try (destruct (beval st be); eassumption).
+      erewrite noninterferent_bexp; eassumption.
   - (*If_F *) f_equal.
+    + f_equal. eapply noninterferent_bexp in Heq; [| eassumption].
+      rewrite Heq. reflexivity.
     + eapply IHHeval1; try eassumption; try (destruct (beval st be); eassumption).
       * intro contra. discriminate contra.
       * erewrite noninterferent_bexp; eassumption.
-    + f_equal. eapply noninterferent_bexp in Heq; [| eassumption].
-      rewrite Heq. reflexivity.
   - eapply IHHeval1; eauto. repeat constructor; eassumption.
   - (* ARead *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
   - (* ARead_U *) f_equal. f_equal. eapply noninterferent_aexp; eassumption.
@@ -1799,7 +1799,7 @@ Proof.
         destruct (beval st be) eqn:Eqnbe.
         * inversion H12; subst; clear H12.
           assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)>
-              =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', (os2++os3)%list)> ).
+              =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', (os3++os2)%list)> ).
           { simpl. eapply Spec_Seq; eassumption. }
           apply IH in Hwhile; eauto.
           { prog_size_auto. }
@@ -1819,7 +1819,7 @@ Proof.
           rewrite t_update_eq, Eqnbe; simpl. reflexivity.
         * inversion H12; subst; clear H12.
           assert(Hwhile: <(st'1, ast'1, b'1, (ds0 ++ ds2)%list)>
-              =[sel_slh P <{{while be do c end}}>]=> <(st', ast', b', (os2++os3)%list )>).
+              =[sel_slh P <{{while be do c end}}>]=> <(st', ast', b', (os3++os2)%list )>).
           { simpl. eapply Spec_Seq; eassumption. }
           apply IH in Hwhile; eauto.
           { prog_size_auto. }
@@ -1989,8 +1989,7 @@ Proof.
       * replace (OBranch true) with (OBranch (beval st be))
           by (rewrite <- Eqnbe; reflexivity).
         apply Ideal_If. rewrite Eqnbe.
-        rewrite Eqnbe in H11. rewrite t_update_same in H11.
-        rewrite app_nil_r. apply H11.
+        rewrite Eqnbe in H11. rewrite t_update_same in H11. apply H11.
       * prog_size_auto.
       * rewrite t_update_eq. rewrite Eqnbe. assumption.
     + (* analog to true case *)
@@ -1998,8 +1997,7 @@ Proof.
       * replace (OBranch false) with (OBranch (beval st be))
           by (rewrite <- Eqnbe; reflexivity).
         apply Ideal_If. rewrite Eqnbe. rewrite Eqnbe in H11.
-        rewrite t_update_same in H11. rewrite app_nil_r.
-        apply H11.
+        rewrite t_update_same in H11. apply H11.
       * prog_size_auto.
       * rewrite t_update_eq. rewrite Eqnbe. assumption.
   - (* speculative *)
@@ -2010,7 +2008,6 @@ Proof.
       apply Ideal_If_F. rewrite Eqnbe. apply IH in H11; try tauto.
       * rewrite t_update_eq in H11.
         apply ideal_unused_update in H11; try tauto.
-        rewrite app_nil_r. apply H11.
       * prog_size_auto.
     + (* analog to true case *)
       replace (OBranch false) with (OBranch (beval st be))
@@ -2018,7 +2015,6 @@ Proof.
       apply Ideal_If_F. rewrite Eqnbe. apply IH in H11; try tauto.
       * rewrite t_update_eq in H11.
         apply ideal_unused_update in H11; try tauto.
-        rewrite app_nil_r. apply H11.
       * prog_size_auto.
   - (* While *)
     eapply Ideal_While.
@@ -2036,7 +2032,7 @@ Proof.
         assert(Hwhile: <(st'1, ast'1, b'1, ds2)>
           =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
         { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
-          replace os2 with ([] ++ os2)%list by reflexivity.
+          replace os2 with (os2 ++ [])%list by (rewrite app_nil_r; reflexivity).
           eapply Spec_Seq; eassumption. }
         do 2 rewrite app_nil_r. eapply Ideal_Seq.
         { rewrite Eqnbe in H13. rewrite t_update_same in H13.
@@ -2068,7 +2064,7 @@ Proof.
         assert(Hwhile: <(st'1, ast'1, b'1, ds2)>
           =[ sel_slh P <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
         { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
-          replace os2 with ([] ++ os2)%list by reflexivity.
+          replace os2 with (os2 ++ [])%list by (rewrite app_nil_r; reflexivity).
           eapply Spec_Seq; eassumption. }
         do 2 rewrite app_nil_r. eapply Ideal_Seq.
         { rewrite Eqnbe in H13.
@@ -2160,7 +2156,7 @@ Lemma spec_seq_assoc3 : forall st ast b ds c1 c2 c3 st' ast' b' os,
 Proof.
   intros st ast b ds c1 c2 c3 st' ast' b' os Heval.
   inversion Heval; subst; clear Heval. inversion H10; subst; clear H10.
-  replace ((os3++os0)++os1)%list with (os3++os0++os1)%list
+  replace (os1++os0++os3)%list with ((os1++os0)++os3)%list
     by (rewrite app_assoc; reflexivity).
   replace (ds1++ds0++ds3)%list with ((ds1++ds0)++ds3)%list
     by (rewrite app_assoc; reflexivity).
@@ -2176,8 +2172,8 @@ Proof.
   inversion H12; subst; clear H12.
   replace (ds1++ds0++ds2++ds4)%list with ((ds1++ds0++ds2)++ds4)%list
     by (do 2 rewrite <- app_assoc; reflexivity).
-  replace (((os4++os2)++os0)++os1)%list with (os4++(os2++os0)++os1)%list
-    by (do 2 rewrite app_assoc; reflexivity).
+  replace (os1++os0++os2++os4)%list with ((os1++os0++os2)++os4)%list
+    by (do 2 rewrite <- app_assoc; reflexivity).
   repeat eapply Spec_Seq; eassumption.
 Qed.
 
@@ -2189,7 +2185,8 @@ Proof.
   rewrite <- (app_nil_r ds) in Heval.
   replace os with ([] ++ os)%list by reflexivity.
   inversion Heval; inversion H10; subst; simpl.
-  do 2 rewrite app_nil_r in H1; subst. assumption.
+  do 2 rewrite app_nil_r in H1; subst.
+  rewrite app_nil_r. assumption.
 Qed.
 
 Lemma ideal_sel_slh : forall P st ast b ds c st' ast' b' os,
@@ -2214,13 +2211,13 @@ Proof.
     apply Spec_If. rewrite beval_unused_update; [| tauto].
     destruct (beval st be) eqn:Eqbeval.
     + (* true *)
-      rewrite <- (app_nil_l ds); rewrite <- (app_nil_r os1).
+      rewrite <- (app_nil_l ds); rewrite <- (app_nil_l os1).
       econstructor.
       * apply Spec_Asgn. reflexivity.
       * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
         rewrite t_update_same. apply IHHeval. tauto.
     + (* false ; provable in the same way as the true case *)
-      rewrite <- (app_nil_l ds); rewrite <- (app_nil_r os1).
+      rewrite <- (app_nil_l ds); rewrite <- (app_nil_l os1).
       eapply Spec_Seq.
       * apply Spec_Asgn. reflexivity.
       * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
@@ -2230,12 +2227,12 @@ Proof.
       by (apply beval_unused_update; tauto).
     apply Spec_If_F. rewrite beval_unused_update; [| tauto].
     destruct (beval st be) eqn:Eqbeval.
-    + rewrite <- (app_nil_l ds); rewrite <- (app_nil_r os1).
+    + rewrite <- (app_nil_l ds); rewrite <- (app_nil_l os1).
       eapply Spec_Seq.
       * apply Spec_Asgn. reflexivity.
       * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
         rewrite t_update_shadow. apply IHHeval. tauto.
-    + rewrite <- (app_nil_l ds); rewrite <- (app_nil_r os1).
+    + rewrite <- (app_nil_l ds); rewrite <- (app_nil_l os1).
       eapply Spec_Seq.
       * apply Spec_Asgn. reflexivity.
       * simpl. rewrite beval_unused_update; [| tauto]. rewrite Eqbeval.
@@ -2256,8 +2253,8 @@ Proof.
         destruct L; subst.
         replace (DStep::ds1++[])%list with ((DStep::ds1)++[])%list
           by (rewrite app_comm_cons; reflexivity).
-        replace (([] ++ os0) ++ [OBranch (beval ("b" !-> (if b then 1 else 0); st) be)])%list
-          with ([] ++ (os0 ++ [OBranch (beval ("b" !-> (if b then 1 else 0); st) be)]))%list
+        replace ([OBranch (beval ("b" !-> (if b then 1 else 0); st) be)] ++ os0 ++ [])%list
+          with (([OBranch (beval ("b" !-> (if b then 1 else 0); st) be)] ++ os0) ++ [])%list
             by (rewrite <- app_assoc; reflexivity).
         eapply Spec_Seq; [| eassumption].
         apply Spec_While. eapply Spec_If.
@@ -2289,8 +2286,8 @@ Proof.
         destruct L; subst.
         replace (DForce::ds1++[])%list with ((DForce::ds1)++[])%list
           by (rewrite app_comm_cons; reflexivity).
-        replace (([] ++ os0) ++ [OBranch (beval ("b" !-> (if b then 1 else 0); st) be)])%list
-          with ([] ++ (os0 ++ [OBranch (beval ("b" !-> (if b then 1 else 0); st) be)]))%list
+        replace ([OBranch (beval ("b" !-> (if b then 1 else 0); st) be)] ++ os0 ++ [])%list
+          with (([OBranch (beval ("b" !-> (if b then 1 else 0); st) be)] ++ os0) ++ [])%list
             by (rewrite app_assoc; reflexivity).
         eapply Spec_Seq; [| eassumption].
         apply Spec_While. eapply Spec_If_F.
@@ -2300,7 +2297,7 @@ Proof.
     rewrite t_update_permute; [| tauto].
     destruct (P x) eqn:EqPx.
     + (* public *)
-      rewrite <- (app_nil_r [DStep]); rewrite <- (app_nil_l [OARead _ _]).
+      rewrite <- (app_nil_r [DStep]); rewrite <- (app_nil_r [OARead _ _]).
       eapply Spec_Seq.
       * apply Spec_ARead; [| tauto]. rewrite aeval_unused_update; tauto.
       * destruct b eqn:Eqb; simpl.
@@ -2335,7 +2332,7 @@ Proof.
     rewrite t_update_permute; [| tauto].
     destruct (P x) eqn:EqPx.
     + (* public *)
-      rewrite <- (app_nil_r [DLoad _ _]); rewrite <- (app_nil_l [OARead _ _]).
+      rewrite <- (app_nil_r [DLoad _ _]); rewrite <- (app_nil_r [OARead _ _]).
       eapply Spec_Seq.
       * apply Spec_ARead_U;  try tauto. rewrite aeval_unused_update; tauto.
       * replace (x !-> 0; "b" !-> 1; st)
@@ -2598,7 +2595,7 @@ Definition raise_error : interpreter :=
 Definition observe (o : observation) : interpreter :=
   fun (pst : prog_st) =>
     let '(st, ast, b, ds, os) := pst in
-    OST_Finished unit tt (st, ast, b, ds, (o :: os)%list).
+    OST_Finished unit tt (st, ast, b, ds, (os ++ [o])%list).
 
 Definition fetch_direction : evaluator (option direction) :=
   fun (pst : prog_st) =>
@@ -2759,7 +2756,7 @@ Lemma spec_eval_engine_aux_sound : forall n c st ast b ds os st' ast' b' ds' os'
   spec_eval_engine_aux n c (st, ast, b, ds, os)
     = OST_Finished unit u (st', ast', b', ds', os') ->
   (exists dsn osn,
-  (dsn++ds')%list = ds /\ (osn++os)%list = os' /\
+  (dsn++ds')%list = ds /\ (os++osn)%list = os' /\
       <(st, ast, b, dsn)> =[ c ]=> <(st', ast', b', osn)> ).
 Proof.
   induction n as [| n' IH]; intros c st ast b ds os st' ast' b' ds' os' u Haux;
@@ -2768,12 +2765,16 @@ Proof.
   unfold ">>=" in Haux; simpl in Haux.
   - (* Skip *)
     inversion Haux; subst.
-    exists []; exists []; split;[| split]; try reflexivity.
-    apply Spec_Skip.
+    exists []; exists []; split;[| split].
+    + reflexivity.
+    + rewrite app_nil_r. reflexivity.
+    + apply Spec_Skip.
   - (* Asgn *)
     simpl in Haux. inversion Haux; subst.
-    exists []; exists []; split;[| split]; try reflexivity.
-    apply Spec_Asgn. reflexivity.
+    exists []; exists []; split;[| split].
+    + reflexivity.
+    + rewrite app_nil_r. reflexivity.
+    + apply Spec_Asgn. reflexivity.
   - destruct (spec_eval_engine_aux _ c1 _) eqn:Hc1;
     try discriminate; simpl in Haux.
     destruct p as [ [ [ [stm astm] bm] dsm] osm]; simpl in Haux.
@@ -2782,7 +2783,7 @@ Proof.
     destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
     apply IH in Hc1. destruct Hc1 as [ds1 [ os1 [Hds1 [Hos1 Heval1] ] ] ].
     apply IH in Hc2. destruct Hc2 as [ds2 [ os2 [Hds2 [Hos2 Heval2] ] ] ].
-    inversion Haux; subst. exists (ds1++ds2)%list; exists (os2++os1)%list;
+    inversion Haux; subst. exists (ds1++ds2)%list; exists (os1++os2)%list;
     split; [| split].
     + rewrite <- app_assoc. reflexivity.
     + rewrite <- app_assoc. reflexivity.
@@ -2796,17 +2797,17 @@ Proof.
         destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
         inversion Haux; subst. apply IH in Hct.
         destruct Hct as [dst [ ost [Hds [Hos Heval] ] ] ].
-        exists (DStep :: dst); exists (ost++[OBranch true])%list; split;[| split].
+        exists (DStep :: dst); exists ([OBranch true]++ost)%list; split;[| split].
         { simpl. rewrite Hds. reflexivity. }
-        { rewrite <- app_assoc. simpl. rewrite Hos. reflexivity. }
+        { rewrite app_assoc. rewrite Hos. reflexivity. }
         { rewrite <- Eqnbe. apply Spec_If. rewrite Eqnbe. apply Heval. }
       * destruct (spec_eval_engine_aux _ cf _ ) eqn:Hcf; try discriminate; simpl in Haux.
         destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
         inversion Haux; subst. apply IH in Hcf.
         destruct Hcf as [dst [ ost [Hds [Hos Heval] ] ] ].
-        exists (DStep :: dst); exists (ost++[OBranch false])%list; split;[| split].
+        exists (DStep :: dst); exists ([OBranch false]++ost)%list; split;[| split].
         { simpl. rewrite Hds. reflexivity. }
-        { rewrite <- app_assoc. simpl. rewrite Hos. reflexivity. }
+        { rewrite app_assoc. rewrite Hos. reflexivity. }
         { rewrite <- Eqnbe. apply Spec_If. rewrite Eqnbe. apply Heval. }
     + (* DForce *)
       destruct (beval st be) eqn:Eqnbe.
@@ -2814,17 +2815,17 @@ Proof.
         destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
         inversion Haux; subst. apply IH in Hcf.
         destruct Hcf as [dst [ ost [Hds [Hos Heval] ] ] ].
-        exists (DForce :: dst); exists (ost++[OBranch true])%list; split;[| split].
+        exists (DForce :: dst); exists ([OBranch true]++ost)%list; split;[| split].
         { simpl. rewrite Hds. reflexivity. }
-        { rewrite <- app_assoc. simpl. rewrite Hos. reflexivity. }
+        { rewrite app_assoc. rewrite Hos. reflexivity. }
         { rewrite <- Eqnbe. apply Spec_If_F. rewrite Eqnbe. apply Heval. }
       * destruct (spec_eval_engine_aux _ ct _ ) eqn:Hct; try discriminate; simpl in Haux.
         destruct p as [ [ [ [stt astt] bt] dst] ost]; simpl in Haux.
         inversion Haux; subst. apply IH in Hct.
         destruct Hct as [dst [ ost [Hds [Hos Heval] ] ] ].
-        exists (DForce :: dst); exists (ost++[OBranch false])%list; split;[| split].
+        exists (DForce :: dst); exists ([OBranch false]++ost)%list; split;[| split].
         { simpl. rewrite Hds. reflexivity. }
-        { rewrite <- app_assoc. simpl. rewrite Hos. reflexivity. }
+        { rewrite app_assoc. rewrite Hos. reflexivity. }
         { rewrite <- Eqnbe. apply Spec_If_F. rewrite Eqnbe. apply Heval. }
   - (* While *)
     apply IH in Haux. destruct Haux as [dst [ ost [Hds [Hos Heval] ] ] ].
@@ -2889,7 +2890,7 @@ Proof.
   destruct ((Datatypes.length dst =? 0)%nat) eqn:Eqnds; try discriminate.
   apply spec_eval_engine_aux_sound in Eqnaux.
   destruct Eqnaux as [dsn [osn [Hdsn [Hosn Heval] ] ] ].
-  inversion Hengine; subst. rewrite app_nil_r.
+  inversion Hengine; subst. rewrite app_nil_l.
   destruct (eqb_reflect (length dst) 0) as [Heq | Hneq].
   + apply length_zero_iff_nil in Heq. rewrite Heq. rewrite app_nil_r. apply Heval.
   + discriminate.
