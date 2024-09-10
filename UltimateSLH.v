@@ -887,11 +887,15 @@ Conjecture seq_same_obs_com_seq : forall c1 c2 st1 st2 ast1 ast2,
   seq_same_obs <{{ c1; c2 }}> st1 st2 ast1 ast2 ->
   seq_same_obs c1 st1 st2 ast1 ast2.
 
-Conjecture seq_small_step_if_total : forall c be ct cf st ast,
+Lemma seq_small_step_if_total : forall c be ct cf st ast,
   c = <{{if be then ct else cf end}}> ->
   exists c' stt astt os,
-  <((c, st, ast))> -->^os <((c', stt, astt))>
-  /\ c <> c'.
+  <((c, st, ast))> -->^os <((c', stt, astt))> /\ os <> [].
+Proof.
+  intros c be ct cf st ast Heq. subst.
+  repeat econstructor. intros Contra. inversion Contra.
+Qed.
+
 
 Lemma seq_small_step_to_multi_seq : forall c st ast ct stt astt os,
   <((c, st, ast))> -->^os <((ct, stt, astt))> ->
@@ -908,23 +912,23 @@ Lemma seq_same_obs_com_if : forall be ct cf st1 st2 ast1 ast2,
 Proof.
   intros be ct cf st1 st2 ast1 ast2 Hsec.
   remember <{{if be then ct else cf end}}> as c eqn:Eqc.
-  assert (L1: exists c' stt astt os, <((c, st1, ast1))> -->^os <((c', stt, astt))> /\ c <> c').
+  assert (L1: exists c' stt astt os, <((c, st1, ast1))> -->^os <((c', stt, astt))> /\ os <> []).
   { eapply seq_small_step_if_total; eauto. }
-  assert (L2: exists c' stt astt os, <((c, st2, ast2))> -->^os <((c', stt, astt))> /\ c <> c').
+  assert (L2: exists c' stt astt os, <((c, st2, ast2))> -->^os <((c', stt, astt))> /\ os <> []).
   { eapply seq_small_step_if_total; eauto. }
   destruct L1 as [c1 [stt1 [astt1 [os1 [Hev1 Hneq1] ] ] ] ].
   destruct L2 as [c2 [stt2 [astt2 [os2 [Hev2 Hneq2] ] ] ] ].
   apply seq_small_step_to_multi_seq in Hev1, Hev2.
   eapply Hsec in Hev2 as Hpre; [| eapply Hev1].
-  inversion Hev1; subst.
+  inversion Hev1; subst; clear Hev1.
   - destruct Hneq1; auto.
-  - inversion Hev2; subst.
+  - inversion Hev2; subst; clear Hev2.
     + destruct Hneq2; auto.
-    + inversion H1; subst. inversion H; subst.
-      destruct Hpre as [Hpre | Hpre].
-      * admit.
-      * admit.
-Admitted.
+    + inversion H1; subst; clear H1. inversion H; subst; clear H.
+      destruct Hpre as [Hpre | Hpre]; simpl in Hpre.
+      * apply prefix_heads in Hpre. inversion Hpre; auto.
+      * apply prefix_heads in Hpre. inversion Hpre; auto.
+Qed.
 
 Lemma ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
   seq_same_obs c st1 st2 ast1 ast2 ->
