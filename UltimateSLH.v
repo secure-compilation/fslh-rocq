@@ -87,7 +87,7 @@ Inductive multi_seq (c:com) (st:state) (ast:astate) :
                 (os1 os2 : obs) :
       <((c, st, ast))> -->^os1 <((c', st', ast'))> ->
       <((c', st', ast'))> -->*^os2 <((c'', st'', ast''))> ->
-      <((c, st, ast))> -->*^(os2++os1) <((c'', st'', ast''))>
+      <((c, st, ast))> -->*^(os1++os2) <((c'', st'', ast''))>
 
   where "<(( c , st , ast ))> -->*^ os <(( ct ,  stt , astt ))>" :=
     (multi_seq c st ast ct stt astt os).
@@ -167,19 +167,19 @@ Inductive ideal_eval :
   | Ideal_Seq : forall c1 c2 st ast b st' ast' b' st'' ast'' b'' os1 os2 ds1 ds2,
       |-i <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)>  ->
       |-i <(st', ast', b', ds2)> =[ c2 ]=> <(st'', ast'', b'', os2)> ->
-      |-i <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os2++os1)>
+      |-i <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os1++os2)>
   | Ideal_If : forall st ast b st' ast' b' be c1 c2 os1 ds,
       |-i <(st, ast, b, ds)> =[ match negb b && beval st be  with
                                  | true => c1
                                  | false => c2 end ]=> <(st', ast', b', os1)> ->
       |-i <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', os1++[OBranch (negb b && beval st be)])>
+        <(st', ast', b', [OBranch (negb b && beval st be)]++os1)>
   | Ideal_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
       |-i <(st, ast, true, ds)> =[ match negb b && beval st be  with
                                  | true => c2 (* <-- branches swapped *)
                                  | false => c1 end ]=> <(st', ast', b', os1)> ->
       |-i <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', os1++[OBranch (negb b && beval st be)])>
+        <(st', ast', b', [OBranch (negb b && beval st be)]++os1)>
   | Ideal_While : forall be st ast b ds st' ast' b' os c,
       |-i <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
         <(st', ast', b', os)> ->
@@ -266,7 +266,7 @@ Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
                 (ds1 ds2 : dirs) (os1 os2 : obs) :
       <((c, st, ast, b))> -->i_ds1^^os1 <((c', st', ast', b'))> ->
       <((c', st', ast', b'))> -->i*_ds2^^os2 <((c'', st'', ast'', b''))> ->
-      <((c, st, ast, b))> -->i*_(ds1++ds2)^^(os2++os1) <((c'', st'', ast'', b''))>
+      <((c, st, ast, b))> -->i*_(ds1++ds2)^^(os1++os2) <((c'', st'', ast'', b''))>
 
   where "<(( c , st , ast , b ))> -->i*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (multi_ideal c st ast b ct stt astt bt ds os).
@@ -296,19 +296,19 @@ Proof.
     + apply IHHbig.
   - (* While *)
     replace (ds) with ([]++ds) by reflexivity.
-    replace (os) with (os++[]) by (apply app_nil_r).
+    replace (os) with ([]++os) by reflexivity.
     eapply multi_ideal_trans.
     + eapply ISM_While.
     + apply IHHbig.
   - (* ARead *)
     replace ([DStep]) with ([DStep]++[]) by (apply app_nil_r).
-    replace ([OARead a i]) with ([]++[OARead a i]) by (apply app_nil_l).
+    replace ([OARead a i]) with ([OARead a i]++[]) by (apply app_nil_r).
     eapply multi_ideal_trans.
     + eapply ISM_ARead; auto.
     + apply multi_ideal_refl.
   - (* AWrite *)
     replace ([DStep]) with ([DStep]++[]) by (apply app_nil_r).
-    replace ([OAWrite a i]) with ([]++[OAWrite a i]) by (apply app_nil_l).
+    replace ([OAWrite a i]) with ([OAWrite a i]++[]) by (apply app_nil_r).
     eapply multi_ideal_trans.
     + eapply ISM_Write; auto.
     + rewrite H. apply multi_ideal_refl.
@@ -317,7 +317,7 @@ Admitted.
 Lemma ideal_eval_one_step : forall c1 c2 st stm stt ast astm astt b bm bt ds1 ds2 os1 os2,
   <((c1, st, ast, b))> -->i_ds1^^os1 <((c2, stm, astm, bm))> ->
   |-i <(stm, astm, bm, ds2)> =[ c2 ]=> <(stt, astt, bt, os2)> ->
-  |-i <(st, ast, b, ds1++ds2)> =[ c1 ]=> <(stt, astt, bt, os2++os1)>.
+  |-i <(st, ast, b, ds1++ds2)> =[ c1 ]=> <(stt, astt, bt, os1++os2)>.
 Proof.
   intros c1 c2 st stm stt ast astm astt b bm bt ds1 ds2 os1 os2 Hsmall.
   generalize dependent os2; generalize dependent ds2;
@@ -329,7 +329,7 @@ Proof.
   - (* ISM_Seq *)
     inversion Hbig; subst; simpl in *. apply IHHsmall in H1.
     replace (ds ++ ds1 ++ ds0) with ((ds ++ ds1) ++ ds0) by (rewrite app_assoc; auto).
-    replace ((os0 ++ os1) ++ os) with (os0 ++ os1 ++ os) by (rewrite app_assoc; auto).
+    replace (os ++ os1 ++ os0) with ((os ++ os1) ++ os0) by (rewrite app_assoc; auto).
     eapply Ideal_Seq; eauto.
   - (* ISM_Seq_Skip *)
     eapply Ideal_Seq; eauto. apply Ideal_Skip.
@@ -338,7 +338,7 @@ Proof.
   - (* ISM_If_F *)
     apply Ideal_If_F; auto.
   - (* ISM_While *)
-    rewrite app_nil_l; rewrite app_nil_r. apply Ideal_While. apply Hbig.
+    do 2 rewrite app_nil_l. apply Ideal_While. apply Hbig.
   - (* ISM_ARead *)
     inversion Hbig; subst; simpl in *. apply Ideal_ARead; auto.
   - (* ISM_Write *)
@@ -528,12 +528,12 @@ Proof.
       * replace (OBranch true) with (OBranch (negb b'0 && beval st be))
           by (rewrite Eqbe; rewrite Hbit; reflexivity).
         rewrite Eqbe, Eqstb in H11; simpl in H11. rewrite t_update_same in H11.
-        apply Ideal_If. rewrite app_nil_r. rewrite Eqbe; subst; simpl.
+        apply Ideal_If. rewrite <- app_nil_l. rewrite Eqbe; subst; simpl.
         apply IH in H11; try tauto. prog_size_auto.
       * replace (OBranch false) with (OBranch (negb b'0 && beval st be))
           by (rewrite Eqbe, Hbit; reflexivity).
         rewrite Eqbe, Eqstb in H11; simpl in H11. rewrite t_update_same in H11.
-        apply Ideal_If. rewrite app_nil_r. rewrite Eqbe; subst; simpl.
+        apply Ideal_If. rewrite <- app_nil_l. rewrite Eqbe; subst; simpl.
         apply IH in H11; try tauto. prog_size_auto.
     + (* false *)
       inversion H10; inversion H1; subst; clear H10; clear H1; simpl in *.
@@ -541,7 +541,7 @@ Proof.
       eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
       replace (OBranch false) with (OBranch (negb b'0 && beval st be))
         by (rewrite Hbit; reflexivity).
-      apply Ideal_If. rewrite app_nil_r. subst; simpl.
+      apply Ideal_If. rewrite <- app_nil_l. subst; simpl.
       apply IH in H11; try tauto. prog_size_auto.
   - (* speculative *)
     simpl in *. destruct (st "b" =? 0)%nat eqn:Eqstb; simpl in *.
@@ -552,14 +552,14 @@ Proof.
       * replace (OBranch true) with (OBranch (negb b && beval st be))
           by (rewrite Eqbe, Hbit; reflexivity).
         rewrite Eqbe, Eqstb in H11; simpl in H11.
-        apply Ideal_If_F. rewrite app_nil_r. rewrite Eqbe; subst; simpl.
+        apply Ideal_If_F. rewrite <- app_nil_l. rewrite Eqbe; subst; simpl.
         apply IH in H11; try tauto.
         { rewrite t_update_eq in H11. apply ideal_unused_update in H11; try tauto. }
         { prog_size_auto. }
       * replace (OBranch false) with (OBranch (negb b && beval st be))
           by (rewrite Eqbe, Hbit; reflexivity).
         rewrite Eqbe, Eqstb in H11; simpl in H11.
-        apply Ideal_If_F. rewrite app_nil_r. rewrite Eqbe; subst; simpl.
+        apply Ideal_If_F. rewrite <- app_nil_l. rewrite Eqbe; subst; simpl.
         apply IH in H11; try tauto.
         { rewrite t_update_eq in H11. apply ideal_unused_update in H11; try tauto. }
         { prog_size_auto. }
@@ -569,7 +569,7 @@ Proof.
       eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
       replace (OBranch false) with (OBranch (negb b && beval st be))
         by (rewrite Hbit; reflexivity).
-      apply Ideal_If_F. rewrite app_nil_r. subst; simpl.
+      apply Ideal_If_F. rewrite <- app_nil_l. subst; simpl.
       apply IH in H11; try tauto.
       { rewrite t_update_eq in H11. apply ideal_unused_update in H11; try tauto. }
       { prog_size_auto. }
@@ -580,14 +580,14 @@ Proof.
     + (* non-speculative *)
       assert(Lnil: os2 = [] /\ ds2 = []).
       { inversion H10; subst; eauto. }
-      destruct Lnil; subst; simpl. rewrite app_nil_r.
+      destruct Lnil; subst; simpl. do 2 rewrite app_nil_r.
       destruct (st "b" =? 0)%nat eqn:Eqstb; simpl in *.
       * destruct (beval st be) eqn:Eqbe;
         inversion H12; subst; clear H12.
         { assert(Hwhile: <(st'1, ast'1, b'1, ds2)>
               =[ ultimate_slh <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
           { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
-            replace os2 with ([] ++ os2)%list by reflexivity.
+            replace os2 with (os2 ++ [])%list by (apply app_nil_r).
             eapply Spec_Seq; eassumption. }
           clear H11; clear H10.
           eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
@@ -596,9 +596,10 @@ Proof.
           apply Ideal_If. rewrite Eqbe; subst; simpl.
           apply (Ideal_Seq _ _ _ _ _ ("b" !-> st "b"; st'1) ast'1 b'1 _ _ _ os1).
           - inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
-            rewrite app_nil_r. rewrite Eqbe, Eqstb in H11; simpl in H11.
+            rewrite <- app_nil_r. rewrite Eqbe, Eqstb in H11; simpl in H11.
             rewrite t_update_same in H11. apply IH in H11; try tauto.
-            prog_size_auto.
+            + rewrite app_nil_r. auto.
+            + prog_size_auto.
           - apply IH in Hwhile; try tauto.
             + eapply ideal_unused_update_rev; eauto.
             + prog_size_auto.
@@ -624,7 +625,7 @@ Proof.
     + (* non-speculative *)
       assert(Lnil: os2 = [] /\ ds2 = []).
       { inversion H10; subst; eauto. }
-      destruct Lnil; subst; simpl. rewrite app_nil_r.
+      destruct Lnil; subst; simpl. do 2 rewrite app_nil_r.
       destruct (st "b" =? 0)%nat eqn:Eqstb; simpl in *.
       * destruct (beval st be) eqn:Eqbe;
         inversion H12; subst; clear H12.
@@ -637,8 +638,8 @@ Proof.
           apply Ideal_Skip. }
         { assert(Hwhile: <(st'1, ast'1, b'1, ds2)>
               =[ ultimate_slh <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
-          { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
-            replace os2 with ([] ++ os2)%list by reflexivity.
+          { simpl. replace ds2 with (ds2 ++ [])%list by (apply app_nil_r).
+            replace os2 with (os2++[])%list by (apply app_nil_r).
             eapply Spec_Seq; eassumption. }
           clear H11; clear H10.
           eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
@@ -647,7 +648,7 @@ Proof.
           apply Ideal_If_F. rewrite Eqbe; subst; simpl.
           apply (Ideal_Seq _ _ _ _ _ ("b" !-> st "b"; st'1) ast'1 b'1 _ _ _ os1).
           - inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
-            rewrite app_nil_r. rewrite Eqbe, Eqstb in H11; simpl in H11.
+            rewrite Eqbe, Eqstb in H11; simpl in H11.
             apply IH in H11; try tauto.
             + eapply ideal_unused_update in H11; try tauto.
             + prog_size_auto.
@@ -662,8 +663,8 @@ Proof.
       * inversion H12; subst; clear H12.
         assert(Hwhile: <(st'1, ast'1, b'1, ds2)>
               =[ ultimate_slh <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
-          { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
-            replace os2 with ([] ++ os2)%list by reflexivity.
+          { simpl. replace ds2 with (ds2 ++ [])%list by (apply app_nil_r).
+            replace os2 with (os2++[])%list by (apply app_nil_r).
             eapply Spec_Seq; eassumption. }
           clear H11; clear H10.
           eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
@@ -672,7 +673,7 @@ Proof.
           apply Ideal_If_F. subst; simpl.
           apply (Ideal_Seq _ _ _ _ _ ("b" !-> st "b"; st'1) ast'1 b'1 _ _ _ os1).
           { inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
-            rewrite app_nil_r. rewrite Eqstb in H11; simpl in H11.
+            rewrite Eqstb in H11; simpl in H11.
             apply IH in H11; try tauto.
             - rewrite t_update_eq in H11.
               eapply ideal_unused_update in H11; try tauto.
@@ -800,9 +801,7 @@ Lemma ideal_obs_length : forall c st ast b ds stt astt bt os,
   length ds = length os.
 Proof.
   intros c st ast b ds stt astt bt os Hev. induction Hev; simpl; auto.
-  - do 2 rewrite app_length. lia.
-  - rewrite app_length; simpl. lia.
-  - rewrite app_length; simpl. lia.
+  do 2 rewrite app_length. lia.
 Qed.
 
 
@@ -858,7 +857,7 @@ Lemma ideal_eval_no_spec : forall c st ast ds stt astt bt os,
 Proof.
   intros c st ast ds stt astt bt os Hds Hev.
   remember false as b eqn:Eqb. induction Hev; subst;
-  try (now econstructor); try (rewrite <- app_nil_l; econstructor; econstructor; eauto).
+  try (now econstructor); try (rewrite <- app_nil_r; econstructor; econstructor; eauto).
   - (* Seq *) admit.
   - (* If *)
     assert (L: forall d, In d ds -> d = DStep) by (simpl in *; auto).
@@ -867,7 +866,7 @@ Proof.
     assert (Contra: In DForce (DForce ::ds)) by (simpl; auto).
     apply Hds in Contra. inversion Contra.
   - (* While *)
-    rewrite <- app_nil_r. eapply multi_seq_trans; [| eapply IHHev; auto].
+    rewrite <- app_nil_l. eapply multi_seq_trans; [| eapply IHHev; auto].
     econstructor; auto.
 Admitted.
 
@@ -899,7 +898,7 @@ Lemma seq_small_step_to_multi_seq : forall c st ast ct stt astt os,
   <((c, st, ast))> -->*^os <((ct, stt, astt))>.
 Proof.
   intros c st ast ct stt astt os Hev.
-  rewrite <- app_nil_l. eapply multi_seq_trans; eauto.
+  rewrite <- app_nil_r. eapply multi_seq_trans; eauto.
   apply multi_seq_refl.
 Qed.
 
