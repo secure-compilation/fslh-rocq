@@ -851,10 +851,25 @@ Conjecture ideal_prefix_dirs :
   |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
   ds1 = ds2.
 
-Conjecture ideal_eval_no_spec : forall c st ast ds stt astt bt os,
+Lemma ideal_eval_no_spec : forall c st ast ds stt astt bt os,
   (forall d, In d ds -> d = DStep) ->
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   <((c, st, ast ))> -->*^os <((skip, stt, astt))>.
+Proof.
+  intros c st ast ds stt astt bt os Hds Hev.
+  remember false as b eqn:Eqb. induction Hev; subst;
+  try (now econstructor); try (rewrite <- app_nil_l; econstructor; econstructor; eauto).
+  - (* Seq *) admit.
+  - (* If *)
+    assert (L: forall d, In d ds -> d = DStep) by (simpl in *; auto).
+    eapply IHHev in L; eauto. econstructor; eauto. econstructor.
+  - (* If_F; contradiction *)
+    assert (Contra: In DForce (DForce ::ds)) by (simpl; auto).
+    apply Hds in Contra. inversion Contra.
+  - (* While *)
+    rewrite <- app_nil_r. eapply multi_seq_trans; [| eapply IHHev; auto].
+    econstructor; auto.
+Admitted.
 
 Conjecture ideal_exec_split_by_dirs : forall c st ast b ds stt astt bt os ds1 ds2,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
@@ -873,9 +888,44 @@ Conjecture seq_same_obs_com_seq : forall c1 c2 st1 st2 ast1 ast2,
   seq_same_obs <{{ c1; c2 }}> st1 st2 ast1 ast2 ->
   seq_same_obs c1 st1 st2 ast1 ast2.
 
-Conjecture seq_same_obs_com_if : forall be ct cf st1 st2 ast1 ast2,
+Conjecture seq_small_step_if_total : forall c be ct cf st ast,
+  c = <{{if be then ct else cf end}}> ->
+  exists c' stt astt os,
+  <((c, st, ast))> -->^os <((c', stt, astt))>
+  /\ c <> c'.
+
+Lemma seq_small_step_to_multi_seq : forall c st ast ct stt astt os,
+  <((c, st, ast))> -->^os <((ct, stt, astt))> ->
+  <((c, st, ast))> -->*^os <((ct, stt, astt))>.
+Proof.
+  intros c st ast ct stt astt os Hev.
+  rewrite <- app_nil_l. eapply multi_seq_trans; eauto.
+  apply multi_seq_refl.
+Qed.
+
+Lemma seq_same_obs_com_if : forall be ct cf st1 st2 ast1 ast2,
   seq_same_obs <{{ if be then ct else cf end }}> st1 st2 ast1 ast2 ->
   beval st1 be = beval st2 be.
+Proof.
+  intros be ct cf st1 st2 ast1 ast2 Hsec.
+  remember <{{if be then ct else cf end}}> as c eqn:Eqc.
+  assert (L1: exists c' stt astt os, <((c, st1, ast1))> -->^os <((c', stt, astt))> /\ c <> c').
+  { eapply seq_small_step_if_total; eauto. }
+  assert (L2: exists c' stt astt os, <((c, st2, ast2))> -->^os <((c', stt, astt))> /\ c <> c').
+  { eapply seq_small_step_if_total; eauto. }
+  destruct L1 as [c1 [stt1 [astt1 [os1 [Hev1 Hneq1] ] ] ] ].
+  destruct L2 as [c2 [stt2 [astt2 [os2 [Hev2 Hneq2] ] ] ] ].
+  apply seq_small_step_to_multi_seq in Hev1, Hev2.
+  eapply Hsec in Hev2 as Hpre; [| eapply Hev1].
+  inversion Hev1; subst.
+  - destruct Hneq1; auto.
+  - inversion Hev2; subst.
+    + destruct Hneq2; auto.
+    + inversion H1; subst. inversion H; subst.
+      destruct Hpre as [Hpre | Hpre].
+      * admit.
+      * admit.
+Admitted.
 
 Lemma ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
   seq_same_obs c st1 st2 ast1 ast2 ->
