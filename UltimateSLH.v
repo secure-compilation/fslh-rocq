@@ -843,12 +843,15 @@ Qed.
 
 (** * Conjectures for the proof of ideal_relative_secure *)
 
+(* HIDE *)
+(* [ideal_prefix_dirs] is currently not used, but could be helpful in the future. *)
 Conjecture ideal_prefix_dirs :
   forall c st1 st2 ast1 ast2 b1 b2 ds1 ds2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
   prefix ds1 ds2 ->
   |-i <(st1, ast1, b1, ds1)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
   |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
   ds1 = ds2.
+(* /HIDE *)
 
 Lemma ideal_eval_no_spec : forall c st ast ds stt astt bt os,
   (forall d, In d ds -> d = DStep) ->
