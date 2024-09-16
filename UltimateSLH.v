@@ -747,7 +747,7 @@ Proof.
   - apply IHHev; auto.
 Qed.
 
-Lemma ideal_spec_needs_force : forall c st ast ds stt astt os,
+Lemma ideal_eval_spec_needs_force : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   In DForce ds.
 Proof.
@@ -757,7 +757,7 @@ Proof.
   apply in_or_app. destruct b'; eauto.
 Qed.
 
-Lemma ideal_spec_bit_monotonic : forall c st ast ds stt astt bt os,
+Lemma ideal_eval_spec_bit_monotonic : forall c st ast ds stt astt bt os,
   |-i <(st, ast, true, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   bt = true.
 Proof.
@@ -765,7 +765,7 @@ Proof.
   induction Heval; subst; eauto.
 Qed.
 
-Lemma ideal_eval_final_bit_false : forall c st ast ds stt astt os,
+Lemma ideal_eval_final_spec_bit_false : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, false, os)> ->
   (forall d, In d ds -> d = DStep).
 Proof.
@@ -773,14 +773,14 @@ Proof.
   induction Hev; intros d Hin; subst; simpl in *; try (now destruct Hin; auto); auto.
   - (* Seq *)
     destruct b' eqn:Eqb'.
-    + apply ideal_spec_bit_monotonic in Hev2. discriminate Hev2.
+    + apply ideal_eval_spec_bit_monotonic in Hev2. discriminate Hev2.
     + apply in_app_or in Hin as [Hds1 | Hds2].
       * apply IHHev1; auto.
       * apply IHHev2; auto.
-  - apply ideal_spec_bit_monotonic in Hev. discriminate Hev.
+  - apply ideal_eval_spec_bit_monotonic in Hev. discriminate Hev.
 Qed.
 
-Lemma ideal_eval_bit_deterministic :
+Lemma ideal_eval_spec_bit_deterministic :
   forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
     |-i <(st1, ast1, b, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
     |-i <(st2, ast2, b, ds)> =[ c ]=> <(stt2, astt2, bt2, os2 )> ->
@@ -788,12 +788,12 @@ Lemma ideal_eval_bit_deterministic :
 Proof.
   intros c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
   destruct b eqn:Eqb.
-  - apply ideal_spec_bit_monotonic in Hev1, Hev2. subst; auto.
+  - apply ideal_eval_spec_bit_monotonic in Hev1, Hev2. subst; auto.
   - destruct bt1 eqn:Eqbt1; destruct bt2 eqn:Eqbt2; auto.
-    + apply ideal_spec_needs_force in Hev1.
-      eapply ideal_eval_final_bit_false in Hev1; eauto. inversion Hev1.
-    + apply ideal_spec_needs_force in Hev2.
-      eapply ideal_eval_final_bit_false in Hev2; eauto. inversion Hev2.
+    + apply ideal_eval_spec_needs_force in Hev1.
+      eapply ideal_eval_final_spec_bit_false in Hev1; eauto. inversion Hev1.
+    + apply ideal_eval_spec_needs_force in Hev2.
+      eapply ideal_eval_final_spec_bit_false in Hev2; eauto. inversion Hev2.
 Qed.
 
 Lemma ideal_obs_length : forall c st ast b ds stt astt bt os,
@@ -821,7 +821,7 @@ Proof.
       apply IHHev2 in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
       exists (ds1 ++ ds3); exists ds4. split.
       * intros d H. apply in_app_or in H as [Hds1 | Hds3]; auto.
-        eapply ideal_eval_final_bit_false in Hev1; [| eapply Hds1]. auto.
+        eapply ideal_eval_final_spec_bit_false in Hev1; [| eapply Hds1]. auto.
       * rewrite <- app_assoc. simpl in Heq. rewrite Heq. reflexivity.
   - (* IF non-speculative *)
     simpl in Hev. destruct (beval st be) eqn:Eqbe.
@@ -989,10 +989,44 @@ Proof.
       * eauto.
 Admitted.
 
-Conjecture ideal_eval_small_step_no_spec : forall c st ast ds ct stt astt bt os,
+Lemma ideal_eval_small_step_spec_needs_force : forall c st ast ds ct stt astt os,
+  <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
+  In DForce ds.
+Proof.
+Admitted.
+
+Lemma ideal_eval_small_step_no_spec : forall c st ast ds ct stt astt bt os,
+    <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+    (forall d, In d ds -> d = DStep) ->
+    <((c, st, ast ))> -->^os <((ct, stt, astt))>.
+Proof.
+  intros c st ast ds ct stt astt bt os Hev.
+  remember false as b eqn:Eqb. induction Hev; intros Hds;
+  try (now subst; econstructor; eauto).
+  - assert (L: In DForce [DForce]) by (simpl; auto).
+    apply Hds in L. inversion L.
+Qed.
+
+Lemma multi_ideal_no_spec : forall c st ast ds ct stt astt bt os,
     <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
     (forall d, In d ds -> d = DStep) ->
     <((c, st, ast ))> -->*^os <((ct, stt, astt))>.
+Proof.
+  intros c st ast ds ct stt astt bt os Hev.
+  remember false as b eqn:Eqb. induction Hev; intros Hds; subst.
+  - apply multi_seq_refl.
+  - assert (L1: forall d, In d ds1 -> d = DStep).
+    { intros d Hd. apply Hds. apply in_or_app. auto. }
+    assert (L2: forall d, In d ds2 -> d = DStep).
+    { intros d Hd. apply Hds. apply in_or_app. auto. }
+    destruct b' eqn:Eqb'.
+    + apply ideal_eval_small_step_spec_needs_force in H.
+      apply L1 in H. inversion H.
+    + apply ideal_eval_small_step_no_spec in H; auto.
+      eapply multi_seq_trans.
+      * eapply H.
+      * apply IHHev; auto.
+Qed.
 
 Conjecture seq_same_obs_com_seq : forall c1 c2 st1 st2 ast1 ast2,
   seq_same_obs <{{ c1; c2 }}> st1 st2 ast1 ast2 ->
@@ -1006,7 +1040,6 @@ Proof.
   intros c be ct cf st ast Heq. subst.
   repeat econstructor. intros Contra. inversion Contra.
 Qed.
-
 
 Lemma seq_small_step_to_multi_seq : forall c st ast ct stt astt os,
   <((c, st, ast))> -->^os <((ct, stt, astt))> ->
@@ -1097,7 +1130,7 @@ Lemma ideal_relative_secure : forall c st1 st2 ast1 ast2,
 Proof.
   unfold ideal_same_obs. intros c st1 st2 ast1 ast2 Hsec
   ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
-  eapply ideal_eval_bit_deterministic in Hev1 as SameB; try eassumption. subst.
+  eapply ideal_eval_spec_bit_deterministic in Hev1 as SameB; try eassumption. subst.
   destruct bt1 eqn:Eqbt1.
   - (* with speculation *)
     assert (Hlen: length os1 = length os2).
@@ -1112,11 +1145,11 @@ Proof.
     assert (L : cm1 = cm1').
     { eapply multi_ideal_com_deterministic in Hsmall2; eauto. } subst.
     assert (Hsec2: seq_same_obs cm1' stm1 stm1' astm1 astm1').
-    { apply ideal_eval_small_step_no_spec in Hsmall1, Hsmall2; auto.
+    { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply multi_seq_preserves_seq_same_obs; eauto. }
     assert (L: cm2 = cm2').
     { eapply ideal_small_step_com_deterministic in Hone2; eauto. } subst.
-    apply ideal_eval_small_step_no_spec in Hsmall1, Hsmall2; auto.
+    apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
     eapply gilles_lemma in Hbig1; eauto. subst.
     eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
     eapply ideal_one_step_obs in Hone2; eauto.
@@ -1124,7 +1157,7 @@ Proof.
     do 2 rewrite app_assoc. apply prefix_app_end. apply Hpre.
   - (* without speculation *)
     assert (Hds: forall d, In d ds -> d = DStep).
-    { intros; eapply ideal_eval_final_bit_false in Hev1; eauto. }
+    { intros; eapply ideal_eval_final_spec_bit_false in Hev1; eauto. }
     apply ideal_obs_length in Hev1 as Hos1.
     apply ideal_obs_length in Hev2 as Hos2.
     rewrite Hos1 in Hos2.
