@@ -92,6 +92,13 @@ Inductive multi_seq (c:com) (st:state) (ast:astate) :
   where "<(( c , st , ast ))> -->*^ os <(( ct ,  stt , astt ))>" :=
     (multi_seq c st ast ct stt astt os).
 
+Lemma multi_seq_combined_executions : forall c st ast cm stm astm osm ct stt astt ost,
+  <((c, st, ast))> -->*^osm <((cm, stm, astm))> ->
+  <((cm, stm, astm))> -->*^ost <((ct, stt, astt))> ->
+  <((c, st, ast))> -->*^(osm++ost) <((ct, stt, astt))>.
+Proof.
+Admitted.
+
 Lemma seq_big_to_small_step : forall c st ast stt astt os,
   <(st, ast)> =[ c ]=> <(stt, astt, os)> ->
   <((c, st, ast))> -->*^os <((skip, stt, astt))>.
@@ -735,6 +742,19 @@ Proof.
     apply prefix_cons; apply H.
 Qed.
 
+Lemma prefix_app_front_eq_length : forall {X:Type} {ds1 ds2 ds3 ds4 : list X},
+  length ds1 = length ds3 ->
+  prefix (ds1 ++ ds2) (ds3 ++ ds4) ->
+  prefix ds2 ds4.
+Proof.
+  intros X ds1. induction ds1 as [| d1 ds1' IH]; intros ds2 ds3 ds4 Hlen Hpre; simpl in *.
+  - symmetry in Hlen. apply length_zero_iff_nil in Hlen. subst; auto.
+  - destruct ds3 as [| d3 ds3'] eqn:Eqds3; simpl in *.
+    + discriminate Hlen.
+    + apply prefix_heads_and_tails in Hpre as [Heq Hpre]; subst.
+      inversion Hlen. eapply IH in H0; eauto.
+Qed.
+
 (** * Lemmas about [dirs], [obs] and speculation bits of [ideal_eval] *)
 
 Lemma ideal_eval_dirs : forall c st ast b ds stt astt bt os,
@@ -796,12 +816,28 @@ Proof.
       eapply ideal_eval_final_spec_bit_false in Hev2; eauto. inversion Hev2.
 Qed.
 
-Lemma ideal_obs_length : forall c st ast b ds stt astt bt os,
+Lemma ideal_eval_obs_length : forall c st ast b ds stt astt bt os,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   length ds = length os.
 Proof.
   intros c st ast b ds stt astt bt os Hev. induction Hev; simpl; auto.
-  do 2 rewrite app_length. lia.
+  do 2 rewrite app_length. auto.
+Qed.
+
+Lemma ideal_eval_small_step_obs_length : forall c st ast b ds ct stt astt bt os,
+  <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+  length ds = length os.
+Proof.
+  intros c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
+Qed.
+
+Lemma multi_ideal_obs_length : forall c st ast b ds ct stt astt bt os,
+  <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  length ds = length os.
+Proof.
+  intros c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
+  do 2 rewrite app_length. apply ideal_eval_small_step_obs_length in H.
+  auto.
 Qed.
 
 
@@ -1028,10 +1064,6 @@ Proof.
       * apply IHHev; auto.
 Qed.
 
-Conjecture seq_same_obs_com_seq : forall c1 c2 st1 st2 ast1 ast2,
-  seq_same_obs <{{ c1; c2 }}> st1 st2 ast1 ast2 ->
-  seq_same_obs c1 st1 st2 ast1 ast2.
-
 Lemma seq_small_step_if_total : forall c be ct cf st ast,
   c = <{{if be then ct else cf end}}> ->
   exists c' stt astt os,
@@ -1074,6 +1106,10 @@ Proof.
       * apply prefix_heads in Hpre. inversion Hpre; auto.
 Qed.
 
+Conjecture seq_same_obs_com_seq : forall c1 c2 st1 st2 ast1 ast2,
+  seq_same_obs <{{ c1; c2 }}> st1 st2 ast1 ast2 ->
+  seq_same_obs c1 st1 st2 ast1 ast2.
+
 Lemma ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
   seq_same_obs c st1 st2 ast1 ast2 ->
   <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
@@ -1091,26 +1127,79 @@ Proof.
   - apply seq_same_obs_com_if in Hobs. rewrite Hobs. reflexivity.
 Qed.
 
+Lemma seq_eval_small_step_obs_length :
+  forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
+    <((c, st1, ast1))>  -->^os1 <((ct, stt1, astt1))> ->
+    <((c, st2, ast2))>  -->^os2 <((ct, stt2, astt2))> ->
+    length os1 = length os2.
+Proof.
+  intros c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 Hev1.
+  induction Hev1; intros Hev2; inversion Hev2; subst; auto.
+  - inversion Hev1.
+  - inversion H7.
+Qed.
+
+Lemma seq_eval_small_step_preserves_seq_same_obs :
+  forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
+    <((c, st1, ast1))>  -->^os1 <((ct, stt1, astt1))> ->
+    <((c, st2, ast2))>  -->^os2 <((ct, stt2, astt2))> ->
+    seq_same_obs c st1 st2 ast1 ast2 ->
+    seq_same_obs ct stt1 stt2 astt1 astt2.
+Proof.
+  intros c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 Hev1 Hev2 Hsec .
+  unfold seq_same_obs. intros stt1' stt2' astt1' astt2' os1' os2' ct1 ct2 Hmul1 Hmul2.
+  assert (L1: <((c, st1, ast1))> -->*^ (os1++os1') <((ct1, stt1', astt1'))> ).
+  { eapply multi_seq_trans; eauto. }
+  assert (L2: <((c, st2, ast2))> -->*^ (os2++os2') <((ct2, stt2', astt2'))> ).
+  { eapply multi_seq_trans; eauto. }
+  eapply Hsec in L2; eauto. destruct L2 as [Hpre | Hpre].
+  - apply prefix_app_front_eq_length in Hpre; auto.
+    eapply seq_eval_small_step_obs_length in Hev2; eauto.
+  - apply prefix_app_front_eq_length in Hpre; auto.
+    eapply seq_eval_small_step_obs_length in Hev2; eauto.
+Qed.
+
+Lemma multi_seq_preserves_seq_same_obs :
+  forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
+    <((c, st1, ast1))>  -->*^os1 <((ct, stt1, astt1))> ->
+    <((c, st2, ast2))>  -->*^os2 <((ct, stt2, astt2))> ->
+    seq_same_obs c st1 st2 ast1 ast2 ->
+    length os1 = length os2 ->
+    seq_same_obs ct stt1 stt2 astt1 astt2.
+Proof.
+  intros c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 Hev1 Hev2 Hsec Hlen.
+  unfold seq_same_obs. intros stt1' stt2' astt1' astt2' os1' os2' ct1 ct2 Hmul1 Hmul2.
+  assert (L1: <((c, st1, ast1))> -->*^ (os1++os1') <((ct1, stt1', astt1'))> ).
+  { eapply multi_seq_combined_executions; eauto.  }
+  assert (L2: <((c, st2, ast2))> -->*^ (os2++os2') <((ct2, stt2', astt2'))> ).
+  { eapply multi_seq_combined_executions; eauto. }
+  eapply Hsec in L2; eauto. destruct L2 as [Hpre | Hpre].
+  - apply prefix_app_front_eq_length in Hpre; auto.
+  - apply prefix_app_front_eq_length in Hpre; auto.
+Qed.
+
+Conjecture seq_eval_small_step_com_deterministic :
+    forall c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2,
+    <((c, st1, ast1))>  -->^os1 <((ct1, stt1, astt1))> ->
+    <((c, st2, ast2))>  -->^os2 <((ct2, stt2, astt2))> ->
+    seq_same_obs c st1 st2 ast1 ast2 ->
+    length os1 = length os2 ->
+    ct1 = ct2.
+
+Conjecture multi_seq_com_deterministic :
+    forall c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2,
+    <((c, st1, ast1))>  -->*^os1 <((ct1, stt1, astt1))> ->
+    <((c, st2, ast2))>  -->*^os2 <((ct2, stt2, astt2))> ->
+    seq_same_obs c st1 st2 ast1 ast2 ->
+    length os1 = length os2 ->
+    ct1 = ct2.
+
 Conjecture ideal_small_step_com_deterministic :
   forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
     seq_same_obs c st1 st2 ast1 ast2 ->
     <((c, st1, ast1, b))>  -->i_ds^^os1 <((c1, stt1, astt1, bt1))> ->
     <((c, st2, ast2, b))>  -->i_ds^^os2 <((c2, stt2, astt2, bt2))> ->
     c1 = c2.
-
-Conjecture multi_ideal_com_deterministic :
-  forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
-    seq_same_obs c st1 st2 ast1 ast2 ->
-    <((c, st1, ast1, b))>  -->i*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
-    <((c, st2, ast2, b))>  -->i*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
-    c1 = c2.
-
-Conjecture multi_seq_preserves_seq_same_obs :
-  forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
-    seq_same_obs c st1 st2 ast1 ast2 ->
-    <((c, st1, ast1))>  -->*^os1 <((ct, stt1, astt1))> ->
-    <((c, st2, ast2))>  -->*^os2 <((ct, stt2, astt2))> ->
-    seq_same_obs ct stt1 stt2 astt1 astt2.
 
 Conjecture ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
@@ -1134,7 +1223,7 @@ Proof.
   destruct bt1 eqn:Eqbt1.
   - (* with speculation *)
     assert (Hlen: length os1 = length os2).
-    { apply ideal_obs_length in Hev1, Hev2. congruence. }
+    { apply ideal_eval_obs_length in Hev1, Hev2. congruence. }
     eapply ideal_dirs_split in Hev1 as L.
     destruct L as [ds1 [ds2 [Hds1 Heq] ] ].
     rewrite Heq in Hev1, Hev2.
@@ -1142,8 +1231,11 @@ Proof.
     destruct Hev1 as [cm1 [stm1 [astm1 [cm2 [stm2 [astm2 [os1_1 [os1_2 [os1_3 [Hsmall1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ].
     eapply ideal_exec_split in Hev2; eauto.
     destruct Hev2 as [cm1' [stm1' [astm1' [cm2' [stm2' [astm2' [os2_1 [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
+    assert (Hlen2: length os1_1 = length os2_1).
+    { apply multi_ideal_obs_length in Hsmall1, Hsmall2. congruence. }
     assert (L : cm1 = cm1').
-    { eapply multi_ideal_com_deterministic in Hsmall2; eauto. } subst.
+    { apply multi_ideal_no_spec in Hsmall2, Hsmall1; eauto.
+      eapply multi_seq_com_deterministic in Hsmall2; eauto. } subst.
     assert (Hsec2: seq_same_obs cm1' stm1 stm1' astm1 astm1').
     { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply multi_seq_preserves_seq_same_obs; eauto. }
@@ -1158,8 +1250,8 @@ Proof.
   - (* without speculation *)
     assert (Hds: forall d, In d ds -> d = DStep).
     { intros; eapply ideal_eval_final_spec_bit_false in Hev1; eauto. }
-    apply ideal_obs_length in Hev1 as Hos1.
-    apply ideal_obs_length in Hev2 as Hos2.
+    apply ideal_eval_obs_length in Hev1 as Hos1.
+    apply ideal_eval_obs_length in Hev2 as Hos2.
     rewrite Hos1 in Hos2.
     eapply ideal_eval_no_spec in Hev1; try assumption.
     eapply ideal_eval_no_spec in Hev2; try assumption.
