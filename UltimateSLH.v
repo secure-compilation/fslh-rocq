@@ -1106,9 +1106,18 @@ Proof.
       * apply prefix_heads in Hpre. inversion Hpre; auto.
 Qed.
 
-Conjecture seq_same_obs_com_seq : forall c1 c2 st1 st2 ast1 ast2,
+Conjecture multi_seq_add_snd_com : forall c st ast ct stt astt os c2,
+  <((c, st, ast))> -->*^os <((ct, stt, astt))> ->
+  <((c;c2, st, ast))> -->*^os <((ct;c2, stt, astt))>.
+
+Lemma seq_same_obs_com_seq : forall c1 c2 st1 st2 ast1 ast2,
   seq_same_obs <{{ c1; c2 }}> st1 st2 ast1 ast2 ->
   seq_same_obs c1 st1 st2 ast1 ast2.
+Proof.
+  intros c1 c2 st1 st2 ast1 ast2 Hsec. unfold seq_same_obs.
+  intros stt1 stt2 astt1 astt2 os1 os2 ct1 ct2 Hev1 Hev2.
+  eapply multi_seq_add_snd_com in Hev1, Hev2. eapply Hsec in Hev2; eauto.
+Qed.
 
 Lemma ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
   seq_same_obs c st1 st2 ast1 ast2 ->
