@@ -1187,13 +1187,26 @@ Proof.
   - apply prefix_app_front_eq_length in Hpre; auto.
 Qed.
 
-Conjecture seq_eval_small_step_com_deterministic :
+Lemma seq_eval_small_step_com_deterministic :
     forall c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2,
     <((c, st1, ast1))>  -->^os1 <((ct1, stt1, astt1))> ->
     <((c, st2, ast2))>  -->^os2 <((ct2, stt2, astt2))> ->
     seq_same_obs c st1 st2 ast1 ast2 ->
-    length os1 = length os2 ->
     ct1 = ct2.
+Proof.
+  intros c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2 Hev1.
+  generalize dependent os2; generalize dependent astt2;
+  generalize dependent stt2; generalize dependent ct2;
+  generalize dependent ast2 ; generalize dependent st2.
+  induction Hev1; intros st2 ast2 ct2 stt2 astt2 ost2 Hev2 Hsec;
+  try (now inversion Hev2; subst; auto).
+  - inversion Hev2; subst; auto.
+    + apply seq_same_obs_com_seq in Hsec as Hc1.
+      apply IHHev1 in H7; subst; auto.
+    + inversion Hev1.
+  - apply seq_same_obs_com_if in Hsec.
+    inversion Hev2; subst. rewrite Hsec. reflexivity.
+Qed.
 
 Conjecture multi_seq_com_deterministic :
     forall c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2,
@@ -1205,9 +1218,9 @@ Conjecture multi_seq_com_deterministic :
 
 Conjecture ideal_small_step_com_deterministic :
   forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
-    seq_same_obs c st1 st2 ast1 ast2 ->
     <((c, st1, ast1, b))>  -->i_ds^^os1 <((c1, stt1, astt1, bt1))> ->
     <((c, st2, ast2, b))>  -->i_ds^^os2 <((c2, stt2, astt2, bt2))> ->
+    seq_same_obs c st1 st2 ast1 ast2 ->
     c1 = c2.
 
 Conjecture ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
