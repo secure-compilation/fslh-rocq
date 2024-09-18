@@ -1260,12 +1260,18 @@ Proof.
       inversion Hev2; subst. rewrite Hsec. reflexivity.
 Qed.
 
+(* HIDE *)
+(* Same problem as in [multi_seq_com_deterministic]. Steps without observations
+   and directions do not destroy the seq_sam_obs property. but lead to
+   different ct1 adn ct2. Needs a measure that exactly same amount of single
+  steps are taken. *)
 Conjecture multi_ideal_com_deterministic :
-    forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
-      <((c, st1, ast1, b))>  -->i*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
-      <((c, st2, ast2, b))>  -->i*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
+    forall c ds b st1 ast1 ct1 stt1 astt1 bt1 os1 st2 ast2 ct2 stt2 astt2 bt2 os2,
+      <((c, st1, ast1, b))>  -->i*_ds^^os1 <((ct1, stt1, astt1, bt1))> ->
+      <((c, st2, ast2, b))>  -->i*_ds^^os2 <((ct2, stt2, astt2, bt2))> ->
       seq_same_obs c st1 st2 ast1 ast2 ->
-      c1 = c2.
+      ct1 = ct2.
+(* /HIDE *)
 
 Conjecture ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
@@ -1300,7 +1306,7 @@ Proof.
     assert (Hlen2: length os1_1 = length os2_1).
     { apply multi_ideal_obs_length in Hsmall1, Hsmall2. congruence. }
     assert (L : cm1 = cm1').
-    { eapply multi_ideal_com_deterministic in Hsmall2; eauto. } subst.
+    { admit. } subst.
     assert (Hsec2: seq_same_obs cm1' stm1 stm1' astm1 astm1').
     { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply multi_seq_preserves_seq_same_obs; eauto. }
@@ -1322,7 +1328,7 @@ Proof.
     eapply ideal_eval_no_spec in Hev2; try assumption.
     eapply Hsec in Hev1; eapply Hev1 in Hev2.
     apply prefix_eq_length; now auto.
-Qed.
+Admitted.
 
 Theorem ultimate_slh_relative_secure :
   forall c st1 st2 ast1 ast2,
