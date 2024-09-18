@@ -1236,12 +1236,29 @@ Conjecture multi_seq_com_deterministic :
     ct1 = ct2.
 (* /HIDE *)
 
-Conjecture ideal_small_step_com_deterministic :
-  forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
-    <((c, st1, ast1, b))>  -->i_ds^^os1 <((c1, stt1, astt1, bt1))> ->
-    <((c, st2, ast2, b))>  -->i_ds^^os2 <((c2, stt2, astt2, bt2))> ->
+Lemma ideal_small_step_com_deterministic :
+  forall c b ds st1 ast1 ct1 stt1 astt1 bt1 os1 st2 ast2 ct2 stt2 astt2 bt2 os2,
+    <((c, st1, ast1, b))>  -->i_ds^^os1 <((ct1, stt1, astt1, bt1))> ->
+    <((c, st2, ast2, b))>  -->i_ds^^os2 <((ct2, stt2, astt2, bt2))> ->
     seq_same_obs c st1 st2 ast1 ast2 ->
-    c1 = c2.
+    ct1 = ct2.
+Proof.
+    intros c b ds st1 ast1 ct1 stt1 astt1 bt1 os1 st2 ast2 ct2 stt2 astt2 bt2 os2 Hev1.
+    generalize dependent os2; generalize dependent bt2;
+    generalize dependent astt2; generalize dependent stt2;
+    generalize dependent ct2; generalize dependent ast2;
+    generalize dependent st2.
+    induction Hev1; intros st2 ast2 ct2 stt2 astt2 bt2 ost2 Hev2 Hsec;
+    try (now inversion Hev2; subst; auto).
+    - inversion Hev2; subst; auto.
+      + apply seq_same_obs_com_seq in Hsec as Hc1.
+        apply IHHev1 in H10; subst; auto.
+      + inversion Hev1.
+    - apply seq_same_obs_com_if in Hsec.
+      inversion Hev2; subst. rewrite Hsec. reflexivity.
+    - apply seq_same_obs_com_if in Hsec.
+      inversion Hev2; subst. rewrite Hsec. reflexivity.
+Qed.
 
 Conjecture multi_ideal_com_deterministic :
     forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
