@@ -1195,6 +1195,8 @@ Proof.
   - apply prefix_app_front_eq_length in Hpre; auto.
 Qed.
 
+(* HIDE *)
+(* Currently unused but maybe helpful in the future. *)
 Lemma seq_eval_small_step_com_deterministic :
     forall c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2,
     <((c, st1, ast1))>  -->^os1 <((ct1, stt1, astt1))> ->
@@ -1215,7 +1217,16 @@ Proof.
   - apply seq_same_obs_com_if in Hsec.
     inversion Hev2; subst. rewrite Hsec. reflexivity.
 Qed.
+(* /HIDE *)
 
+(* HIDE *)
+(* This conjecture does not hold, look at c = skip; skip; skip :
+      <((c, st1, ast1))>  -->*^[] <((skip; skip, st1, ast1))> /\
+      <((c, st2, ast2))>  -->*^[] <((skip, st2, ast2))> /\
+      seq  seq_same_obs c st1 st2 ast1 ast2 /\
+      length [] = length []
+    But: skip; skip <> skip
+*)
 Conjecture multi_seq_com_deterministic :
     forall c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2,
     <((c, st1, ast1))>  -->*^os1 <((ct1, stt1, astt1))> ->
@@ -1223,6 +1234,7 @@ Conjecture multi_seq_com_deterministic :
     seq_same_obs c st1 st2 ast1 ast2 ->
     length os1 = length os2 ->
     ct1 = ct2.
+(* /HIDE *)
 
 Conjecture ideal_small_step_com_deterministic :
   forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
@@ -1230,6 +1242,13 @@ Conjecture ideal_small_step_com_deterministic :
     <((c, st2, ast2, b))>  -->i_ds^^os2 <((c2, stt2, astt2, bt2))> ->
     seq_same_obs c st1 st2 ast1 ast2 ->
     c1 = c2.
+
+Conjecture multi_ideal_com_deterministic :
+    forall c ds b c1 st1 ast1 stt1 astt1 bt1 os1 c2 st2 ast2 stt2 astt2 bt2 os2,
+      <((c, st1, ast1, b))>  -->i*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
+      <((c, st2, ast2, b))>  -->i*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
+      seq_same_obs c st1 st2 ast1 ast2 ->
+      c1 = c2.
 
 Conjecture ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
@@ -1264,8 +1283,7 @@ Proof.
     assert (Hlen2: length os1_1 = length os2_1).
     { apply multi_ideal_obs_length in Hsmall1, Hsmall2. congruence. }
     assert (L : cm1 = cm1').
-    { apply multi_ideal_no_spec in Hsmall2, Hsmall1; eauto.
-      eapply multi_seq_com_deterministic in Hsmall2; eauto. } subst.
+    { eapply multi_ideal_com_deterministic in Hsmall2; eauto. } subst.
     assert (Hsec2: seq_same_obs cm1' stm1 stm1' astm1 astm1').
     { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply multi_seq_preserves_seq_same_obs; eauto. }
