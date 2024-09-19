@@ -755,7 +755,7 @@ Proof.
       inversion Hlen. eapply IH in H0; eauto.
 Qed.
 
-(** * Lemmas about [dirs], [obs] and speculation bits of [ideal_eval] *)
+(** * Lemmas for the proof of [ideal_eval_relative_secure] *)
 
 Lemma ideal_eval_dirs : forall c st ast b ds stt astt bt os,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
@@ -840,7 +840,6 @@ Proof.
   auto.
 Qed.
 
-
 Lemma ideal_dirs_split : forall c st ast ds stt astt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds = ds1 ++ [DForce] ++ ds2 .
@@ -876,18 +875,6 @@ Proof.
     + intros d H; destruct H.
     + reflexivity.
 Qed.
-
-(** * Conjectures for the proof of ideal_relative_secure *)
-
-(* HIDE *)
-(* [ideal_prefix_dirs] is currently not used, but could be helpful in the future. *)
-Conjecture ideal_prefix_dirs :
-  forall c st1 st2 ast1 ast2 b1 b2 ds1 ds2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
-  prefix ds1 ds2 ->
-  |-i <(st1, ast1, b1, ds1)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
-  |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
-  ds1 = ds2.
-(* /HIDE *)
 
 Lemma ideal_eval_no_spec : forall c st ast ds stt astt bt os,
   (forall d, In d ds -> d = DStep) ->
@@ -1219,23 +1206,6 @@ Proof.
 Qed.
 (* /HIDE *)
 
-(* HIDE *)
-(* This conjecture does not hold, look at c = skip; skip; skip :
-      <((c, st1, ast1))>  -->*^[] <((skip; skip, st1, ast1))> /\
-      <((c, st2, ast2))>  -->*^[] <((skip, st2, ast2))> /\
-      seq  seq_same_obs c st1 st2 ast1 ast2 /\
-      length [] = length []
-    But: skip; skip <> skip
-*)
-Conjecture multi_seq_com_deterministic :
-    forall c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2,
-    <((c, st1, ast1))>  -->*^os1 <((ct1, stt1, astt1))> ->
-    <((c, st2, ast2))>  -->*^os2 <((ct2, stt2, astt2))> ->
-    seq_same_obs c st1 st2 ast1 ast2 ->
-    length os1 = length os2 ->
-    ct1 = ct2.
-(* /HIDE *)
-
 Lemma ideal_small_step_com_deterministic :
   forall c b ds st1 ast1 ct1 stt1 astt1 bt1 os1 st2 ast2 ct2 stt2 astt2 bt2 os2,
     <((c, st1, ast1, b))>  -->i_ds^^os1 <((ct1, stt1, astt1, bt1))> ->
@@ -1260,7 +1230,32 @@ Proof.
       inversion Hev2; subst. rewrite Hsec. reflexivity.
 Qed.
 
+(** * Conjectures for the proof of ideal_eval_relative_secure *)
+
 (* HIDE *)
+(* [ideal_prefix_dirs] is currently not used, but could be helpful in the future. *)
+Conjecture ideal_prefix_dirs :
+  forall c st1 st2 ast1 ast2 b1 b2 ds1 ds2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
+  prefix ds1 ds2 ->
+  |-i <(st1, ast1, b1, ds1)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
+  |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
+  ds1 = ds2.
+
+(* This conjecture does not hold, look at c = skip; skip; skip :
+      <((c, st1, ast1))>  -->*^[] <((skip; skip, st1, ast1))> /\
+      <((c, st2, ast2))>  -->*^[] <((skip, st2, ast2))> /\
+      seq  seq_same_obs c st1 st2 ast1 ast2 /\
+      length [] = length []
+    But: skip; skip <> skip
+*)
+Conjecture multi_seq_com_deterministic :
+    forall c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2,
+    <((c, st1, ast1))>  -->*^os1 <((ct1, stt1, astt1))> ->
+    <((c, st2, ast2))>  -->*^os2 <((ct2, stt2, astt2))> ->
+    seq_same_obs c st1 st2 ast1 ast2 ->
+    length os1 = length os2 ->
+    ct1 = ct2.
+
 (* Same problem as in [multi_seq_com_deterministic]. Steps without observations
    and directions do not destroy the seq_sam_obs property. but lead to
    different ct1 adn ct2. Needs a measure that exactly same amount of single
@@ -1285,7 +1280,7 @@ Conjecture ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
 
 (** * Ultimate SLH Relative Secure *)
 
-Lemma ideal_relative_secure : forall c st1 st2 ast1 ast2,
+Lemma ideal_eval_relative_secure : forall c st1 st2 ast1 ast2,
   seq_same_obs c st1 st2 ast1 ast2 ->
   ideal_same_obs c st1 st2 ast1 ast2.
 Proof.
@@ -1339,13 +1334,13 @@ Theorem ultimate_slh_relative_secure :
     nonempty_arrs ast1 ->
     nonempty_arrs ast2 ->
     relative_secure ultimate_slh c st1 st2 ast1 ast2.
-Proof. (* from bcc + ideal_relative_secure *)
+Proof. (* from bcc + ideal_eval_relative_secure *)
   unfold relative_secure.
   intros c st1 st2 ast1 ast2 Hunused Hst1b Hst2b Hast1 Hast2 Hseq ds stt1 stt2
     astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
   apply ultimate_slh_bcc in Hev1; try assumption.
   apply ultimate_slh_bcc in Hev2; try assumption.
-  eapply (ideal_relative_secure c st1 st2); eassumption.
+  eapply (ideal_eval_relative_secure c st1 st2); eassumption.
 Qed.
 
 (* HIDE *)
