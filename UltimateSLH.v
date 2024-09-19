@@ -755,6 +755,24 @@ Proof.
       inversion Hlen. eapply IH in H0; eauto.
 Qed.
 
+Lemma app_eq_head_tail : forall {X :Type} (l1 l2 l3: list X) (x :X),
+  x::l1 = l2 ++ l3 ->
+  l2 = []  \/ (exists l2', l2 = x::l2').
+Proof.
+  intros X. induction l1 as [| x1 l1' IH]; intros l2 l3 x Heq.
+  - symmetry in Heq. apply app_eq_unit in Heq.
+    destruct Heq as [ [Hl2 Hl3] | [Hl2 Hl3] ].
+    + left; auto.
+    + right; eexists; eauto.
+  - destruct l2 as [| x2 l2'] eqn:Eql2.
+    + left. reflexivity.
+    + simpl in Heq. inversion Heq.
+      apply IH in H1; subst. destruct H1 as [H | H].
+      * right. eexists; eauto.
+      * destruct H as [l Hl].
+        right. eexists; eauto.
+Qed.
+
 (** * Lemmas for the proof of [ideal_eval_relative_secure] *)
 
 Lemma ideal_eval_dirs : forall c st ast b ds stt astt bt os,
@@ -896,24 +914,6 @@ Proof.
     econstructor; auto.
 Admitted.
 
-Lemma app_eq_head_tail : forall {X :Type} (l1 l2 l3: list X) (x :X),
-  x::l1 = l2 ++ l3 ->
-  l2 = []  \/ (exists l2', l2 = x::l2').
-Proof.
-  intros X. induction l1 as [| x1 l1' IH]; intros l2 l3 x Heq.
-  - symmetry in Heq. apply app_eq_unit in Heq.
-    destruct Heq as [ [Hl2 Hl3] | [Hl2 Hl3] ].
-    + left; auto.
-    + right; eexists; eauto.
-  - destruct l2 as [| x2 l2'] eqn:Eql2.
-    + left. reflexivity.
-    + simpl in Heq. inversion Heq.
-      apply IH in H1; subst. destruct H1 as [H | H].
-      * right. eexists; eauto.
-      * destruct H as [l Hl].
-        right. eexists; eauto.
-Qed.
-
 Lemma ideal_exec_split_by_dirs : forall c st ast b ds stt astt bt os ds1 ds2,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   ds = ds1 ++ ds2 ->
@@ -1015,6 +1015,18 @@ Admitted.
 Lemma ideal_eval_small_step_spec_needs_force : forall c st ast ds ct stt astt os,
   <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
   In DForce ds.
+Proof.
+Admitted.
+
+Lemma multi_ideal_spec_needs_force : forall c st ast ds ct stt astt os,
+  <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
+  In DForce ds.
+Proof.
+Admitted.
+
+Lemma multi_ideal_final_spec_bit_false : forall c st ast ds ct stt astt os,
+  <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, false))> ->
+  (forall d, In d ds -> d = DStep).
 Proof.
 Admitted.
 
@@ -1268,7 +1280,7 @@ Conjecture multi_ideal_com_deterministic :
       ct1 = ct2.
 (* /HIDE *)
 
-Conjecture ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
+Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   (forall d, In d ds1 -> d = DStep) ->
   ds = ds1 ++ [DForce] ++ ds2 ->
@@ -1276,7 +1288,29 @@ Conjecture ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
     <((c, st, ast, false))> -->i*_ds1^^os1 <((cm1, stm1, astm1, false))>  /\
     <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
     |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
-    os = os3 ++ os2 ++ os1.
+    os = os1 ++ os2 ++ os3.
+Proof.
+  intros c st ast ds stt astt os ds1 ds2 Hev Hds1 Hds. subst.
+  apply ideal_exec_split_by_dirs with (ds1:=ds1) (ds2:=[DForce]++ds2) in Hev; auto.
+  destruct Hev as [cm1 [stm1 [astm1 [bm1 [os1 [os' [Hsmall1 [Hbig1 Hos1] ] ] ] ] ] ] ].
+  exists cm1; exists stm1; exists astm1.
+  assert(L: bm1 = false).
+  { destruct bm1 eqn:Eqbm1; auto.
+    apply multi_ideal_spec_needs_force in Hsmall1.
+    apply Hds1 in Hsmall1. discriminate. } subst.
+  apply ideal_exec_split_by_dirs with (ds1:=[DForce]) (ds2:=ds2) in Hbig1; auto.
+  destruct Hbig1 as [cm2 [stm2 [astm2 [bm2 [os2 [os3 [Hsmall2 [Hbig2 Hos2] ] ] ] ] ] ] ].
+  exists cm2; exists stm2; exists astm2; exists os1; exists os2; exists os3.
+  assert (L: bm2 = true).
+  { destruct bm2 eqn:Eqbm2; auto.
+    apply multi_ideal_final_spec_bit_false with (d:=DForce) in Hsmall2; simpl; auto.
+    discriminate. } subst.
+  split; [| split; [| split] ].
+  - apply Hsmall1.
+  - admit.
+  - apply Hbig2.
+  - reflexivity.
+Admitted.
 
 (** * Ultimate SLH Relative Secure *)
 
@@ -1312,7 +1346,8 @@ Proof.
     eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
     eapply ideal_one_step_obs in Hone2; eauto.
     subst. apply prefix_eq_length; auto.
-    do 2 rewrite app_assoc. apply prefix_app_end. apply Hpre.
+    apply prefix_eq_length in Hlen2; auto. subst.
+    left. apply prefix_refl.
   - (* without speculation *)
     assert (Hds: forall d, In d ds -> d = DStep).
     { intros; eapply ideal_eval_final_spec_bit_false in Hev1; eauto. }
