@@ -97,7 +97,13 @@ Lemma multi_seq_combined_executions : forall c st ast cm stm astm osm ct stt ast
   <((cm, stm, astm))> -->*^ost <((ct, stt, astt))> ->
   <((c, st, ast))> -->*^(osm++ost) <((ct, stt, astt))>.
 Proof.
-Admitted.
+  intros c st ast cm stm astm osm ct stt astt ost Hev1 Hev2.
+  induction Hev1.
+  - rewrite app_nil_l. apply Hev2.
+  - rewrite <- app_assoc. eapply multi_seq_trans.
+    + eapply H.
+    + apply IHHev1. apply Hev2.
+Qed.
 
 Lemma seq_big_to_small_step : forall c st ast stt astt os,
   <(st, ast)> =[ c ]=> <(stt, astt, os)> ->
@@ -432,12 +438,6 @@ Proof.
   apply observations_fixed in H2; try auto. congruence.
 Qed.
 (* /HIDE *)
-
-Lemma gilles_lemma : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
-  |-i <(st1, ast1, true, ds)> =[ c ]=> <(stt1, astt1, true, os1)> ->
-  |-i <(st2, ast2, true, ds)> =[ c ]=> <(stt2, astt2, true, os2)> ->
-  os1 = os2.
-Admitted.
 
 (** As in SpecCT and Spectre Declassified, an important step in the proof is
     relating the speculative semantics of the hardened program with the ideal
@@ -1235,16 +1235,84 @@ Proof.
       inversion Hev2; subst. rewrite Hsec. reflexivity.
 Qed.
 
+(** * Gilles Lemma *)
+
+Lemma ideal_prefix_dirs :
+  forall c st1 st2 ast1 ast2 b ds1 ds2 stt1 stt2 astt1 astt2 bt os1 os2,
+  |-i <(st1, ast1, b, ds1)> =[ c ]=> <(stt1, astt1, bt, os1)> ->
+  |-i <(st2, ast2, b, ds2)> =[ c ]=> <(stt2, astt2, bt, os2)> ->
+  (prefix ds1 ds2 \/ prefix ds2 ds1) ->
+  b = true ->
+  bt = true ->
+  ds1 = ds2.
+Proof.
+  intros c st1 st2 ast1 ast2 b ds1 ds2 stt1 stt2 astt1 astt2 bt os1 os2 Hev1.
+  generalize dependent os2; generalize dependent astt2;
+  generalize dependent stt2; generalize dependent ds2;
+  generalize dependent ast2; generalize dependent st2.
+  induction Hev1; intros st2 ast2 ds2' stt2 astt2 ost2 Hev2 Hpre Hb Hbt;
+  try (now inversion Hev2; subst; auto).
+  - inversion Hev2; subst; clear Hev2.
+    apply ideal_eval_spec_bit_monotonic in H1 as Hb'0; subst.
+    apply ideal_eval_spec_bit_monotonic in Hev1_1 as Hb'; subst.
+    destruct Hpre as [Hpre | Hpre]; apply prefix_app in Hpre as L.
+    + apply IHHev1_1 in H1; auto. subst.
+      apply prefix_append_front in Hpre.
+      apply IHHev1_2 in H10; auto. subst. reflexivity.
+    + apply IHHev1_1 in H1; try tauto. subst.
+      apply prefix_append_front in Hpre.
+      apply IHHev1_2 in H10; auto. subst. reflexivity.
+  - inversion Hev2; subst; clear Hev2; simpl in *.
+    + destruct Hpre as [Hpre | Hpre];
+      apply prefix_heads_and_tails in Hpre as [_ Hpre];
+      apply IHHev1 in H10; auto; rewrite H10; reflexivity.
+    + destruct Hpre as [Hpre | Hpre];
+      apply prefix_heads_and_tails in Hpre as [Contra _];
+      discriminate.
+  - inversion Hev2; subst; clear Hev2; simpl in *.
+    + destruct Hpre as [Hpre | Hpre];
+      apply prefix_heads_and_tails in Hpre as [Contra _];
+      discriminate.
+    + destruct Hpre as [Hpre | Hpre];
+      apply prefix_heads_and_tails in Hpre as [_ Hpre];
+      apply IHHev1 in H10; auto; rewrite H10; reflexivity.
+  - inversion Hev2; subst; clear Hev2; simpl in *.
+    apply IHHev1 in H9; auto.
+Qed.
+
+Lemma gilles_lemma : forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt os1 os2,
+  |-i <(st1, ast1, b, ds)> =[ c ]=> <(stt1, astt1, bt, os1)> ->
+  |-i <(st2, ast2, b, ds)> =[ c ]=> <(stt2, astt2, bt, os2)> ->
+  b = true ->
+  bt = true ->
+  os1 = os2.
+Proof.
+  intros c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt os1 os2 Hev1.
+  generalize dependent os2;  generalize dependent astt2;
+  generalize dependent stt2;  generalize dependent ast2;
+  generalize dependent st2.
+  induction Hev1; intros st2 ast2 stt2 astt2 ost2 Hev2 Hb Hbt;
+  try (now inversion Hev2; subst; auto).
+  - inversion Hev2; subst; clear Hev2.
+    apply ideal_eval_spec_bit_monotonic in H5 as Hb'0; subst.
+    apply ideal_eval_spec_bit_monotonic in Hev1_1 as Hb'; subst.
+    assert (L: ds0 = ds1).
+    { apply app_eq_prefix in H1 as Hpre.
+      eapply ideal_prefix_dirs in Hpre; eauto. } subst.
+    apply app_inv_head_iff in H1. subst.
+    apply IHHev1_1 in H5; auto. apply IHHev1_2 in H10; auto.
+    subst. reflexivity.
+  - inversion Hev2; subst; clear Hev2; simpl in *.
+    apply IHHev1 in H10; auto. subst. reflexivity.
+  - inversion Hev2; subst; clear Hev2; simpl in *.
+    apply IHHev1 in H10; auto. subst. reflexivity.
+  - inversion Hev2; subst; clear Hev2; simpl in *.
+    apply IHHev1 in H9; auto.
+Qed.
+
 (** * Conjectures for the proof of ideal_eval_relative_secure *)
 
 (* HIDE *)
-(* [ideal_prefix_dirs] is currently not used, but could be helpful in the future. *)
-Conjecture ideal_prefix_dirs :
-  forall c st1 st2 ast1 ast2 b1 b2 ds1 ds2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
-  prefix ds1 ds2 ->
-  |-i <(st1, ast1, b1, ds1)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
-  |-i <(st2, ast2, b2, ds2)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
-  ds1 = ds2.
 
 (* This conjecture does not hold, look at c = skip; skip; skip :
       <((c, st1, ast1))>  -->*^[] <((skip; skip, st1, ast1))> /\
@@ -1262,7 +1330,7 @@ Conjecture multi_seq_com_deterministic :
     ct1 = ct2.
 
 (* Same problem as in [multi_seq_com_deterministic]. Steps without observations
-   and directions do not destroy the seq_sam_obs property. but lead to
+   and directions do not destroy the seq_same_obs property. but lead to
    different ct1 adn ct2. Needs a measure that exactly same amount of single
   steps are taken. *)
 Conjecture multi_ideal_com_deterministic :
