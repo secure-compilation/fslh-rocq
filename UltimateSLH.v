@@ -732,16 +732,6 @@ Proof.
       subst; inversion Hlen; apply IH in H0; auto; subst; reflexivity.
 Qed.
 
-Lemma prefix_app_end : forall {X:Type} {ds1 ds2 ds3 : list X},
-  prefix ds2 ds3 \/ prefix ds3 ds2 ->
-  prefix (ds1 ++ ds2) (ds1 ++ ds3) \/ prefix (ds1 ++ ds3) (ds1 ++ ds2).
-Proof.
-  intros X ds1. induction ds1 as [| d1 ds1' IH]; intros ds2 ds3 H; simpl.
-  - auto.
-  - apply IH in H. destruct H as [H | H]; [left | right];
-    apply prefix_cons; apply H.
-Qed.
-
 Lemma prefix_app_front_eq_length : forall {X:Type} {ds1 ds2 ds3 ds4 : list X},
   length ds1 = length ds3 ->
   prefix (ds1 ++ ds2) (ds3 ++ ds4) ->
@@ -1155,6 +1145,8 @@ Proof.
   - inversion H7.
 Qed.
 
+(* HIDE *)
+(* Currently unused, but maybe helpful in the future. *)
 Lemma seq_eval_small_step_preserves_seq_same_obs :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
     <((c, st1, ast1))>  -->^os1 <((ct, stt1, astt1))> ->
@@ -1174,6 +1166,7 @@ Proof.
   - apply prefix_app_front_eq_length in Hpre; auto.
     eapply seq_eval_small_step_obs_length in Hev2; eauto.
 Qed.
+(* /HIDE *)
 
 Lemma multi_seq_preserves_seq_same_obs :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
