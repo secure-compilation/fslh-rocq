@@ -1292,6 +1292,29 @@ Proof.
   - apply seq_same_obs_com_if in Hsec.
     inversion Hev2; subst. rewrite Hsec. reflexivity.
 Qed.
+
+Lemma ideal_eval_small_step_com_deterministic :
+    forall c st1 ast1 b ds ct1 stt1 astt1 bt os1 st2 ast2 ct2 stt2 astt2 os2,
+    <((c, st1, ast1, b))>  -->i_ds^^os1 <((ct1, stt1, astt1, bt))> ->
+    <((c, st2, ast2, b))>  -->i_ds^^os2 <((ct2, stt2, astt2, bt))> ->
+    seq_same_obs c st1 st2 ast1 ast2 ->
+    ct1 = ct2.
+Proof.
+  intros c st1 ast1 b ds ct1 stt1 astt1 bt os1 st2 ast2 ct2 stt2 astt2 os2 Hev1.
+  generalize dependent os2; generalize dependent astt2;
+  generalize dependent stt2; generalize dependent ct2;
+  generalize dependent ast2 ; generalize dependent st2.
+  induction Hev1; intros st2 ast2 ct2 stt2 astt2 ost2 Hev2 Hsec;
+  try (now inversion Hev2; subst; auto).
+  - inversion Hev2; subst; auto.
+    + apply seq_same_obs_com_seq in Hsec as Hc1.
+      apply IHHev1 in H10; subst; auto.
+    + inversion Hev1.
+  - apply seq_same_obs_com_if in Hsec.
+    inversion Hev2; subst. rewrite Hsec. reflexivity.
+  - apply seq_same_obs_com_if in Hsec.
+    inversion Hev2; subst. rewrite Hsec. reflexivity.
+Qed.
 (* /HIDE *)
 
 Lemma ideal_small_step_com_deterministic :
@@ -1493,7 +1516,10 @@ Proof.
     assert (Hlen2: length os1_1 = length os2_1).
     { apply multi_ideal_obs_length in Hsmall1, Hsmall2. congruence. }
     assert (L : cm1 = cm1').
-    { admit. } subst.
+    { (* SOONER: This conjecture holds for one small step (see [ideal_eval_small_step_com_deterministic]).
+         But for the multi case we need an argument that both multi_ideal exexutions take the same amount
+         of small steps. Since some small steps do not consume [dirs] and produce no [obs] there is the
+         possibility of different amounts of execution steps *)  admit. } subst.
     assert (Hsec2: seq_same_obs cm1' stm1 stm1' astm1 astm1').
     { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply multi_seq_preserves_seq_same_obs; eauto. }
