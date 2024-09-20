@@ -109,6 +109,19 @@ Lemma seq_big_to_small_step : forall c st ast stt astt os,
   <(st, ast)> =[ c ]=> <(stt, astt, os)> ->
   <((c, st, ast))> -->*^os <((skip, stt, astt))>.
 Proof.
+  intros c st ast stt astt os Hev. induction Hev;
+  try (now rewrite <- app_nil_r; econstructor; econstructor; eauto).
+  - (* Seq *) admit.
+  - (* If_True *)
+    econstructor.
+    + rewrite <- H. eapply SSM_If.
+    + rewrite H; eauto.
+  - (* If_False *)
+    econstructor.
+    + rewrite <- H. eapply SSM_If.
+    + rewrite H; eauto.
+  - (* While *)
+    rewrite <- app_nil_l. econstructor; [econstructor |]; eauto.
 Admitted.
 
 Lemma seq_small_to_big_step : forall c st ast stt astt os,
@@ -892,7 +905,13 @@ Proof.
   intros c st ast ds stt astt bt os Hds Hev.
   remember false as b eqn:Eqb. induction Hev; subst;
   try (now econstructor); try (rewrite <- app_nil_r; econstructor; econstructor; eauto).
-  - (* Seq *) admit.
+  - (* Seq *)
+    destruct b' eqn:Eqb'.
+    + apply ideal_eval_spec_needs_force in Hev1.
+      assert (L: In DForce (ds1 ++ ds2)).
+      { apply in_or_app; auto. }
+      apply Hds in L. discriminate.
+    + admit.
   - (* If *)
     assert (L: forall d, In d ds -> d = DStep) by (simpl in *; auto).
     eapply IHHev in L; eauto. econstructor; eauto. econstructor.
@@ -1006,19 +1025,63 @@ Lemma ideal_eval_small_step_spec_needs_force : forall c st ast ds ct stt astt os
   <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
   In DForce ds.
 Proof.
-Admitted.
+  intros c st ast ds ct stt astt os Hev.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
+  induction Hev; subst; simpl in *; try discriminate; auto.
+Qed.
 
 Lemma multi_ideal_spec_needs_force : forall c st ast ds ct stt astt os,
   <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
   In DForce ds.
 Proof.
-Admitted.
+  intros c st ast ds ct stt astt os Hev.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
+  induction Hev; subst; simpl in *; try discriminate.
+  apply in_or_app. destruct b' eqn:Eqb'.
+  - apply ideal_eval_small_step_spec_needs_force in H; auto.
+  - right. apply IHHev; auto.
+Qed.
+
+Lemma ideal_eval_small_step_spec_bit_monotonic : forall c st ast ds ct stt astt bt os,
+  <((c, st, ast, true))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+  bt = true.
+Proof.
+  intros c st ast ds ct stt astt bt os Heval. remember true as b eqn:Eqb.
+  induction Heval; subst; eauto.
+Qed.
+
+Lemma multi_ideal_spec_bit_monotonic : forall c st ast ds ct stt astt bt os,
+  <((c, st, ast, true))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  bt = true.
+Proof.
+  intros c st ast ds ct stt astt bt os Heval. remember true as b eqn:Eqb.
+  induction Heval; subst; eauto. apply ideal_eval_small_step_spec_bit_monotonic in H; subst.
+  auto.
+Qed.
+
+Lemma ideal_eval_small_step_final_spec_bit_false : forall c st ast ds ct stt astt os,
+  <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, false))> ->
+  (forall d, In d ds -> d = DStep).
+Proof.
+  intros c st ast ds ct stt astt os Hev. remember false as b eqn:Eqb.
+  induction Hev; subst; intros d Hin; simpl in *; try destruct Hin;
+  try discriminate; try contradiction; auto.
+Qed.
 
 Lemma multi_ideal_final_spec_bit_false : forall c st ast ds ct stt astt os,
   <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, false))> ->
   (forall d, In d ds -> d = DStep).
 Proof.
-Admitted.
+  intros c st ast ds ct stt astt os Hev. remember false as b eqn:Eqb.
+  induction Hev; intros d Hin; simpl in *; subst; try contradiction.
+  destruct b' eqn:Eqb'.
+  - apply multi_ideal_spec_bit_monotonic in Hev. discriminate.
+  - apply in_app_or in Hin as [Hin | Hin].
+    + destruct b eqn:Eqb.
+      * apply ideal_eval_small_step_spec_bit_monotonic in H. discriminate.
+      * eapply ideal_eval_small_step_final_spec_bit_false in Hin; eauto.
+    + apply IHHev; auto.
+Qed.
 
 Lemma ideal_eval_small_step_no_spec : forall c st ast ds ct stt astt bt os,
     <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, bt))> ->
