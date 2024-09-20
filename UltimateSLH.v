@@ -297,6 +297,20 @@ Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
   where "<(( c , st , ast , b ))> -->i*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (multi_ideal c st ast b ct stt astt bt ds os).
 
+Lemma multi_ideal_combined_executions :
+  forall c st ast b ds cm stm astm bm osm dsm ct stt astt bt ost,
+    <((c, st, ast, b))> -->i*_ds^^osm <((cm, stm, astm, bm))> ->
+    <((cm, stm, astm, bm))> -->i*_dsm^^ost <((ct, stt, astt, bt))> ->
+    <((c, st, ast, b))> -->i*_(ds++dsm)^^(osm++ost) <((ct, stt, astt, bt))>.
+Proof.
+  intros c st ast b ds cm stm astm bm osm dsm ct stt astt bt ost Hev1 Hev2.
+  induction Hev1.
+  - do 2 rewrite app_nil_l. apply Hev2.
+  - do 2 rewrite <- app_assoc. eapply multi_ideal_trans.
+    + eapply H.
+    + apply IHHev1. apply Hev2.
+Qed.
+
 Lemma ideal_big_to_small_step : forall c st ast b stt astt bt ds os,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   <((c, st, ast, b))> -->i*_ds^^os <((skip, stt, astt, bt))>.
@@ -370,6 +384,12 @@ Proof.
   - (* ISM_Write *)
   inversion Hbig; subst; simpl in *. apply Ideal_Write; auto.
 Qed.
+
+Lemma ideal_eval_multi_steps : forall c1 c2 st stm stt ast astm astt b bm bt ds1 ds2 os1 os2,
+  <((c1, st, ast, b))> -->i*_ds1^^os1 <((c2, stm, astm, bm))> ->
+  |-i <(stm, astm, bm, ds2)> =[ c2 ]=> <(stt, astt, bt, os2)> ->
+  |-i <(st, ast, b, ds1++ds2)> =[ c1 ]=> <(stt, astt, bt, os1++os2)>.
+Admitted.
 
 Lemma ideal_small_to_big_step : forall c st ast b stt astt bt ds os,
   <((c, st, ast, b))> -->i*_ds^^os <((skip, stt, astt, bt))> ->
@@ -1404,11 +1424,20 @@ Conjecture multi_ideal_com_deterministic :
       ct1 = ct2.
 (* /HIDE *)
 
+Conjecture multi_ideal_single_force_direction :
+  forall c st ast ct astt stt os,
+    <(( c, st, ast, false ))> -->i*_ [DForce]^^ os <((ct, stt, astt, true))> ->
+    exists cm1 stm1 astm1 os1 cm2 stm2 astm2 os2 os3,
+    <((c, st, ast, false))> -->i*_[]^^os1 <((cm1, stm1, astm1, false))> /\
+    <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
+    <((cm2, stm2, astm2, true))>  -->i*_[]^^os3 <((ct, stt, astt, true))> /\
+    os = os1 ++ os2 ++ os3.
+
 Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   (forall d, In d ds1 -> d = DStep) ->
   ds = ds1 ++ [DForce] ++ ds2 ->
-  exists cm1 stm1 astm1 cm2 stm2 astm2 os1 os2 os3,
+  exists cm1 stm1 astm1 os1 cm2 stm2 astm2 os2 os3,
     <((c, st, ast, false))> -->i*_ds1^^os1 <((cm1, stm1, astm1, false))>  /\
     <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
     |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
@@ -1416,25 +1445,30 @@ Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
 Proof.
   intros c st ast ds stt astt os ds1 ds2 Hev Hds1 Hds. subst.
   apply ideal_exec_split_by_dirs with (ds1:=ds1) (ds2:=[DForce]++ds2) in Hev; auto.
-  destruct Hev as [cm1 [stm1 [astm1 [bm1 [os1 [os' [Hsmall1 [Hbig1 Hos1] ] ] ] ] ] ] ].
-  exists cm1; exists stm1; exists astm1.
+  destruct Hev as [cm1 [stm1 [astm1 [bm1 [os1 [os' [Hsmall1 [Hbig Hos1] ] ] ] ] ] ] ].
   assert(L: bm1 = false).
   { destruct bm1 eqn:Eqbm1; auto.
     apply multi_ideal_spec_needs_force in Hsmall1.
     apply Hds1 in Hsmall1. discriminate. } subst.
-  apply ideal_exec_split_by_dirs with (ds1:=[DForce]) (ds2:=ds2) in Hbig1; auto.
-  destruct Hbig1 as [cm2 [stm2 [astm2 [bm2 [os2 [os3 [Hsmall2 [Hbig2 Hos2] ] ] ] ] ] ] ].
-  exists cm2; exists stm2; exists astm2; exists os1; exists os2; exists os3.
-  assert (L: bm2 = true).
-  { destruct bm2 eqn:Eqbm2; auto.
+  apply ideal_exec_split_by_dirs with (ds1:=[DForce]) (ds2:=ds2) in Hbig; auto.
+  destruct Hbig as [cm4 [stm4 [astm4 [bm4 [os'' [os5 [Hsmall2 [Hbig Hos'] ] ] ] ] ] ] ].
+  assert (L: bm4 = true).
+  { destruct bm4 eqn:Eqb4; auto.
     apply multi_ideal_final_spec_bit_false with (d:=DForce) in Hsmall2; simpl; auto.
     discriminate. } subst.
+  apply multi_ideal_single_force_direction in Hsmall2.
+  destruct Hsmall2 as [cm2 [stm2 [astm2 [os2 [cm3 [stm3 [astm3 [os3 [os4 [Hsmall2 [Hsmall3 [Hsamll4 Hos''] ] ] ] ] ] ] ] ] ] ] ].
+  exists cm2; exists stm2; exists astm2; exists (os1++os2).
+  exists cm3; exists stm3; exists astm3; exists (os3). exists (os4++os5).
   split; [| split; [| split] ].
-  - apply Hsmall1.
-  - admit.
-  - apply Hbig2.
-  - reflexivity.
-Admitted.
+  - replace(ds1) with (ds1++[]) by (apply app_nil_r).
+    eapply multi_ideal_combined_executions; eauto.
+  - apply Hsmall3.
+  - replace(ds2) with ([]++ds2) by (apply app_nil_l).
+    eapply ideal_eval_multi_steps; eauto.
+  - subst. rewrite app_assoc. do 4 rewrite <- app_assoc.
+    reflexivity.
+Qed.
 
 (** * Ultimate SLH Relative Secure *)
 
@@ -1453,9 +1487,9 @@ Proof.
     destruct L as [ds1 [ds2 [Hds1 Heq] ] ].
     rewrite Heq in Hev1, Hev2.
     eapply ideal_exec_split in Hev1; eauto.
-    destruct Hev1 as [cm1 [stm1 [astm1 [cm2 [stm2 [astm2 [os1_1 [os1_2 [os1_3 [Hsmall1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ].
+    destruct Hev1 as [cm1 [stm1 [astm1 [os1_1 [cm2 [stm2 [astm2 [os1_2 [os1_3 [Hsmall1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ].
     eapply ideal_exec_split in Hev2; eauto.
-    destruct Hev2 as [cm1' [stm1' [astm1' [cm2' [stm2' [astm2' [os2_1 [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
+    destruct Hev2 as [cm1' [stm1' [astm1' [os2_1 [cm2' [stm2' [astm2' [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
     assert (Hlen2: length os1_1 = length os2_1).
     { apply multi_ideal_obs_length in Hsmall1, Hsmall2. congruence. }
     assert (L : cm1 = cm1').
