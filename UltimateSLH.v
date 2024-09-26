@@ -1447,7 +1447,7 @@ Conjecture multi_ideal_com_deterministic :
       ct1 = ct2.
 (* /HIDE *)
 
-Conjecture multi_ideal_single_force_direction :
+Lemma multi_ideal_single_force_direction :
   forall c st ast ct astt stt os,
     <(( c, st, ast, false ))> -->i*_ [DForce]^^ os <((ct, stt, astt, true))> ->
     exists cm1 stm1 astm1 os1 cm2 stm2 astm2 os2 os3,
@@ -1455,6 +1455,31 @@ Conjecture multi_ideal_single_force_direction :
     <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
     <((cm2, stm2, astm2, true))>  -->i*_[]^^os3 <((ct, stt, astt, true))> /\
     os = os1 ++ os2 ++ os3.
+Proof.
+  intros c st ast ct astt stt os Hev. remember [DForce] as ds eqn:Eqds.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
+  induction Hev; try discriminate; subst.
+  assert (L: ds1 = [] \/ ds2 = []).
+  { destruct ds1; auto; destruct ds2; auto. inversion Eqds.
+    apply app_eq_nil in H2 as [_ Contra]. inversion Contra. }
+  destruct L as [L | L]; subst; simpl in *.
+  - assert (Hb': b' = false).
+    { destruct b' eqn:Eqb'; auto. apply ideal_eval_small_step_spec_needs_force in H. simpl in H. destruct H. }
+    apply IHHev in Eqds; auto; subst.
+    destruct Eqds as [cm1 [stm1 [astm1 [osm1 [cm2 [stm2 [astm2 [os3 [os4 [H1 [H2 [H3 H4] ] ] ] ] ] ] ] ] ] ] ].
+    exists cm1; exists stm1; exists astm1; exists (os1++osm1); exists cm2; exists stm2; exists astm2; exists os3; exists os4.
+    split; [| split; [| split] ]; auto.
+    + replace ([] :dirs) with ([]++[] :dirs) by (apply app_nil_l).
+      eapply multi_ideal_trans; eauto.
+    + rewrite <- app_assoc. rewrite H4. reflexivity.
+  - rewrite app_nil_r in Eqds. subst.
+    assert (Hb': b' = true).
+    { destruct b' eqn:Eqb'; auto. apply ideal_eval_small_step_final_spec_bit_false with (d:=DForce) in H; simpl; auto.
+      inversion H. } subst.
+    exists c; exists st; exists ast; exists []; exists c'; exists st'; exists ast'; exists os1; exists os2.
+    split; [| split; [| split] ]; auto.
+    apply multi_ideal_refl.
+Qed.
 
 Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
