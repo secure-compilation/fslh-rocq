@@ -1557,14 +1557,35 @@ Conjecture conj2: forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2,
     exists ct2 stt2 astt2,
     <(( c, st2, ast2, false ))> -->i_ ds ^^ os <(( ct2, stt2, astt2, false ))>.
 
-Conjecture multi_ideal_lock_step : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
+Lemma multi_ideal_lock_step : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
   <(( c, st1, ast1, false ))> -->i*_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
   ~ (exists (cm1 : com) (stm1 : state) (astm1 : astate),
       <(( ct1, stt1, astt1, false ))> -->i_ [] ^^ [] <(( cm1, stm1, astm1, false ))>) ->
   <(( c, st2, ast2, false ))> -->i*_ ds ^^ os <(( ct2, stt2, astt2, false ))> ->
   ~ (exists (cm1 : com) (stm1 : state) (astm1 : astate),
-           <((ct2, stt2, astt2, false ))> -->i_ [] ^^ [] <(( cm1, stm1, astm1, false ))>) ->
+      <((ct2, stt2, astt2, false ))> -->i_ [] ^^ [] <(( cm1, stm1, astm1, false ))>) ->
   ct1 = ct2.
+Proof.
+  intros c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2 H1mult.
+  remember false as b. revert Heqb.
+  induction H1mult; intros Heq H1stuck H2mult H2stuck.
+  - inversion H2mult; subst; clear H2mult.
+    + reflexivity. (* both executions do zero steps *)
+    + apply app_eq_nil in H, H0. destruct H; destruct H0; subst.
+      assert (b'=false). { admit. } subst.
+      eapply conj2 in H5. exfalso. eauto.
+  - inversion H2mult; subst; clear H2mult.
+    + admit.
+    + assert (ds1 = ds0). { admit. (* May need generalization! *) } subst.
+      assert (os1 = os0). { admit. (* May need generalization! *) } subst.
+      assert (ds2 = ds3). { admit. (* May need generalization! *) } subst.
+      assert (os2 = os3). { admit. (* May need generalization! *) } subst.
+      assert (b'0=false). { admit. } subst.
+      assert (b=false). { admit. } subst.
+      assert (b'=false). { admit. } subst.
+      eapply conj1 in H6; eauto.
+      apply IHH1mult; eauto. (* not yet done *)
+Admitted.
 
 (** * Ultimate SLH Relative Secure *)
 
