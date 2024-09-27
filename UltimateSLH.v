@@ -1569,23 +1569,30 @@ Lemma multi_ideal_lock_step : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct
 Proof.
   intros c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2 H1mult.
   remember false as b. revert Heqb.
-  induction H1mult; intros Heq H1stuck H2mult H2stuck.
+  generalize dependent astt2. generalize dependent stt2. generalize dependent ct2.
+  generalize dependent ast2. generalize dependent st2.
+  induction H1mult; intros st2 ast2 ct2 stt2 astt2 Heq H1stuck H2mult H2stuck.
   - inversion H2mult; subst; clear H2mult.
     + reflexivity. (* both executions do zero steps *)
     + apply app_eq_nil in H, H0. destruct H; destruct H0; subst.
       assert (b'=false). { admit. } subst.
       eapply conj2 in H5. exfalso. eauto.
   - inversion H2mult; subst; clear H2mult.
-    + admit.
-    + assert (ds1 = ds0). { admit. (* May need generalization! *) } subst.
+    + symmetry in H5, H6.
+      apply app_eq_nil in H5, H6. destruct H5; destruct H6; subst.
+      assert (b=false). { admit. } subst.
+      assert (b'=false). { admit. } subst.
+      eapply conj2 in H. exfalso. eauto.
+    + (* both executions step at least once *)
+      assert (ds1 = ds0). { admit. (* May need generalization! *) } subst.
       assert (os1 = os0). { admit. (* May need generalization! *) } subst.
       assert (ds2 = ds3). { admit. (* May need generalization! *) } subst.
       assert (os2 = os3). { admit. (* May need generalization! *) } subst.
       assert (b'0=false). { admit. } subst.
       assert (b=false). { admit. } subst.
       assert (b'=false). { admit. } subst.
-      eapply conj1 in H6; eauto.
-      apply IHH1mult; eauto. (* not yet done *)
+      pose proof H6 as HH. eapply conj1 in HH; [| now apply H]. subst.
+      eapply IHH1mult; eauto.
 Admitted.
 
 (** * Ultimate SLH Relative Secure *)
