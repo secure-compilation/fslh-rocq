@@ -1599,11 +1599,8 @@ Proof.
   eapply ideal_eval_spec_bit_deterministic in Hev1 as SameB; try eassumption. subst.
   destruct bt1 eqn:Eqbt1.
   - (* with speculation *)
-    assert (Hlen: length os1 = length os2).
-    { apply ideal_eval_obs_length in Hev1, Hev2. congruence. }
     eapply ideal_dirs_split in Hev1 as L.
-    destruct L as [ds1 [ds2 [Hds1 Heq] ] ].
-    rewrite Heq in Hev1, Hev2.
+    destruct L as [ds1 [ds2 [Hds1 Heq] ] ]. subst.
     eapply ideal_exec_split_v2 in Hev1; eauto.
     destruct Hev1 as [cm1 [stm1 [astm1 [os1_1 [cm2 [stm2 [astm2 [os1_2 [os1_3 [Hsmall1 [Hmax1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ] ].
     eapply ideal_exec_split_v2 in Hev2; eauto.
