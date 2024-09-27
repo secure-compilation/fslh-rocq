@@ -1251,6 +1251,8 @@ Proof.
 Qed.
 (* /HIDE *)
 
+(* SOONER: It could hold that the [seq_same_obs]
+   is even preserved for different final coms. *)
 Lemma multi_seq_preserves_seq_same_obs :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
     <((c, st1, ast1))>  -->*^os1 <((ct, stt1, astt1))> ->
@@ -1490,6 +1492,10 @@ Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
     <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
     |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
     os = os1 ++ os2 ++ os3.
+    (* SOONER: The following additional property could produce the needed determinism in the intermediate com
+      that is needed
+     ~( exists cm1' stm1' astm1',
+      <((cm1, stm1, astm1, false))> -->i_[]^^[] <((cm1', stm1', astm1', false))> ) *)
 Proof.
   intros c st ast ds stt astt os ds1 ds2 Hev Hds1 Hds. subst.
   apply ideal_exec_split_by_dirs with (ds1:=ds1) (ds2:=[DForce]++ds2) in Hev; auto.
@@ -1518,6 +1524,45 @@ Proof.
     reflexivity.
 Qed.
 
+(* HIDE *)
+Conjecture ___ : forall c st1 ast1 b ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2 bt1 bt2,
+  <(( c, st1, ast1, b ))> -->i*_ ds ^^ os <(( ct1, stt1, astt1, bt1 ))> ->
+  <(( c, st2, ast2, b ))> -->i*_ ds ^^ os <(( ct2, stt2, astt2, bt2 ))> ->
+  (exists stt' astt' bt',
+  <(( ct1, stt1, astt1, bt1 ))> -->i*_ [] ^^ [] <(( ct2, stt', astt', bt' ))> \/
+  <(( ct2, stt2, astt2, bt2 ))> -->i*_ [] ^^ [] <(( ct1, stt', astt', bt' ))> ).
+(* /HIDE *)
+
+Conjecture ideal_exec_split_v2 : forall c st ast ds stt astt os ds1 ds2,
+|-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
+(forall d, In d ds1 -> d = DStep) ->
+ds = ds1 ++ [DForce] ++ ds2 ->
+exists cm1 stm1 astm1 os1 cm2 stm2 astm2 os2 os3,
+  <((c, st, ast, false))> -->i*_ds1^^os1 <((cm1, stm1, astm1, false))>  /\
+  ~( exists cm1' stm1' astm1', <((cm1, stm1, astm1, false))> -->i_[]^^[] <((cm1', stm1', astm1', false))> ) /\
+  <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
+  |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
+  os = os1 ++ os2 ++ os3.
+
+Conjecture conj1: forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
+  <(( c, st1, ast1, false ))> -->i_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
+  <(( c, st2, ast2, false ))> -->i_ ds ^^ os <(( ct2, stt2, astt2, false ))> ->
+  ct1 = ct2.
+
+Conjecture conj2: forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2,
+    <(( c, st1, ast1, false ))> -->i_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
+    exists ct2 stt2 astt2,
+    <(( c, st2, ast2, false ))> -->i_ ds ^^ os <(( ct2, stt2, astt2, false ))>.
+
+Conjecture multi_ideal_lock_step : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
+  <(( c, st1, ast1, false ))> -->i*_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
+  ~ (exists (cm1 : com) (stm1 : state) (astm1 : astate),
+      <(( ct1, stt1, astt1, false ))> -->i_ [] ^^ [] <(( cm1, stm1, astm1, false ))>) ->
+  <(( c, st2, ast2, false ))> -->i*_ ds ^^ os <(( ct2, stt2, astt2, false ))> ->
+  ~ (exists (cm1 : com) (stm1 : state) (astm1 : astate),
+           <((ct2, stt2, astt2, false ))> -->i_ [] ^^ [] <(( cm1, stm1, astm1, false ))>) ->
+  ct1 = ct2.
+
 (** * Ultimate SLH Relative Secure *)
 
 Lemma ideal_eval_relative_secure : forall c st1 st2 ast1 ast2,
@@ -1534,29 +1579,27 @@ Proof.
     eapply ideal_dirs_split in Hev1 as L.
     destruct L as [ds1 [ds2 [Hds1 Heq] ] ].
     rewrite Heq in Hev1, Hev2.
-    eapply ideal_exec_split in Hev1; eauto.
-    destruct Hev1 as [cm1 [stm1 [astm1 [os1_1 [cm2 [stm2 [astm2 [os1_2 [os1_3 [Hsmall1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ].
-    eapply ideal_exec_split in Hev2; eauto.
-    destruct Hev2 as [cm1' [stm1' [astm1' [os2_1 [cm2' [stm2' [astm2' [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
+    eapply ideal_exec_split_v2 in Hev1; eauto.
+    destruct Hev1 as [cm1 [stm1 [astm1 [os1_1 [cm2 [stm2 [astm2 [os1_2 [os1_3 [Hsmall1 [Hmax1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ] ].
+    eapply ideal_exec_split_v2 in Hev2; eauto.
+    destruct Hev2 as [cm1' [stm1' [astm1' [os2_1 [cm2' [stm2' [astm2' [os2_2 [os2_3 [Hsmall2 [Hmax2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ] ].
     assert (Hlen2: length os1_1 = length os2_1).
     { apply multi_ideal_obs_length in Hsmall1, Hsmall2. congruence. }
+    assert (L: os1_1 = os2_1).
+    { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
+      eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
+      apply prefix_eq_length in Hpre; auto. } subst.
+
     assert (L : cm1 = cm1').
-    { (* SOONER: This conjecture holds for one small step (see [ideal_eval_small_step_com_deterministic]).
-         But for the multi case we need an argument that both multi_ideal exexutions take the same amount
-         of small steps. Since some small steps do not consume [dirs] and produce no [obs] there is the
-         possibility of different amounts of execution steps *)  admit. } subst.
+    { eapply multi_ideal_lock_step; eauto. } subst.
     assert (Hsec2: seq_same_obs cm1' stm1 stm1' astm1 astm1').
     { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply multi_seq_preserves_seq_same_obs; eauto. }
     assert (L: cm2 = cm2').
     { eapply ideal_small_step_com_deterministic in Hone2; eauto. } subst.
-    apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
-    eapply gilles_lemma in Hbig1; eauto. subst.
-    eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
     eapply ideal_one_step_obs in Hone2; eauto.
-    subst. apply prefix_eq_length; auto.
-    apply prefix_eq_length in Hlen2; auto. subst.
-    left. apply prefix_refl.
+    eapply gilles_lemma in Hbig1; eauto. subst.
+    reflexivity.
   - (* without speculation *)
     assert (Hds: forall d, In d ds -> d = DStep).
     { intros; eapply ideal_eval_final_spec_bit_false in Hev1; eauto. }
@@ -1567,7 +1610,7 @@ Proof.
     eapply ideal_eval_no_spec in Hev2; try assumption.
     eapply Hsec in Hev1; eapply Hev1 in Hev2.
     apply prefix_eq_length; now auto.
-Admitted.
+Qed.
 
 Theorem ultimate_slh_relative_secure :
   forall c st1 st2 ast1 ast2,
