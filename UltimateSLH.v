@@ -1483,6 +1483,21 @@ Proof.
     apply multi_ideal_refl.
 Qed.
 
+(* HIDE *)
+(* This conjecture probably holds but is not strong enough to be used in the proof
+   of [ideal_eval_relative_secure]. *)
+   Conjecture multi_ideal_silent_steps :
+   forall c st1 ast1 b ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2 bt1 bt2,
+    <(( c, st1, ast1, b ))> -->i*_ ds ^^ os <(( ct1, stt1, astt1, bt1 ))> ->
+    <(( c, st2, ast2, b ))> -->i*_ ds ^^ os <(( ct2, stt2, astt2, bt2 ))> ->
+    (exists stt' astt' bt',
+    <(( ct1, stt1, astt1, bt1 ))> -->i*_ [] ^^ [] <(( ct2, stt', astt', bt' ))> \/
+    <(( ct2, stt2, astt2, bt2 ))> -->i*_ [] ^^ [] <(( ct1, stt', astt', bt' ))> ).
+  (* /HIDE *)
+
+(* Hide *)
+(* This lemma is substitued by [ideal_exec_split_v2] and only here as an initial idea on how
+   to proof the new version. *)
 Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   (forall d, In d ds1 -> d = DStep) ->
@@ -1492,10 +1507,6 @@ Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
     <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
     |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
     os = os1 ++ os2 ++ os3.
-    (* SOONER: The following additional property could produce the needed determinism in the intermediate com
-      that is needed
-     ~( exists cm1' stm1' astm1',
-      <((cm1, stm1, astm1, false))> -->i_[]^^[] <((cm1', stm1', astm1', false))> ) *)
 Proof.
   intros c st ast ds stt astt os ds1 ds2 Hev Hds1 Hds. subst.
   apply ideal_exec_split_by_dirs with (ds1:=ds1) (ds2:=[DForce]++ds2) in Hev; auto.
@@ -1523,14 +1534,6 @@ Proof.
   - subst. rewrite app_assoc. do 4 rewrite <- app_assoc.
     reflexivity.
 Qed.
-
-(* HIDE *)
-Conjecture ___ : forall c st1 ast1 b ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2 bt1 bt2,
-  <(( c, st1, ast1, b ))> -->i*_ ds ^^ os <(( ct1, stt1, astt1, bt1 ))> ->
-  <(( c, st2, ast2, b ))> -->i*_ ds ^^ os <(( ct2, stt2, astt2, bt2 ))> ->
-  (exists stt' astt' bt',
-  <(( ct1, stt1, astt1, bt1 ))> -->i*_ [] ^^ [] <(( ct2, stt', astt', bt' ))> \/
-  <(( ct2, stt2, astt2, bt2 ))> -->i*_ [] ^^ [] <(( ct1, stt', astt', bt' ))> ).
 (* /HIDE *)
 
 Conjecture ideal_exec_split_v2 : forall c st ast ds stt astt os ds1 ds2,
@@ -1589,7 +1592,6 @@ Proof.
     { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
       apply prefix_eq_length in Hpre; auto. } subst.
-
     assert (L : cm1 = cm1').
     { eapply multi_ideal_lock_step; eauto. } subst.
     assert (Hsec2: seq_same_obs cm1' stm1 stm1' astm1 astm1').
