@@ -1484,15 +1484,16 @@ Proof.
 Qed.
 
 (* HIDE *)
-(* This conjecture probably holds but is not strong enough to be used in the proof
-   of [ideal_eval_relative_secure]. *)
-   Conjecture multi_ideal_silent_steps :
-   forall c st1 ast1 b ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2 bt1 bt2,
-    <(( c, st1, ast1, b ))> -->i*_ ds ^^ os <(( ct1, stt1, astt1, bt1 ))> ->
-    <(( c, st2, ast2, b ))> -->i*_ ds ^^ os <(( ct2, stt2, astt2, bt2 ))> ->
-    (exists stt' astt' bt',
-    <(( ct1, stt1, astt1, bt1 ))> -->i*_ [] ^^ [] <(( ct2, stt', astt', bt' ))> \/
-    <(( ct2, stt2, astt2, bt2 ))> -->i*_ [] ^^ [] <(( ct1, stt', astt', bt' ))> ).
+(* If this conjecture holds it could also be used to proof [ideal_eval_relative_secure]. *)
+   Conjecture multi_ideal_and_single_step_com_deterministic :
+    forall c st1 ast1 ds os cm1 stm1 astm1 ct1 stt1 astt1
+            st2 ast2 cm2 stm2 astm2 ct2 stt2 astt2,
+      <((c, st1, ast1, false))> -->i*_ds^^os <((cm1, stm1, astm1, false))> ->
+      <((cm1, stm1, astm1, false))> -->i_[DForce]^^os <((ct1, stt1, astt1, true))> ->
+      <((c, st2, ast2, false))> -->i*_ds^^os <(( cm2, stm2, astm2, false))> ->
+      <(( cm2, stm2, astm2, false))>  -->i_[DForce]^^os <((ct2, stt2, astt2, true))> ->
+      seq_same_obs c st1 st2 ast1 ast2 ->
+      cm1 = cm2 /\ ct1 = ct2.
   (* /HIDE *)
 
 (* Hide *)
