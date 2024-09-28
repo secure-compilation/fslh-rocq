@@ -1496,9 +1496,9 @@ Qed.
       cm1 = cm2 /\ ct1 = ct2.
   (* /HIDE *)
 
-(* Hide *)
-(* This lemma is substitued by [ideal_exec_split_v2] and only here as an initial idea on how
-   to proof the new version. *)
+(* HIDE *)
+(* This lemma was replaced by [ideal_exec_split_v2] and is here only as an
+   initial idea on how to prove the new version. *)
 Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   (forall d, In d ds1 -> d = DStep) ->
@@ -1537,16 +1537,21 @@ Proof.
 Qed.
 (* /HIDE *)
 
+(* HIDE: CH: If we want to stick to the original [ideal_exec_split] above,
+   can't we even obtain the new conjunct 2 from conjunct 3 and some notion of
+   determinism? I don't think that v2 version below is harder to prove though. *)
+
 Conjecture ideal_exec_split_v2 : forall c st ast ds stt astt os ds1 ds2,
-|-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
-(forall d, In d ds1 -> d = DStep) ->
-ds = ds1 ++ [DForce] ++ ds2 ->
-exists cm1 stm1 astm1 os1 cm2 stm2 astm2 os2 os3,
-  <((c, st, ast, false))> -->i*_ds1^^os1 <((cm1, stm1, astm1, false))>  /\
-  ~( exists cm1' stm1' astm1', <((cm1, stm1, astm1, false))> -->i_[]^^[] <((cm1', stm1', astm1', false))> ) /\
-  <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
-  |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
-  os = os1 ++ os2 ++ os3.
+  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
+  (forall d, In d ds1 -> d = DStep) ->
+  ds = ds1 ++ [DForce] ++ ds2 ->
+  exists cm1 stm1 astm1 os1 cm2 stm2 astm2 os2 os3,
+    <((c, st, ast, false))> -->i*_ds1^^os1 <((cm1, stm1, astm1, false))>  /\
+    ~( exists cm1' stm1' astm1',
+          <((cm1, stm1, astm1, false))> -->i_[]^^[] <((cm1', stm1', astm1', false))> ) /\
+    <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
+    |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
+    os = os1 ++ os2 ++ os3.
 
 Conjecture conj1: forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
   <(( c, st1, ast1, false ))> -->i_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
