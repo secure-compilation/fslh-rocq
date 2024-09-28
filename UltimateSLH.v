@@ -1537,9 +1537,10 @@ Proof.
 Qed.
 (* /HIDE *)
 
-(* HIDE: CH: If we want to stick to the original [ideal_exec_split] above,
+(* HIDE: CH: If we wanted to stick to the original [ideal_exec_split] above,
    can't we even obtain the new conjunct 2 from conjunct 3 and some notion of
-   determinism? I don't think that v2 version below is harder to prove though. *)
+   determinism? I don't think that v2 version below is harder to prove than the
+   original version though. *)
 
 Conjecture ideal_exec_split_v2 : forall c st ast ds stt astt os ds1 ds2,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
@@ -1553,14 +1554,14 @@ Conjecture ideal_exec_split_v2 : forall c st ast ds stt astt os ds1 ds2,
     |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
     os = os1 ++ os2 ++ os3.
 
-Conjecture conj1: forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
+Conjecture small_step_cmd_determinate : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
   <(( c, st1, ast1, false ))> -->i_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
   <(( c, st2, ast2, false ))> -->i_ ds ^^ os <(( ct2, stt2, astt2, false ))> ->
   ct1 = ct2.
 
-Conjecture conj2: forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2,
-    <(( c, st1, ast1, false ))> -->i_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
-    exists ct2 stt2 astt2,
+Conjecture stuckness_not_data_dependent : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2,
+  <(( c, st1, ast1, false ))> -->i_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
+  exists ct2 stt2 astt2,
     <(( c, st2, ast2, false ))> -->i_ ds ^^ os <(( ct2, stt2, astt2, false ))>.
 
 Lemma multi_ideal_lock_step : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
@@ -1578,16 +1579,17 @@ Proof.
   generalize dependent ast2. generalize dependent st2.
   induction H1mult; intros st2 ast2 ct2 stt2 astt2 Heq H1stuck H2mult H2stuck.
   - inversion H2mult; subst; clear H2mult.
-    + reflexivity. (* both executions do zero steps *)
-    + apply app_eq_nil in H, H0. destruct H; destruct H0; subst.
+    + reflexivity. (* both executions stuck *)
+    + (* only one execution stuck -> contradiction *)
+      apply app_eq_nil in H, H0. destruct H; destruct H0; subst.
       assert (b'=false). { admit. } subst.
-      eapply conj2 in H5. exfalso. eauto.
+      eapply stuckness_not_data_dependent in H5. exfalso. eauto.
   - inversion H2mult; subst; clear H2mult.
-    + symmetry in H5, H6.
+    + (* only one execution stuck -> contradiction *) symmetry in H5, H6.
       apply app_eq_nil in H5, H6. destruct H5; destruct H6; subst.
       assert (b=false). { admit. } subst.
       assert (b'=false). { admit. } subst.
-      eapply conj2 in H. exfalso. eauto.
+      eapply stuckness_not_data_dependent in H. exfalso. eauto.
     + (* both executions step at least once *)
       assert (ds1 = ds0). { admit. (* May need generalization! *) } subst.
       assert (os1 = os0). { admit. (* May need generalization! *) } subst.
@@ -1596,7 +1598,7 @@ Proof.
       assert (b'0=false). { admit. } subst.
       assert (b=false). { admit. } subst.
       assert (b'=false). { admit. } subst.
-      pose proof H6 as HH. eapply conj1 in HH; [| now apply H]. subst.
+      eapply small_step_cmd_determinate in H6; [| now apply H]. subst.
       eapply IHH1mult; eauto.
 Admitted.
 
