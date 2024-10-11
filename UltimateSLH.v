@@ -1253,6 +1253,7 @@ Qed.
 
 (* SOONER: It could hold that the [seq_same_obs]
    is even preserved for different final coms. *)
+(* CH: Maybe better is to just drop the length assumption instead though *)
 Lemma multi_seq_preserves_seq_same_obs :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
     <((c, st1, ast1))>  -->*^os1 <((ct, stt1, astt1))> ->
@@ -1537,6 +1538,7 @@ Proof.
 Qed.
 (* /HIDE *)
 
+(* SOONER: Prove this new version, maybe using the old version above *)
 (* HIDE: CH: If we wanted to stick to the original [ideal_exec_split] above,
    can't we even obtain the new conjunct 2 from conjunct 3 and some notion of
    determinism? I don't think that v2 version below is harder to prove than the
@@ -1554,15 +1556,24 @@ Conjecture ideal_exec_split_v2 : forall c st ast ds stt astt os ds1 ds2,
     |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
     os = os1 ++ os2 ++ os3.
 
+(* SOONER: This looks quite similar to (and maybe simpler than)
+           ideal_small_step_com_deterministic *)
+
 Conjecture small_step_cmd_determinate : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
   <(( c, st1, ast1, false ))> -->i_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
   <(( c, st2, ast2, false ))> -->i_ ds ^^ os <(( ct2, stt2, astt2, false ))> ->
   ct1 = ct2.
 
-Conjecture stuckness_not_data_dependent : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2,
-  <(( c, st1, ast1, false ))> -->i_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
+(* It's crucial that os=[] here, since otherwise:
+   - in the case in which c gets stuck on OOB access for st2
+   - if branches evaluate differently in st2 *)
+Conjecture stuckness_not_data_dependent : forall c st1 ast1 ds ct1 stt1 astt1 st2 ast2,
+  <(( c, st1, ast1, false ))> -->i_ ds ^^ [] <(( ct1, stt1, astt1, false ))> ->
   exists ct2 stt2 astt2,
-    <(( c, st2, ast2, false ))> -->i_ ds ^^ os <(( ct2, stt2, astt2, false ))>.
+    <(( c, st2, ast2, false ))> -->i_ ds ^^ [] <(( ct2, stt2, astt2, false ))>.
+
+(* SOONER: This can likely be rephrased in terms of the sequential semantics;
+           this would also solve all admits about bits and directions *)
 
 Lemma multi_ideal_lock_step : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
   <(( c, st1, ast1, false ))> -->i*_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
@@ -1591,10 +1602,10 @@ Proof.
       assert (b'=false). { admit. } subst.
       eapply stuckness_not_data_dependent in H. exfalso. eauto.
     + (* both executions step at least once *)
-      assert (ds1 = ds0). { admit. (* May need generalization! *) } subst.
-      assert (os1 = os0). { admit. (* May need generalization! *) } subst.
-      assert (ds2 = ds3). { admit. (* May need generalization! *) } subst.
-      assert (os2 = os3). { admit. (* May need generalization! *) } subst.
+      assert (ds1 = ds0). { admit. (* May need generalization! or simplification above *) } subst.
+      assert (os1 = os0). { admit. (* May need generalization! using seq_same_obs? *) } subst.
+      assert (ds2 = ds3). { admit. (* May need generalization! or simplification above *) } subst.
+      assert (os2 = os3). { admit. (* May need generalization! using seq_same_obs? *) } subst.
       assert (b'0=false). { admit. } subst.
       assert (b=false). { admit. } subst.
       assert (b'=false). { admit. } subst.
@@ -1612,7 +1623,7 @@ Proof.
   ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
   eapply ideal_eval_spec_bit_deterministic in Hev1 as SameB; try eassumption. subst.
   destruct bt1 eqn:Eqbt1.
-  - (* with speculation *)
+  - (* with mis-speculation *)
     eapply ideal_dirs_split in Hev1 as L.
     destruct L as [ds1 [ds2 [Hds1 Heq] ] ]. subst.
     eapply ideal_exec_split_v2 in Hev1; eauto.
@@ -1625,27 +1636,31 @@ Proof.
     { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
       apply prefix_eq_length in Hpre; auto. } subst.
-    assert (L : cm1 = cm1').
+    assert (L : cm1' = cm1).
     { eapply multi_ideal_lock_step; eauto. } subst.
-    assert (Hsec2: seq_same_obs cm1' stm1 stm1' astm1 astm1').
+    assert (Hsec2: seq_same_obs cm1 stm1 stm1' astm1 astm1').
     { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply multi_seq_preserves_seq_same_obs; eauto. }
     assert (L: cm2 = cm2').
     { eapply ideal_small_step_com_deterministic in Hone2; eauto. } subst.
     eapply ideal_one_step_obs in Hone2; eauto.
-    eapply gilles_lemma in Hbig1; eauto. subst.
-    reflexivity.
-  - (* without speculation *)
+    eapply gilles_lemma in Hbig1; eauto. congruence.
+  - (* without mis-speculation *)
+    (* LATER: this case is similar to the start of the more interesting case
+              above; we can likely share more (e.g. use the same obs_length lemma) *)
     assert (Hds: forall d, In d ds -> d = DStep).
     { intros; eapply ideal_eval_final_spec_bit_false in Hev1; eauto. }
     apply ideal_eval_obs_length in Hev1 as Hos1.
     apply ideal_eval_obs_length in Hev2 as Hos2.
-    rewrite Hos1 in Hos2.
+    rewrite Hos1 in Hos2. clear Hos1. unfold seq_same_obs in Hsec.
     eapply ideal_eval_no_spec in Hev1; try assumption.
     eapply ideal_eval_no_spec in Hev2; try assumption.
-    eapply Hsec in Hev1; eapply Hev1 in Hev2.
-    apply prefix_eq_length; now auto.
+    assert(H:prefix os1 os2 \/ prefix os2 os1). { eapply Hsec; eassumption. }
+    apply prefix_eq_length; assumption.
 Qed.
+
+(* LATER: Strengthen the conclusion so that our theorem is termination sensitive
+   (and also error sensitive) by looking at prefixes there too. *)
 
 Theorem ultimate_slh_relative_secure :
   forall c st1 st2 ast1 ast2,
