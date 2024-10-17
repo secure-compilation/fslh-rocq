@@ -140,7 +140,8 @@ Lemma seq_big_to_small_step : forall c st ast stt astt os,
 Proof.
   intros c st ast stt astt os Hev. induction Hev;
   try (now rewrite <- app_nil_r; econstructor; econstructor; eauto).
-  - (* Seq *) admit.
+  - (* Seq *)
+    admit.
   - (* If_True *)
     econstructor.
     + rewrite <- H. eapply SSM_If.
@@ -1169,13 +1170,20 @@ Lemma seq_to_ideal : forall c st ast ct stt astt os,
   <((c, st, ast ))> -->^os <((ct, stt, astt))> ->
   <((c, st, ast, false))> -->i_(repeat DStep (length os))^^os <((ct, stt, astt, false))>.
 Proof.
-Admitted.
+  intros.
+  now induction H; constructor.
+Qed.
 
 Lemma multi_seq_to_ideal : forall c st ast ct stt astt os,
   <((c, st, ast ))> -->*^os <((ct, stt, astt))> ->
   <((c, st, ast, false))> -->i*_(repeat DStep (length os))^^os <((ct, stt, astt, false))>.
 Proof.
-Admitted.
+  intros. induction H.
+  - apply multi_ideal_refl.
+  - apply seq_to_ideal in H.
+    rewrite app_length, repeat_app.
+    eapply multi_ideal_trans; eauto.
+Qed.
 
 Lemma seq_small_step_if_total : forall c be ct cf st ast,
   c = <{{if be then ct else cf end}}> ->
@@ -1655,12 +1663,14 @@ Proof.
       apply app_eq_nil in H4. destruct H4; subst.
       eapply stuckness_not_data_dependent in H. exfalso. eauto.
     + (* both executions step at least once *)
-      assert (Heqos : length os0 = length os1) by (eapply seq_small_step_obs_length; eauto).
-      assert (os1 = os0). { admit. (* Need Lemma *) } subst.
-      assert (os2 = os3). { admit. (* Need Lemma *) } subst.
+      assert (length os0 = length os1) by (eapply seq_small_step_obs_length; eauto).
+      assert (os1 = os0).
+      { eapply prefix_eq_length; eauto.
+        eapply app_eq_prefix; eauto. } subst.
+      apply app_inv_head in H0; subst.
       eapply small_step_cmd_determinate in H1; [| now apply H]; subst.
       now eapply IHH1mult; eauto.
-Admitted.
+Qed.
 
 (** * Ultimate SLH Relative Secure *)
 
