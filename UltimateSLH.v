@@ -105,6 +105,35 @@ Proof.
     + apply IHHev1. apply Hev2.
 Qed.
 
+Lemma seq_small_step_obs_type : forall c st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2,
+  <((c, st1, ast1))> -->^os1 <((ct1, stt1, astt1))> ->
+  <((c, st2, ast2))> -->^os2 <((ct2, stt2, astt2))> ->
+  match os2 with
+  | [] => os1 = []
+  | OBranch _ :: os => exists b, os1 = OBranch b :: os
+  | OARead _ _ :: os => exists a i, os1 = OARead a i :: os
+  | OAWrite _ _ :: os => exists a i, os1 = OAWrite a i :: os
+  end.
+Proof.
+  induction c; intros st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2 H1 H2;
+  inversion H1; inversion H2; subst; try eauto.
+  + eapply IHc1; eauto.
+  + inversion H9.
+  + inversion H17.
+Qed.
+
+Corollary seq_small_step_obs_length : forall c st1 ast1 stt1 astt1 ct1 os1 ct2 st2 ast2 stt2 astt2 os2,
+  <((c, st1, ast1))> -->^os1 <((ct1, stt1, astt1))> ->
+  <((c, st2, ast2))> -->^os2 <((ct2, stt2, astt2))> ->
+  length os1 = length os2.
+Proof.
+  intros. eapply seq_small_step_obs_type in H; [|now apply H0].
+  destruct os1; subst; [now auto|].
+  destruct o.
+  2, 3 : now (do 2 destruct H); subst.
+  now destruct H; subst.
+Qed.
+
 Lemma seq_big_to_small_step : forall c st ast stt astt os,
   <(st, ast)> =[ c ]=> <(stt, astt, os)> ->
   <((c, st, ast))> -->*^os <((skip, stt, astt))>.
@@ -1274,26 +1303,22 @@ Proof.
 Qed.
 
 (* HIDE *)
-(* Currently unused but maybe helpful in the future. *)
+(* Removed the seq_same_obs hypothesis which was too strong *)
 Lemma seq_eval_small_step_com_deterministic :
-    forall c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2,
-    <((c, st1, ast1))>  -->^os1 <((ct1, stt1, astt1))> ->
-    <((c, st2, ast2))>  -->^os2 <((ct2, stt2, astt2))> ->
-    seq_same_obs c st1 st2 ast1 ast2 ->
+    forall c os st1 ast1 ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
+    <((c, st1, ast1))>  -->^os <((ct1, stt1, astt1))> ->
+    <((c, st2, ast2))>  -->^os <((ct2, stt2, astt2))> ->
     ct1 = ct2.
 Proof.
-  intros c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2 Hev1.
-  generalize dependent os2; generalize dependent astt2;
+  intros c os st1 ast1 ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2 H.
+  generalize dependent astt2;
   generalize dependent stt2; generalize dependent ct2;
   generalize dependent ast2 ; generalize dependent st2.
-  induction Hev1; intros st2 ast2 ct2 stt2 astt2 ost2 Hev2 Hsec;
-  try (now inversion Hev2; subst; auto).
-  - inversion Hev2; subst; auto.
-    + apply seq_same_obs_com_seq in Hsec as Hc1.
-      apply IHHev1 in H7; subst; auto.
-    + inversion Hev1.
-  - apply seq_same_obs_com_if in Hsec.
-    inversion Hev2; subst. rewrite Hsec. reflexivity.
+  induction H; intros st2 ast2 ct2 stt2 astt2 H2;
+    try (now inversion H2; subst; auto).
+  inversion H2; subst.
+  - now apply IHseq_eval_small_step in H9; subst.
+  - inversion H.
 Qed.
 
 Lemma ideal_eval_small_step_com_deterministic :
@@ -1559,58 +1584,50 @@ Conjecture ideal_exec_split_v2 : forall c st ast ds stt astt os ds1 ds2,
 (* SOONER: This looks quite similar to (and maybe simpler than)
            ideal_small_step_com_deterministic *)
 
-Conjecture small_step_cmd_determinate : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
-  <(( c, st1, ast1, false ))> -->i_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
-  <(( c, st2, ast2, false ))> -->i_ ds ^^ os <(( ct2, stt2, astt2, false ))> ->
+Conjecture small_step_cmd_determinate : forall c st1 ast1 os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
+  <(( c, st1, ast1 ))> -->^ os <(( ct1, stt1, astt1 ))> ->
+  <(( c, st2, ast2 ))> -->^ os <(( ct2, stt2, astt2 ))> ->
   ct1 = ct2.
 
 (* It's crucial that os=[] here, since otherwise:
    - in the case in which c gets stuck on OOB access for st2
    - if branches evaluate differently in st2 *)
-Conjecture stuckness_not_data_dependent : forall c st1 ast1 ds ct1 stt1 astt1 st2 ast2,
-  <(( c, st1, ast1, false ))> -->i_ ds ^^ [] <(( ct1, stt1, astt1, false ))> ->
+Conjecture stuckness_not_data_dependent : forall c st1 ast1 ct1 stt1 astt1 st2 ast2,
+  <(( c, st1, ast1 ))> -->^ [] <(( ct1, stt1, astt1 ))> ->
   exists ct2 stt2 astt2,
-    <(( c, st2, ast2, false ))> -->i_ ds ^^ [] <(( ct2, stt2, astt2, false ))>.
+    <(( c, st2, ast2 ))> -->^ [] <(( ct2, stt2, astt2 ))>.
 
 (* SOONER: This can likely be rephrased in terms of the sequential semantics;
            this would also solve all admits about bits and directions *)
 
-Lemma multi_ideal_lock_step : forall c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
-  <(( c, st1, ast1, false ))> -->i*_ ds ^^ os <(( ct1, stt1, astt1, false ))> ->
+Lemma multi_ideal_lock_step : forall os c st1 ast1 ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2,
+  <(( c, st1, ast1 ))> -->*^os <(( ct1, stt1, astt1 ))> ->
   ~ (exists (cm1 : com) (stm1 : state) (astm1 : astate),
-      <(( ct1, stt1, astt1, false ))> -->i_ [] ^^ [] <(( cm1, stm1, astm1, false ))>) ->
-  <(( c, st2, ast2, false ))> -->i*_ ds ^^ os <(( ct2, stt2, astt2, false ))> ->
+      <(( ct1, stt1, astt1 ))> -->^ [] <(( cm1, stm1, astm1 ))>) ->
+  <(( c, st2, ast2 ))> -->*^ os <(( ct2, stt2, astt2 ))> ->
   ~ (exists (cm1 : com) (stm1 : state) (astm1 : astate),
-      <((ct2, stt2, astt2, false ))> -->i_ [] ^^ [] <(( cm1, stm1, astm1, false ))>) ->
+      <((ct2, stt2, astt2 ))> -->^ [] <(( cm1, stm1, astm1 ))>) ->
   ct1 = ct2.
 Proof.
-  intros c st1 ast1 ds os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2 H1mult.
-  remember false as b. revert Heqb.
+  intros c st1 ast1 os ct1 stt1 astt1 st2 ast2 ct2 stt2 astt2 H1mult.
   generalize dependent astt2. generalize dependent stt2. generalize dependent ct2.
   generalize dependent ast2. generalize dependent st2.
-  induction H1mult; intros st2 ast2 ct2 stt2 astt2 Heq H1stuck H2mult H2stuck.
+  induction H1mult; intros st2 ast2 ct2 stt2 astt2 H1stuck H2mult H2stuck.
   - inversion H2mult; subst; clear H2mult.
     + reflexivity. (* both executions stuck *)
     + (* only one execution stuck -> contradiction *)
-      apply app_eq_nil in H, H0. destruct H; destruct H0; subst.
-      assert (b'=false). { admit. } subst.
-      eapply stuckness_not_data_dependent in H5. exfalso. eauto.
+      apply app_eq_nil in H. destruct H; subst.
+      eapply stuckness_not_data_dependent in H0. exfalso. eauto.
   - inversion H2mult; subst; clear H2mult.
-    + (* only one execution stuck -> contradiction *) symmetry in H5, H6.
-      apply app_eq_nil in H5, H6. destruct H5; destruct H6; subst.
-      assert (b=false). { admit. } subst.
-      assert (b'=false). { admit. } subst.
+    + (* only one execution stuck -> contradiction *) symmetry in H4.
+      apply app_eq_nil in H4. destruct H4; subst.
       eapply stuckness_not_data_dependent in H. exfalso. eauto.
     + (* both executions step at least once *)
-      assert (ds1 = ds0). { admit. (* May need generalization! or simplification above *) } subst.
-      assert (os1 = os0). { admit. (* May need generalization! using seq_same_obs? *) } subst.
-      assert (ds2 = ds3). { admit. (* May need generalization! or simplification above *) } subst.
-      assert (os2 = os3). { admit. (* May need generalization! using seq_same_obs? *) } subst.
-      assert (b'0=false). { admit. } subst.
-      assert (b=false). { admit. } subst.
-      assert (b'=false). { admit. } subst.
-      eapply small_step_cmd_determinate in H6; [| now apply H]. subst.
-      eapply IHH1mult; eauto.
+      assert (Heqos : length os0 = length os1) by (eapply seq_small_step_obs_length; eauto).
+      assert (os1 = os0). { admit. (* Need Lemma *) } subst.
+      assert (os2 = os3). { admit. (* Need Lemma *) } subst.
+      eapply seq_eval_small_step_com_deterministic in H1; [| now apply H]; subst.
+      now eapply IHH1mult; eauto.
 Admitted.
 
 (** * Ultimate SLH Relative Secure *)
