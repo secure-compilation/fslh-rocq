@@ -1165,6 +1165,18 @@ Proof.
       * apply IHHev; auto.
 Qed.
 
+Lemma seq_to_ideal : forall c st ast ct stt astt os,
+  <((c, st, ast ))> -->^os <((ct, stt, astt))> ->
+  <((c, st, ast, false))> -->i_(repeat DStep (length os))^^os <((ct, stt, astt, false))>.
+Proof.
+Admitted.
+
+Lemma multi_seq_to_ideal : forall c st ast ct stt astt os,
+  <((c, st, ast ))> -->*^os <((ct, stt, astt))> ->
+  <((c, st, ast, false))> -->i*_(repeat DStep (length os))^^os <((ct, stt, astt, false))>.
+Proof.
+Admitted.
+
 Lemma seq_small_step_if_total : forall c be ct cf st ast,
   c = <{{if be then ct else cf end}}> ->
   exists c' stt astt os,
@@ -1674,7 +1686,10 @@ Proof.
       eapply Hsec in Hsmall1. eapply Hsmall1 in Hsmall2 as Hpre.
       apply prefix_eq_length in Hpre; auto. } subst.
     assert (L : cm1' = cm1).
-    { eapply multi_ideal_lock_step; eauto. } subst.
+    { eapply multi_ideal_no_spec in Hsmall1, Hsmall2; eauto.
+      eapply multi_ideal_lock_step; eauto.
+      all: intro; (do 3 destruct H). 1:apply Hmax2. 2:apply Hmax1.
+      all: eapply seq_to_ideal in H. all: (simpl in H); eauto. } subst.
     assert (Hsec2: seq_same_obs cm1 stm1 stm1' astm1 astm1').
     { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply multi_seq_preserves_seq_same_obs; eauto. }
