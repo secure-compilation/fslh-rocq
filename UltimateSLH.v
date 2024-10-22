@@ -160,13 +160,34 @@ Proof.
     rewrite <- app_nil_l. econstructor; [econstructor |]; eauto.
 Qed.
 
+(* HIDE: CH: Why are we going to cteval? Is that used at all in this file? *)
+(* Also see ideal_eval_one_step lemma in this file; consistent naming *)
+Lemma seq_small_to_big_step_aux : forall c st ast stt astt os c1 os1 st1 ast1,
+  <((c, st, ast))> -->^os1 <((c1, st1, ast1))> ->
+  <(st1, ast1)> =[ c1 ]=> <(stt, astt, os)> ->
+  <(st, ast)> =[ c ]=> <(stt, astt, os1++os)>.
+Proof.
+  intros c st ast stt astt os c1 os1 st1 ast1 H1 H.
+  generalize dependent os. generalize dependent astt.
+  generalize dependent stt.
+  induction H1; intros.
+  - inversion H0. subst. constructor. reflexivity.
+  - inversion H. subst. rewrite app_assoc. econstructor; eauto.
+  - econstructor. { constructor. } { assumption. }
+  - (* ... *)
+Admitted.
+
 Lemma seq_small_to_big_step : forall c st ast stt astt os,
   <((c, st, ast))> -->*^os <((skip, stt, astt))> ->
   <(st, ast)> =[ c ]=> <(stt, astt, os)>.
 Proof.
-Admitted.
+  intros c st ast stt astt os H. remember Skip as c1.
+  induction H; subst.
+  - constructor.
+  - eapply seq_small_to_big_step_aux; eauto.
+Qed.
 
-(** * Defintion of Relative Secure *)
+(** * Definition of Relative Secure *)
 
 Definition seq_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall stt1 stt2 astt1 astt2 os1 os2 c1 c2,
@@ -346,6 +367,7 @@ Proof.
     + apply IHHev1. apply Hev2.
 Qed.
 
+(* Should be similar to seq_big_to_small_step *)
 Lemma ideal_big_to_small_step : forall c st ast b stt astt bt ds os,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   <((c, st, ast, b))> -->i*_ds^^os <((skip, stt, astt, bt))>.
@@ -556,6 +578,8 @@ Definition ultimate_slh_flag_prop (c :com) (ds :dirs) :Prop :=
   <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
   st' "b" = (if b' then 1 else 0).
 
+(* Sebastian: needs special induction principal, see ultimate_slh_bcc proof
+   and sel_slh_flag from SpecCT.v *)
 Lemma ultimate_slh_flag : forall c ds,
   ultimate_slh_flag_prop c ds.
 Admitted.
@@ -957,6 +981,13 @@ Lemma ideal_eval_no_spec : forall c st ast ds stt astt bt os,
   |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
   <((c, st, ast ))> -->*^os <((skip, stt, astt))>.
 Proof.
+  intros c st ast ds stt astt bt os Hds Heval.
+  apply seq_big_to_small_step. apply cteval_equiv_seq_spec_eval.
+  unfold seq_spec_eval. exists ds. split; [assumption|].
+  assert(bt = false). { destruct bt; [|reflexivity].
+    apply ideal_eval_spec_needs_force in Heval. apply Hds in Heval. discriminate. }
+  subst. (* SOONER: split off the rest as another lemma (if not already proved) *)
+(*
   intros c st ast ds stt astt bt os Hds Hev.
   remember false as b eqn:Eqb. induction Hev; subst;
   try (now econstructor); try (rewrite <- app_nil_r; econstructor; econstructor; eauto).
@@ -976,6 +1007,7 @@ Proof.
   - (* While *)
     rewrite <- app_nil_l. eapply multi_seq_trans; [| eapply IHHev; auto].
     econstructor; auto.
+*)
 Admitted.
 
 Lemma ideal_exec_split_by_dirs : forall c st ast b ds stt astt bt os ds1 ds2,
