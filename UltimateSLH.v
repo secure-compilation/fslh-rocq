@@ -140,8 +140,14 @@ Lemma seq_big_to_small_step : forall c st ast stt astt os,
 Proof.
   intros c st ast stt astt os Hev. induction Hev;
   try (now rewrite <- app_nil_r; econstructor; econstructor; eauto).
-  - (* Seq *)
-    admit.
+  - remember Skip as c'. clear Hev1. clear Hev2.
+    induction IHHev1; subst.
+    + eapply multi_seq_trans; eauto.
+      econstructor.
+    + rewrite <- app_assoc.
+      eapply multi_seq_trans.
+      * econstructor. now apply H.
+      * apply IHIHHev1; eauto.
   - (* If_True *)
     econstructor.
     + rewrite <- H. eapply SSM_If.
@@ -152,14 +158,13 @@ Proof.
     + rewrite H; eauto.
   - (* While *)
     rewrite <- app_nil_l. econstructor; [econstructor |]; eauto.
-Admitted.
+Qed.
 
 Lemma seq_small_to_big_step : forall c st ast stt astt os,
   <((c, st, ast))> -->*^os <((skip, stt, astt))> ->
   <(st, ast)> =[ c ]=> <(stt, astt, os)>.
 Proof.
 Admitted.
-
 
 (** * Defintion of Relative Secure *)
 
