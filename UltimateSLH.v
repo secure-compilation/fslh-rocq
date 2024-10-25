@@ -642,6 +642,40 @@ Definition ultimate_slh_flag_prop (c :com) (ds :dirs) :Prop :=
 Lemma ultimate_slh_flag : forall c ds,
   ultimate_slh_flag_prop c ds.
 Proof.
+  apply prog_size_ind. unfold ultimate_slh_flag_prop.
+  destruct c; simpl; intros.
+  + now inversion H2; subst.
+  + inversion H2; subst. now rewrite t_update_neq.
+  + inversion H2; subst. eapply H; [..|apply H14].
+    { prog_size_auto. } { now destruct H0. }
+    eapply H; [..|apply H1|apply H5].
+    { prog_size_auto. } now destruct H0.
+  + inversion H2; subst.
+    - simpl in H14. destruct b.
+      * rewrite H1 in H14. simpl in H14.
+        inversion H14; subst.
+        eapply H; [..|apply H15].
+        { prog_size_auto. } { now destruct H0. }
+        inversion H5; subst. rewrite t_update_eq.
+        simpl. now rewrite H1.
+      * rewrite H1 in H14. simpl in H14.
+        destruct (beval st be) eqn:Heq; inversion H14; subst; (eapply H; [..|apply H15]; [prog_size_auto|now destruct H0|]).
+        all: inversion H5; subst. all:rewrite t_update_eq; simpl.
+        all:now rewrite H1, Heq.
+    - simpl in H14. destruct b.
+      * rewrite H1 in H14. simpl in H14.
+        inversion H14; subst.
+        eapply H; [..|apply H15].
+        { prog_size_auto. } { now destruct H0. }
+        inversion H5; subst. rewrite t_update_eq.
+        simpl. now rewrite H1.
+      * rewrite H1 in H14. simpl in H14.
+        destruct (beval st be) eqn:Heq; inversion H14; subst; (eapply H; [..|apply H15]; [prog_size_auto|now destruct H0|]).
+        all: inversion H5; subst. all:rewrite t_update_eq; simpl.
+        all:now rewrite H1, Heq.
+  + admit.
+  + inversion H2; subst; now rewrite t_update_neq.
+  + now inversion H2; subst.
 Admitted.
 
 (* LATER: Prove the used lemmas [ultimate_slh_flag], [ideal_unused_update_rev],
