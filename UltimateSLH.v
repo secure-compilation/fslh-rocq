@@ -161,8 +161,7 @@ Proof.
 Qed.
 
 (* HIDE: CH: Why are we going to cteval? Is that used at all in this file? *)
-(* Also see ideal_eval_one_step lemma in this file; consistent naming *)
-Lemma seq_small_to_big_step_aux : forall c st ast stt astt os c1 os1 st1 ast1,
+Lemma seq_eval_one_step : forall c st ast stt astt os c1 os1 st1 ast1,
   <((c, st, ast))> -->^os1 <((c1, st1, ast1))> ->
   <(st1, ast1)> =[ c1 ]=> <(stt, astt, os)> ->
   <(st, ast)> =[ c ]=> <(stt, astt, os1++os)>.
@@ -174,8 +173,11 @@ Proof.
   - inversion H0. subst. constructor. reflexivity.
   - inversion H. subst. rewrite app_assoc. econstructor; eauto.
   - econstructor. { constructor. } { assumption. }
-  - (* ... *)
-Admitted.
+  - destruct (beval st be) eqn:Heq; now constructor.
+  - now constructor.
+  - inversion H1; subst. now constructor.
+  - inversion H2; subst. now constructor.
+Qed.
 
 Lemma seq_small_to_big_step : forall c st ast stt astt os,
   <((c, st, ast))> -->*^os <((skip, stt, astt))> ->
@@ -184,7 +186,7 @@ Proof.
   intros c st ast stt astt os H. remember Skip as c1.
   induction H; subst.
   - constructor.
-  - eapply seq_small_to_big_step_aux; eauto.
+  - eapply seq_eval_one_step; eauto.
 Qed.
 
 (** * Definition of Relative Secure *)
@@ -380,7 +382,15 @@ Proof.
     eapply multi_ideal_trans.
     + eapply ISM_Asgn. eapply H.
     + apply multi_ideal_refl.
-  - (* Seq *) admit.
+  - (* Seq *)
+    remember Skip as c'. clear Hbig1. clear Hbig2.
+    induction IHHbig1; subst.
+    + eapply multi_ideal_trans; eauto.
+      econstructor.
+    + rewrite <- !app_assoc.
+      eapply multi_ideal_trans.
+      * econstructor. now apply H.
+      * apply IHIHHbig1; eauto.
   - (* IF *)
     replace (DStep:: ds) with ([DStep] ++ ds) by reflexivity.
     eapply multi_ideal_trans.
@@ -409,7 +419,7 @@ Proof.
     eapply multi_ideal_trans.
     + eapply ISM_Write; auto.
     + rewrite H. apply multi_ideal_refl.
-Admitted.
+Qed.
 
 
 Lemma ideal_eval_one_step : forall c1 c2 st stm stt ast astm astt b bm bt ds1 ds2 os1 os2,
@@ -447,6 +457,7 @@ Lemma ideal_eval_multi_steps : forall c1 c2 st stm stt ast astm astt b bm bt ds1
   <((c1, st, ast, b))> -->i*_ds1^^os1 <((c2, stm, astm, bm))> ->
   |-i <(stm, astm, bm, ds2)> =[ c2 ]=> <(stt, astt, bt, os2)> ->
   |-i <(st, ast, b, ds1++ds2)> =[ c1 ]=> <(stt, astt, bt, os1++os2)>.
+Proof.
 Admitted.
 
 Lemma ideal_small_to_big_step : forall c st ast b stt astt bt ds os,
@@ -514,6 +525,7 @@ Lemma observations_fixed : forall c st ast ds stt astt os,
   st "b" = 1 ->
   |-i <(st, ast, true, ds)> =[ c ]=> <(stt, astt, true, os)> ->
   Some (os,[]) = observations c ds.
+Proof.
 Admitted.
 
 Lemma gilles_lemma_follows : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
@@ -534,25 +546,71 @@ Qed.
     relating the speculative semantics of the hardened program with the ideal
     semantics, by means of a backwards compiler correctness (BCC) result. *)
 
+Lemma ideal_unused_overwrite : forall st ast b ds c st' ast' b' os X n,
+  unused X c ->
+  |-i <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> ->
+  |-i <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)>.
+Proof.
+  intros. induction H0.
+  + constructor.
+  + subst. destruct H as [H H'].
+    rewrite t_update_permute; [|assumption].
+    constructor. now rewrite aeval_unused_update.
+  + destruct H. now econstructor; eauto.
+  + destruct H as [Hb [Hc1 Hc2] ].
+    erewrite <- beval_unused_update; [|eassumption]. constructor.
+    rewrite beval_unused_update; [|assumption].
+    apply IHideal_eval. now destruct (negb b && beval st be).
+  + destruct H as [Hb [Hc1 Hc2] ].
+    erewrite <- beval_unused_update; [|eassumption]. constructor.
+    rewrite beval_unused_update; [|assumption].
+    apply IHideal_eval. now destruct (negb b && beval st be).
+  + constructor. apply IHideal_eval. destruct H. now repeat constructor.
+  + subst. destruct H.
+    rewrite t_update_permute; [|assumption].
+    now constructor; [rewrite aeval_unused_update|assumption].
+  + subst. destruct H. now constructor; try rewrite aeval_unused_update.
+Qed.
+
 Lemma ideal_unused_update : forall st ast b ds c st' ast' b' os X n,
   unused X c ->
   |-i <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)> ->
   |-i <(st, ast, b, ds)> =[ c ]=> <(X !-> st X; st', ast', b', os)>.
 Proof.
-Admitted.
+  intros. rewrite <- (t_update_same _ st X) at 1.
+  eapply ideal_unused_overwrite with (X:=X) (n:=(st X)) in H0; [|assumption].
+  now rewrite !t_update_shadow in H0.
+Qed.
 
 Lemma ideal_unused_update_rev : forall st ast b ds c st' ast' b' os X n,
   unused X c ->
   |-i <(st, ast, b, ds)> =[ c ]=> <(X!-> st X; st', ast', b', os)> ->
   |-i <(X !-> n; st, ast, b, ds)> =[ c ]=> <(X !-> n; st', ast', b', os)>.
 Proof.
-Admitted.
+  intros.
+  eapply ideal_unused_overwrite with (n:=n) in H0; [|eassumption].
+  now rewrite t_update_shadow in H0.
+Qed.
+
+Lemma upd_length : forall l i a,
+  length (upd i l a) = length l.
+Proof.
+  induction l; destruct i; auto.
+  intros. simpl. now f_equal.
+Qed.
 
 Lemma spec_eval_preserves_nonempty_arrs : forall c st ast b ds st' ast' b' os,
   nonempty_arrs ast ->
   <(st, ast, b, ds)> =[ c ]=> <(st', ast', b', os)> ->
   nonempty_arrs ast'.
-Admitted.
+Proof.
+  unfold nonempty_arrs.
+  intros. generalize dependent a. induction H0; eauto; subst.
+  2:clear H2 a. 1:rename a into a'.
+  all: intros; destruct (String.eqb a a') eqn:Heq.
+  2, 4: now apply String.eqb_neq in Heq; rewrite t_update_neq.
+  all: now apply String.eqb_eq in Heq; subst; rewrite t_update_eq, upd_length.
+Qed.
 
 Lemma flag_zero_check_spec_bit : forall (st :state) (X :string) (b b' :bool),
   st X = (if b then 1 else 0) ->
@@ -579,10 +637,11 @@ Definition ultimate_slh_flag_prop (c :com) (ds :dirs) :Prop :=
   <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
   st' "b" = (if b' then 1 else 0).
 
-(* Sebastian: needs special induction principal, see ultimate_slh_bcc proof
+(* Sebastian: needs special induction principle, see ultimate_slh_bcc proof
    and sel_slh_flag from SpecCT.v *)
 Lemma ultimate_slh_flag : forall c ds,
   ultimate_slh_flag_prop c ds.
+Proof.
 Admitted.
 
 (* LATER: Prove the used lemmas [ultimate_slh_flag], [ideal_unused_update_rev],

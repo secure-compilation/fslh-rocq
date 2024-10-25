@@ -297,7 +297,7 @@ with beval (st : state) (b : bexp) : bool :=
 Fixpoint upd (i:nat) (ns:list nat) (n:nat) : list nat :=
   match i, ns with
   | 0, _ :: ns' => n :: ns'
-  | S i', _ :: ns' => upd i' ns' n
+  | S i', n' :: ns' => n' :: upd i' ns' n
   | _, _ => ns
   end.
 (* TERSE: /HIDEFROMHTML *)
