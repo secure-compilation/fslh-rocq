@@ -1707,15 +1707,23 @@ Definition prog_size (c :com) (ds :dirs) :nat := com_size c + length ds.
 
 (** The induction principle on [prog_size] *)
 
-Axiom prog_size_ind :
+Lemma prog_size_ind :
   forall P : com -> dirs -> Prop,
   (forall c ds,
     ( forall c' ds',
       prog_size c' ds' < prog_size c ds ->
       P c' ds') -> P c ds  ) ->
   (forall c ds, P c ds).
-
-(* SOONER: we should prove this *)
+Proof.
+  intros.
+  remember (fun c_ds => P (fst c_ds) (snd c_ds)) as P'.
+  replace (P c ds) with (P' (c, ds)) by now rewrite HeqP'.
+  eapply measure_induction with (f:=fun c_ds => prog_size (fst c_ds) (snd c_ds)). intros. rewrite HeqP'.
+  apply H. intros.
+  remember (c', ds') as c_ds'.
+  replace (P c' ds') with (P' c_ds') by now rewrite Heqc_ds', HeqP'.
+  apply H0. now rewrite Heqc_ds'.
+Qed.
 
 (** The proof of [sel_slh_flag] *)
 
