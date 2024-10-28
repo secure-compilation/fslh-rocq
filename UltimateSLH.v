@@ -458,7 +458,11 @@ Lemma ideal_eval_multi_steps : forall c1 c2 st stm stt ast astm astt b bm bt ds1
   |-i <(stm, astm, bm, ds2)> =[ c2 ]=> <(stt, astt, bt, os2)> ->
   |-i <(st, ast, b, ds1++ds2)> =[ c1 ]=> <(stt, astt, bt, os1++os2)>.
 Proof.
-Admitted.
+  intros. generalize dependent os2. generalize dependent ds2. induction H.
+  + intros. apply H0.
+  + intros. rewrite <- !app_assoc.
+    eapply ideal_eval_one_step; eauto.
+Qed.
 
 Lemma ideal_small_to_big_step : forall c st ast b stt astt bt ds os,
   <((c, st, ast, b))> -->i*_ds^^os <((skip, stt, astt, bt))> ->
@@ -637,8 +641,6 @@ Definition ultimate_slh_flag_prop (c :com) (ds :dirs) :Prop :=
   <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
   st' "b" = (if b' then 1 else 0).
 
-(* Sebastian: needs special induction principle, see ultimate_slh_bcc proof
-   and sel_slh_flag from SpecCT.v *)
 Lemma ultimate_slh_flag : forall c ds,
   ultimate_slh_flag_prop c ds.
 Proof.
@@ -673,13 +675,58 @@ Proof.
         destruct (beval st be) eqn:Heq; inversion H14; subst; (eapply H; [..|apply H15]; [prog_size_auto|now destruct H0|]).
         all: inversion H5; subst. all:rewrite t_update_eq; simpl.
         all:now rewrite H1, Heq.
-  + admit.
+  + inversion H2; subst; clear H2.
+    inversion H5; subst; clear H5.
+    inversion H13; subst; clear H13.
+    - destruct b.
+      * simpl in H15. rewrite H1 in H15.
+        simpl in H15. inversion H15; subst; clear H15.
+        inversion H14; subst; clear H14.
+        rewrite t_update_eq. simpl. now rewrite H1.
+      * simpl in H15. rewrite H1 in H15. destruct (beval st be) eqn:Heq.
+        ++ simpl in H15. inversion H15; subst; clear H15.
+           inversion H4; subst; clear H4.
+           inversion H5; subst; clear H5.
+           assert (Hwhile : <( st'1, ast'1, b'1, ds0++ds2 )> =[ ultimate_slh <{{ while be do c end }}> ]=> <( st', ast', b', os3++os2 )>).
+           { simpl. inversion H14; subst; clear H14. inversion H13; subst; clear H13. econstructor.
+             + econstructor. apply H12.
+             + now constructor. }
+           eapply H; [..|apply Hwhile]. { prog_size_auto. } { now destruct H0. }
+           eapply H; [..|apply H16]. { prog_size_auto. } { now destruct H0. }
+           rewrite t_update_eq. simpl. now rewrite H1, Heq.
+        ++ simpl in H15. inversion H15; subst; clear H15.
+           inversion H14; subst; clear H14. rewrite t_update_eq. simpl. now rewrite H1, Heq.
+    - assert (b'0 = true) by (eapply speculation_bit_monotonic; eauto); subst.
+      assert (b' = true) by (eapply speculation_bit_monotonic; eauto); subst.
+      simpl in H15. destruct b.
+      * rewrite H1 in H15. simpl in H15. inversion H15; subst; clear H15.
+        inversion H4; subst; clear H4.
+        inversion H5; subst; clear H5.
+        assert (b' = true) by (eapply speculation_bit_monotonic; eauto); subst.
+        assert (Hwhile : <( st'1, ast'1, true, ds0++ds2 )> =[ ultimate_slh <{{ while be do c end }}> ]=> <( st', ast', true, os3++os2 )>).
+        { simpl. inversion H14; subst; clear H14. inversion H13; subst; clear H13. econstructor.
+          + econstructor. apply H12.
+          + now constructor. }
+        erewrite H; [..|apply Hwhile]. { reflexivity. } { prog_size_auto. } { now destruct H0. }
+        eapply H; [..|apply H16]. { prog_size_auto. } { now destruct H0. }
+        rewrite t_update_eq. simpl. now rewrite H1.
+      * simpl in H15. rewrite H1 in H15. destruct (beval st be) eqn:Heq.
+        ++ simpl in H15. inversion H15; subst; clear H15.
+           inversion H14; subst; clear H14. rewrite t_update_eq. simpl. now rewrite H1, Heq.
+        ++ simpl in H15. inversion H15; subst; clear H15.
+           inversion H4; subst; clear H4.
+           inversion H5; subst; clear H5.
+           assert (b' = true) by (eapply speculation_bit_monotonic; eauto); subst.
+           assert (Hwhile : <( st'1, ast'1, true, ds0++ds2 )> =[ ultimate_slh <{{ while be do c end }}> ]=> <( st', ast', true, os3++os2 )>).
+           { simpl. inversion H14; subst; clear H14. inversion H13; subst; clear H13. econstructor.
+             + econstructor. apply H12.
+             + now constructor. }
+           erewrite H; [..|apply Hwhile]. { reflexivity. } { prog_size_auto. } { now destruct H0. }
+           eapply H; [..|apply H16]. { prog_size_auto. } { now destruct H0. }
+           rewrite t_update_eq. simpl. now rewrite H1, Heq.
   + inversion H2; subst; now rewrite t_update_neq.
   + now inversion H2; subst.
-Admitted.
-
-(* LATER: Prove the used lemmas [ultimate_slh_flag], [ideal_unused_update_rev],
-   [spec_eval_preserves_nonempty_arrs] and [ideal_unused_update] *)
+Qed.
 
 Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
   forall st ast (b: bool) st' ast' b' os,
