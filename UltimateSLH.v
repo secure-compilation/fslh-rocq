@@ -189,6 +189,84 @@ Proof.
   - eapply seq_eval_one_step; eauto.
 Qed.
 
+(** Small-step speculative semantics *)
+
+Reserved Notation
+  "'<((' c , st , ast , b '))>' '-->_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
+  (at level 40, c custom com at level 99, ct custom com at level 99,
+   st constr, ast constr, stt constr, astt constr at next level).
+
+Inductive spec_eval_small_step :
+    com -> state -> astate -> bool ->
+    com -> state -> astate -> bool -> dirs -> obs -> Prop :=
+  | SpecSM_Asgn  : forall st ast b e n x,
+      aeval st e = n ->
+      <((x := e, st, ast, b))> -->_[]^^[] <((skip, x !-> n; st, ast, b))>
+  | SpecSM_Seq : forall c1 st ast b ds os c1t stt astt bt c2,
+      <((c1, st, ast, b))>  -->_ds^^os <((c1t, stt, astt, bt))>  ->
+      <(((c1;c2), st, ast, b))>  -->_ds^^os <(((c1t;c2), stt, astt, bt))>
+  | SpecSM_Seq_Skip : forall st ast b c2,
+      <(((skip;c2), st, ast, b))>  -->_[]^^[] <((c2, st, ast, b))>
+  | SpecSM_If : forall be ct cf st ast b,
+      <((if be then ct else cf end, st, ast, b))>
+      -->_[DStep]^^[OBranch (beval st be)]
+      <((match beval st be with
+        | true => ct
+        | false => cf end, st, ast, b))>
+  | SpecSM_If_F : forall be ct cf st ast b,
+      <((if be then ct else cf end, st, ast, b))>
+      -->_[DForce]^^[OBranch (beval st be)]
+      <((match beval st be with
+        | true => cf
+        | false => ct end, st, ast, true))>
+  | SpecSM_While : forall be c st ast b,
+      <((while be do c end, st, ast, b))> -->_[]^^[]
+      <((if be then c; while be do c end else skip end, st, ast, b))>
+  | SpecSM_ARead : forall x a ie st ast b i,
+      aeval st ie = i ->
+      i < length (ast a) ->
+      <((x <- a[[ie]], st, ast, b))> -->_[DStep]^^[OARead a i]
+      <((skip, x !-> nth i (ast a) 0; st, ast, b))>
+  | SpecSM_ARead_U : forall x a ie st ast i a' i',
+      aeval st ie = i ->
+      i >= length (ast a) ->
+      i' < length (ast a') ->
+      <((x <- a[[ie]], st, ast, true))> -->_[DLoad a' i']^^[OARead a i]
+      <((skip, x !-> nth i' (ast a') 0; st, ast, true))>
+  | SpecSM_Write : forall a ie e st ast b i n,
+      aeval st e = n ->
+      aeval st ie = i ->
+      i < length (ast a) ->
+      <((a[ie] <- e, st, ast, b))> -->_[DStep]^^[OAWrite a i]
+      <((skip, st, a !-> upd i (ast a) n; ast, b))>
+  | SpecSM_Write_U : forall a ie e st ast i n a' i',
+      aeval st e = n ->
+      aeval st ie = i ->
+      i >= length (ast a) ->
+      i' < length (ast a') ->
+      <((a[ie] <- e, st, ast, true))> -->_[DStore a' i']^^[OAWrite a i]
+      <((skip, st, a' !-> upd i' (ast a') n; ast, true))>
+  where "<(( c , st , ast , b ))> -->_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
+    (spec_eval_small_step c st ast b ct stt astt bt ds os).
+
+Reserved Notation
+  "'<((' c , st , ast , b '))>' '-->*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
+  (at level 40, c custom com at level 99, ct custom com at level 99,
+   st constr, ast constr, stt constr, astt constr at next level).
+
+Inductive multi_spec (c:com) (st:state) (ast:astate) (b:bool) :
+    com -> state -> astate -> bool -> dirs -> obs -> Prop :=
+  | multi_spec_refl : <((c, st, ast, b))> -->*_[]^^[] <((c, st, ast, b))>
+  | multi_spec_trans (c':com) (st':state) (ast':astate) (b':bool)
+                (c'':com) (st'':state) (ast'':astate) (b'':bool)
+                (ds1 ds2 : dirs) (os1 os2 : obs) :
+      <((c, st, ast, b))> -->_ds1^^os1 <((c', st', ast', b'))> ->
+      <((c', st', ast', b'))> -->*_ds2^^os2 <((c'', st'', ast'', b''))> ->
+      <((c, st, ast, b))> -->*_(ds1++ds2)^^(os1++os2) <((c'', st'', ast'', b''))>
+
+  where "<(( c , st , ast , b ))> -->*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
+    (multi_spec c st ast b ct stt astt bt ds os).
+
 (** * Definition of Relative Secure *)
 
 Definition seq_same_obs c st1 st2 ast1 ast2 : Prop :=
@@ -198,9 +276,9 @@ Definition seq_same_obs c st1 st2 ast1 ast2 : Prop :=
     (prefix os1 os2) \/ (prefix os2 os1).
 
 Definition spec_same_obs c st1 st2 ast1 ast2 : Prop :=
-  forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
-    <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
-    <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
+  forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
+    <((c, st1, ast1, false))> -->*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
+    <((c, st2, ast2, false))> -->*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
     os1 = os2.
 
 Definition relative_secure (trans : com -> com)
@@ -283,12 +361,6 @@ Inductive ideal_eval :
   where "|-i <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
     (ideal_eval c st ast b ds stt astt bb os).
 
-Definition ideal_same_obs c st1 st2 ast1 ast2 : Prop :=
-  forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
-    |-i <(st1, ast1, false, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
-    |-i <(st2, ast2, false, ds)> =[ c ]=> <(stt2, astt2, bt2, os2)> ->
-    os1 = os2.
-
 (** * Ideal small-step evaluation *)
 
 Reserved Notation
@@ -354,6 +426,12 @@ Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
 
   where "<(( c , st , ast , b ))> -->i*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (multi_ideal c st ast b ct stt astt bt ds os).
+
+Definition ideal_same_obs c st1 st2 ast1 ast2 : Prop :=
+  forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
+    <((c, st1, ast1, false))> -->i*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
+    <((c, st2, ast2, false))> -->i*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
+    os1 = os2.
 
 Lemma multi_ideal_combined_executions :
   forall c st ast b ds cm stm astm bm osm dsm ct stt astt bt ost,
@@ -476,75 +554,6 @@ Proof.
 Qed.
 
 (** * Relative Security of Ultimate Speculative Load Hardening *)
-
-(* HIDE *)
-(* Some intuition about Gilles lemma 1 from the USLH paper,
-   but now we plan to prove it directly, like determinism (see below) *)
-
-Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
-  match c with
-  | <{{skip}}> => Some ([],ds)
-  | <{{x := e}}> => Some ([],ds)
-  | <{{c1; c2}}> =>
-      match observations c1 ds with
-      | Some (os',ds') =>
-          match observations c2 ds' with
-          | Some (os'',ds'') => Some (os''++os', ds'')
-          | None => None
-          end
-      | None => None
-      end
-  | <{{if be then c1 else c2 end}}> =>
-      match ds with
-      | DStep :: ds' =>
-          match observations c2 ds' with
-          | Some (os,ds'') => Some (os++[OBranch false],ds'')
-          | None => None
-          end
-      | DForce :: ds' =>
-          match observations c1 ds' with
-          | Some (os,ds'') => Some (os++[OBranch true],ds'')
-          | None => None
-          end
-      | _ => None
-      end
-  | <{{while be do c end}}> =>
-      match ds with
-      | DStep :: ds' => Some ([OBranch false],ds')
-      | DForce :: ds' =>
-          (* `c` below should actually be `while be do c end`,
-              but then termination no longer obvious  *)
-          match observations c ds' with
-          | Some (os,ds'') => Some (os++[OBranch true],ds'')
-          | None => None
-          end
-      | _ => None
-      end
-  | <{{x <- a[[i]]}}> => Some ([OARead a 0],ds)
-  | <{{a[i] <- e}}> => Some ([OAWrite a 0],ds)
-  end.
-
-Lemma observations_fixed : forall c st ast ds stt astt os,
-  unused "b" c ->
-  st "b" = 1 ->
-  |-i <(st, ast, true, ds)> =[ c ]=> <(stt, astt, true, os)> ->
-  Some (os,[]) = observations c ds.
-Proof.
-Admitted.
-
-Lemma gilles_lemma_follows : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
-  unused "b" c ->
-  st1 "b" = 1 ->
-  st2 "b" = 1 ->
-  |-i <(st1, ast1, true, ds)> =[ c ]=> <(stt1, astt1, true, os1)> ->
-  |-i <(st2, ast2, true, ds)> =[ c ]=> <(stt2, astt2, true, os2)> ->
-  os1 = os2.
-Proof.
-  intros c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2 Hunused Hb1 Hb2 H1 H2.
-  apply observations_fixed in H1; try auto.
-  apply observations_fixed in H2; try auto. congruence.
-Qed.
-(* /HIDE *)
 
 (** As in SpecCT and Spectre Declassified, an important step in the proof is
     relating the speculative semantics of the hardened program with the ideal
@@ -729,25 +738,30 @@ Proof.
 Qed.
 
 Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
-  forall st ast (b: bool) st' ast' b' os,
+  forall st ast (b: bool) st' ast' b' os c',
     nonempty_arrs ast ->
     unused "b" c ->
     st "b" = (if b then 1 else 0) ->
-    <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
-    |-i <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
+    <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+    exists c'',
+    <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
 
 Lemma ultimate_slh_bcc : forall c ds,
   ultimate_slh_bcc_prop c ds.
 Proof.
   apply prog_size_ind. unfold ultimate_slh_bcc_prop.
-  intros c ds IH st ast b st' ast' b' os Hast Hunused Hstb Heval.
-  destruct c; simpl in *; inversion Heval; subst; clear Heval.
-  - (* Skip *)
-    rewrite t_update_same. apply Ideal_Skip.
+  intros c ds IH st ast b st' ast' b' os c' Hast Hunused Hstb Heval.
+  inversion Heval; subst; clear Heval.
+  { rewrite t_update_same. eexists. apply multi_ideal_refl. }
+  destruct c; simpl in *; inversion H; subst; clear H.
   - (* Asgn *)
-    rewrite t_update_permute; [| tauto].
-    rewrite t_update_same.
-    constructor. reflexivity.
+    inversion H0; subst; clear H0; [| now inversion H].
+    eexists. eapply multi_ideal_trans.
+    + apply ISM_Asgn. reflexivity.
+    + rewrite t_update_permute; [| tauto].
+      rewrite t_update_same. apply multi_ideal_refl.
+Admitted.
+(*
   - (* Seq *)
     eapply Ideal_Seq.
     + apply IH in H1; try tauto.
@@ -949,6 +963,7 @@ Proof.
     specialize (Hast a). apply lt_neq in Hast. apply le_0_r in H12.
     exfalso; auto.
 Qed.
+*)
 
 (** * More prefix lemmas *)
 
@@ -1038,10 +1053,11 @@ Proof.
   + apply ideal_eval_spec_bit_monotonic in H. now subst.
 Qed.
 
-Lemma ideal_eval_final_spec_bit_false : forall c st ast ds stt astt os,
-  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, false, os)> ->
+Lemma ideal_eval_final_spec_bit_false : forall c st ast ds stt astt os ct,
+  <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, false))> ->
   (forall d, In d ds -> d = DStep).
 Proof.
+(*
   intros c st ast ds stt astt os Hev. remember false as b eqn:Eqb.
   induction Hev; intros d Hin; subst; simpl in *; try (now destruct Hin; auto); auto.
   - (* Seq *)
@@ -1052,22 +1068,26 @@ Proof.
       * apply IHHev2; auto.
   - apply ideal_eval_spec_bit_monotonic in Hev. discriminate Hev.
 Qed.
+*)
+Admitted.
 
 Lemma ideal_eval_spec_bit_deterministic :
-  forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2,
-    |-i <(st1, ast1, b, ds)> =[ c ]=> <(stt1, astt1, bt1, os1)> ->
-    |-i <(st2, ast2, b, ds)> =[ c ]=> <(stt2, astt2, bt2, os2 )> ->
+  forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
+    <(( c, st1, ast1, b ))> -->i*_ ds ^^ os1 <(( c1, stt1, astt1, bt1 ))> ->
+    <(( c, st2, ast2, b ))> -->i*_ ds ^^ os2 <(( c2, stt2, astt2, bt2 ))> ->
     bt1 = bt2.
 Proof.
-  intros c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
+  intros c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2 Hev1 Hev2.
   destruct b eqn:Eqb.
+(*
   - apply ideal_eval_spec_bit_monotonic in Hev1, Hev2. subst; auto.
   - destruct bt1 eqn:Eqbt1; destruct bt2 eqn:Eqbt2; auto.
     + apply ideal_eval_spec_needs_force in Hev1.
       eapply ideal_eval_final_spec_bit_false in Hev1; eauto. inversion Hev1.
     + apply ideal_eval_spec_needs_force in Hev2.
       eapply ideal_eval_final_spec_bit_false in Hev2; eauto. inversion Hev2.
-Qed.
+*)
+Admitted.
 
 Lemma ideal_eval_obs_length : forall c st ast b ds stt astt bt os,
   |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
@@ -1093,11 +1113,12 @@ Proof.
   auto.
 Qed.
 
-Lemma ideal_dirs_split : forall c st ast ds stt astt os,
-  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
+Lemma ideal_dirs_split : forall c st ast ds stt astt os ct,
+  <(( c, st, ast, false ))> -->i*_ ds ^^ os <(( ct, stt, astt, true ))> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds = ds1 ++ [DForce] ++ ds2 .
 Proof.
-  intros c st ast ds stt astt os Hev.
+  intros c st ast ds stt astt os ct Hev.
+(*
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev; subst; simpl; eauto; try discriminate.
   - destruct b' eqn:Eqb'.
@@ -1127,7 +1148,8 @@ Proof.
     exists []; exists ds. split; simpl.
     + intros d H; destruct H.
     + reflexivity.
-Qed.
+*)
+Admitted.
 
 Lemma ideal_eval_no_spec : forall c st ast ds stt astt bt os,
   (forall d, In d ds -> d = DStep) ->
@@ -1648,9 +1670,11 @@ Proof.
     apply IHHev1 in H9; auto.
 Qed.
 
-Lemma gilles_lemma : forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt os1 os2,
-  |-i <(st1, ast1, b, ds)> =[ c ]=> <(stt1, astt1, bt, os1)> ->
-  |-i <(st2, ast2, b, ds)> =[ c ]=> <(stt2, astt2, bt, os2)> ->
+Lemma gilles_lemma : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2 c1 c2,
+  <((c, st1, ast1, true))> -->i*_ds^^os1 <((c1, stt1, astt1, true))> ->
+  <((c, st2, ast2, true))> -->i*_ds^^os2 <((c2, stt2, astt2, true))> ->
+  os1 = os2.
+(*
   b = true ->
   bt = true ->
   os1 = os2.
@@ -1676,7 +1700,8 @@ Proof.
     apply IHHev1 in H10; auto. subst. reflexivity.
   - inversion Hev2; subst; clear Hev2; simpl in *.
     apply IHHev1 in H9; auto.
-Qed.
+*)
+Admitted.
 
 (** * Conjectures for the proof of ideal_eval_relative_secure *)
 
@@ -1808,8 +1833,8 @@ Qed.
          Léon: The additionnal conclusion is actually implied by the other.
    This lemma is equivalent to the previous one. *)
 
-Lemma ideal_exec_split_v2 : forall c st ast ds stt astt os ds1 ds2,
-  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
+Lemma ideal_exec_split_v2 : forall c st ast ds stt astt os ds1 ds2 cm3,
+  <((c, st, ast, false))> -->i*_ds^^os <((cm3, stt, astt, true))> ->
   (forall d, In d ds1 -> d = DStep) ->
   ds = ds1 ++ [DForce] ++ ds2 ->
   exists cm1 stm1 astm1 os1 cm2 stm2 astm2 os2 os3,
@@ -1817,10 +1842,11 @@ Lemma ideal_exec_split_v2 : forall c st ast ds stt astt os ds1 ds2,
     ~( exists cm1' stm1' astm1',
           <((cm1, stm1, astm1, false))> -->i_[]^^[] <((cm1', stm1', astm1', false))> ) /\
     <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
-    |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
+    <((cm2, stm2, astm2, true))> -->i*_ds2^^os3  <((cm3, stt, astt, true))> /\
     os = os1 ++ os2 ++ os3.
 Proof.
   intros.
+(*
   specialize (ideal_exec_split c st ast ds stt astt os ds1 ds2 H H0 H1).
   intros [cm1 [ stm1 [ astm1 [ os1 [ cm2 [ stm2 [ astm2 [ os2 [ os3 H' ] ] ] ] ] ] ] ] ].
   destruct H' as [Hc [Hcm1 [ Hcm2 Hos ] ] ].
@@ -1833,7 +1859,8 @@ Proof.
     - inversion H2.
   + intros [? [? [? Hfalse] ] ].
     inversion Hfalse.
-Qed.
+*)
+Admitted.
 
 (* This looks quite similar to (and maybe simpler than)
            ideal_small_step_com_deterministic *)
@@ -1909,7 +1936,7 @@ Lemma ideal_eval_relative_secure : forall c st1 st2 ast1 ast2,
   ideal_same_obs c st1 st2 ast1 ast2.
 Proof.
   unfold ideal_same_obs. intros c st1 st2 ast1 ast2 Hsec
-  ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
+  ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2 Hev1 Hev2.
   eapply ideal_eval_spec_bit_deterministic in Hev1 as SameB; try eassumption. subst.
   destruct bt1 eqn:Eqbt1.
   - (* with mis-speculation *)
@@ -1942,11 +1969,11 @@ Proof.
               above; we can likely share more (e.g. use the same obs_length lemma) *)
     assert (Hds: forall d, In d ds -> d = DStep).
     { intros; eapply ideal_eval_final_spec_bit_false in Hev1; eauto. }
-    apply ideal_eval_obs_length in Hev1 as Hos1.
-    apply ideal_eval_obs_length in Hev2 as Hos2.
+    apply multi_ideal_obs_length in Hev1 as Hos1.
+    apply multi_ideal_obs_length in Hev2 as Hos2.
     rewrite Hos1 in Hos2. clear Hos1. unfold seq_same_obs in Hsec.
-    eapply ideal_eval_no_spec in Hev1; try assumption.
-    eapply ideal_eval_no_spec in Hev2; try assumption.
+    eapply multi_ideal_no_spec in Hev1; try assumption.
+    eapply multi_ideal_no_spec in Hev2; try assumption.
     assert(H:prefix os1 os2 \/ prefix os2 os1). { eapply Hsec; eassumption. }
     apply prefix_eq_length; assumption.
 Qed.
@@ -1966,56 +1993,8 @@ Theorem ultimate_slh_relative_secure :
 Proof. (* from bcc + ideal_eval_relative_secure *)
   unfold relative_secure.
   intros c st1 st2 ast1 ast2 Hunused Hst1b Hst2b Hast1 Hast2 Hseq ds stt1 stt2
-    astt1 astt2 bt1 bt2 os1 os2 Hev1 Hev2.
-  apply ultimate_slh_bcc in Hev1; try assumption.
-  apply ultimate_slh_bcc in Hev2; try assumption.
+    astt1 astt2 bt1 bt2 os1 os2 c1 c2 Hev1 Hev2.
+  apply ultimate_slh_bcc in Hev1; try assumption. destruct Hev1 as [c1' Hev1].
+  apply ultimate_slh_bcc in Hev2; try assumption. destruct Hev2 as [c2' Hev2].
   eapply (ideal_eval_relative_secure c st1 st2); eassumption.
 Qed.
-
-(* HIDE *)
-(* CH: Some playing with BCC generalization *)
-
-Definition ct_preservation trans : Prop := forall c,
-  (forall st1 st2 ast1 ast2, ideal_same_obs c st1 st2 ast1 ast2) ->
-  (forall st1 st2 ast1 ast2, spec_same_obs (trans c) st1 st2 ast1 ast2).
-
-Definition secure_compilation_bw trans :=
-  forall c, exists Td To, forall ds st ast ost st' ast' b,
-      <(st, ast, false, ds)> =[trans c]=> <(st', ast', b, ost)> ->
-     exists oss,
-      |-i <(st, ast, false, Td ds)> =[c]=> <(st', ast', b, oss)> /\
-      ost = To oss.
-
-(* Theorem 2 of Santiago's POPL submission *)
-Theorem ct_preservation_bw : forall trans,
-  secure_compilation_bw trans ->
-  ct_preservation trans.
-Proof.
-  unfold secure_compilation_bw, ct_preservation, ideal_same_obs, spec_same_obs.
-  intros trans H c Hsrc st1 st2 ast1 ast2
-         ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 H1 H2.
-  specialize (H c). destruct H as [Td [To H] ].
-  apply H in H1. destruct H1 as [oss1 [H1 H1'] ].
-  apply H in H2. destruct H2 as [oss2 [H2 H2'] ].
-  subst. f_equal. eapply Hsrc; eassumption.
-Qed.
-
-(* The same proof also applies in our setting to prove relative security from
-   speculative source semantics (our ideal semantics) to speculative target
-   semantics for the transformed program. In fact this is very similar to
-   our use of BCC, just that in our setting both Td and To are identity. *)
-Theorem relative_secure_bw : forall trans,
-  secure_compilation_bw trans ->
-  forall c st1 st2 ast1 ast2,
-    ideal_same_obs c st1 st2 ast1 ast2 ->
-    spec_same_obs (trans c) st1 st2 ast1 ast2.
-Proof.
-  unfold secure_compilation_bw, relative_secure, ideal_same_obs, spec_same_obs.
-  intros trans H c st1 st2 ast1 ast2 Hsrc
-         ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 H1 H2.
-  specialize (H c). destruct H as [Td [To H] ].
-  apply H in H1. destruct H1 as [oss1 [H1 H1'] ].
-  apply H in H2. destruct H2 as [oss2 [H2 H2'] ].
-  subst. f_equal. eapply Hsrc; eassumption.
-Qed.
-(* /HIDE *)
