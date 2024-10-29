@@ -1456,18 +1456,18 @@ Fixpoint flex_slh_acom (ac:acom) : com :=
   | <[c1; c2]> => <{ flex_slh_acom c1; flex_slh_acom c2}>
   | <[if be@lbe then c1 else c2 end]> =>
       if lbe
-      then (* Selective SLH -- static_trackinging speculation, but not masking *)
+      then (* Selective SLH -- tracking speculation, but not masking *)
         <{if be then "b" := be ? "b" : 1; flex_slh_acom c1
                 else "b" := be ? 1 : "b"; flex_slh_acom c2 end}>
-      else (* Ultimate SLH -- static_trackinging speculation and also masking *)
+      else (* Ultimate SLH -- tracking speculation and also masking *)
         <{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; flex_slh_acom c1
                            else "b" := ("b" = 0 && be) ? 1 : "b"; flex_slh_acom c2 end}>
   | <[while be@lbe do c end]> =>
       if lbe
-      then (* Selective SLH -- static_trackinging speculation, but not masking *)
+      then (* Selective SLH -- tracking speculation, but not masking *)
         <{while be do "b" := be ? "b" : 1; flex_slh_acom c end;
            "b" := be ? 1 : "b"}>
-      else (* Ultimate SLH -- static_trackinging speculation and also masking *)
+      else (* Ultimate SLH -- tracking speculation and also masking *)
         <{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; flex_slh_acom c end;
            "b" := ("b" = 0 && be) ? 1 : "b"}>
   | <[x@@lx <- a[[i@li]]]> =>
