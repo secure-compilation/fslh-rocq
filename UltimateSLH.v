@@ -267,6 +267,30 @@ Inductive multi_spec (c:com) (st:state) (ast:astate) (b:bool) :
   where "<(( c , st , ast , b ))> -->*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (multi_spec c st ast b ct stt astt bt ds os).
 
+Lemma multi_spec_combined_executions : forall c st ast cm stm astm osm ct stt astt ost ds ds' b b' b'',
+  <((c, st, ast, b))> -->*_ds^^osm <((cm, stm, astm, b'))> ->
+  <((cm, stm, astm, b'))> -->*_ds'^^ost <((ct, stt, astt, b''))> ->
+  <((c, st, ast, b))> -->*_(ds++ds')^^(osm++ost) <((ct, stt, astt, b''))>.
+Proof.
+  intros.
+  induction H.
+  - rewrite app_nil_l. apply H0.
+  - rewrite <- !app_assoc. eapply multi_spec_trans.
+    + eapply H.
+    + apply IHmulti_spec. apply H0.
+Qed.
+
+Lemma multi_spec_seq : forall c1 c2 cm st ast b stm astm bm ds os,
+  <((c1; c2, st, ast, b))> -->*_ds^^os <((cm, stm, astm, bm))> ->
+  (exists st' ast' b' ds1 ds2 os1 os2,
+  os = os1 ++ os2 /\ ds = ds1 ++ ds2 /\
+  <((c1, st, ast, b))> -->*_ds1^^os1 <((skip, st', ast', b'))> /\
+   <((c2, st', ast', b'))> -->*_ds2^^os2 <((cm, stm, astm, bm))>) \/
+  (exists c', cm = <{{ c'; c2 }}> /\
+   <((c1, st, ast, b))> -->*_ds^^os <((c', stm, astm, bm))>).
+Proof.
+Admitted.
+
 (** * Definition of Relative Secure *)
 
 Definition seq_same_obs c st1 st2 ast1 ast2 : Prop :=
@@ -643,16 +667,18 @@ Proof.
  rewrite Hflag in Heqb; simpl in Heqb; discriminate.
 Qed.
 
-Definition ultimate_slh_flag_prop (c :com) (ds :dirs) :Prop :=
-  forall st ast (b:bool) st' ast' (b':bool) os,
+Definition ultimate_slh_flag_prop (c :com) (ds :dirs):Prop :=
+  forall st ast (b:bool) st' ast' (b':bool) os c',
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
-  <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
+  <(((ultimate_slh c), st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
   st' "b" = (if b' then 1 else 0).
 
 Lemma ultimate_slh_flag : forall c ds,
   ultimate_slh_flag_prop c ds.
 Proof.
+Admitted.
+(*
   apply prog_size_ind. unfold ultimate_slh_flag_prop.
   destruct c; simpl; intros.
   + now inversion H2; subst.
@@ -736,6 +762,7 @@ Proof.
   + inversion H2; subst; now rewrite t_update_neq.
   + now inversion H2; subst.
 Qed.
+*)
 
 Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
   forall st ast (b: bool) st' ast' b' os c',
@@ -760,6 +787,16 @@ Proof.
     + apply ISM_Asgn. reflexivity.
     + rewrite t_update_permute; [| tauto].
       rewrite t_update_same. apply multi_ideal_refl.
+  - (* Seq *)
+    eapply multi_spec_seq in H0.
+    destruct H0.
+    + do 8 destruct H. destruct H0. destruct H1. subst.
+      edestruct IH; [..|apply H2|].
+      { prog_size_auto. } { admit. }
+      { now destruct Hunused. }
+      { eapply ultimate_slh_flag; [..|eapply multi_spec_trans; eassumption].
+        { now destruct Hunused. } assumption. }
+      (* SOONER : looks like big steps are still useful. Or do a special case for skip *)
 Admitted.
 (*
   - (* Seq *)
