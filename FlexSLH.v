@@ -470,7 +470,7 @@ Definition gen_astate : G astate :=
 
 (* Extract Constant defNumTests => "1000000". *)
 
-(* We first validate that our generator produces well-typed terms *)
+(* We first validate that our generator produces well-typed commands *)
 
 QuickChick (forAll gen_pub_vars (fun P =>
            (forAll gen_pub_arrs (fun PA =>
@@ -1009,7 +1009,7 @@ Fixpoint ultimate_slh (c:com) :=
         <{{a[("b" = 1) ? 0 : i] <- e}}>
   end)%string.
 
-(* This original `ultimate_slh` is just `flex_slh AllSecret` *)
+(* This `ultimate_slh` version is just `flex_slh AllSecret` *)
 
 Lemma ultimate_slh_is_flex_slh :
   forall c, ultimate_slh c = flex_slh AllSecret c.
