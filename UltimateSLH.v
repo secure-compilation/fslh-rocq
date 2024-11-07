@@ -2167,6 +2167,34 @@ Qed.
 
 Ltac invert H := inversion H; subst; clear H.
 
+Lemma gilles_lemma_one_step : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
+  <((c, st1, ast1, true))> -->i_ds^^os1 <((c1, stt1, astt1, true))> ->
+  <((c, st2, ast2, true))> -->i_ds^^os2 <((c2, stt2, astt2, true))> ->
+  os1 = os2 /\ c1 = c2.
+Proof.
+Admitted.
+
+Lemma gilles_lemma_maybe_simpler : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
+  <((c, st1, ast1, true))> -->i*_ds^^os1 <((c1, stt1, astt1, true))> ->
+  <((c, st2, ast2, true))> -->i*_ds^^os2 <((c2, stt2, astt2, true))> ->
+  os1 = os2.
+Proof.
+  intros c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2 H.
+  remember true as b. rewrite Heqb in H at 2. remember true as b'.
+  rewrite Heqb' in Heqb.
+  revert Heqb Heqb' st2 ast2 stt2 astt2 os2 c2. induction H; intros.
+  - admit.
+  - invert H1.
+    + symmetry in H7. apply app_eq_nil in H7. destruct H7; subst.
+     admit.
+    + assert(Eqds : ds0 = ds1 /\ ds3 = ds2) by admit. destruct Eqds as [Eqds1 Eqds2]. subst.
+      assert(b'0 = true) by admit. subst.
+      assert(b' = true) by admit. subst.
+      assert(HH:os1 = os3 /\ c' = c'0) by (eapply gilles_lemma_one_step; eassumption).
+      destruct HH; subst. f_equal.
+      eapply IHmulti_ideal; try reflexivity. eassumption.
+Admitted.
+
 Lemma gilles_lemma : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
   <((c, st1, ast1, true))> -->i*_ds^^os1 <((c1, stt1, astt1, true))> ->
   <((c, st2, ast2, true))> -->i*_ds^^os2 <((c2, stt2, astt2, true))> ->
