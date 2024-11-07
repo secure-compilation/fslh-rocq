@@ -490,6 +490,17 @@ Proof.
     + apply IHHev1. apply Hev2.
 Qed.
 
+Lemma multi_ideal_seq : forall c1 c2 cm st ast b stm astm bm ds os,
+  <((c1; c2, st, ast, b))> -->i*_ds^^os <((cm, stm, astm, bm))> ->
+  (exists st' ast' b' ds1 ds2 os1 os2,
+  os = os1 ++ os2 /\ ds = ds1 ++ ds2 /\
+  |-i <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)> /\
+   <((c2, st', ast', b'))> -->i*_ds2^^os2 <((cm, stm, astm, bm))>) \/
+  (exists c', cm = <{{ c'; c2 }}> /\
+   <((c1, st, ast, b))> -->i*_ds^^os <((c', stm, astm, bm))>).
+Proof.
+Admitted.
+
 Lemma multi_ideal_add_snd_com : forall c st ast ct stt astt ds os c2 b bt,
   <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   <((c;c2, st, ast, b))> -->i*_ds^^os <((ct;c2, stt, astt, bt))>.
@@ -1825,38 +1836,12 @@ Lemma ideal_dirs_split : forall c st ast ds stt astt os ct,
   <(( c, st, ast, false ))> -->i*_ ds ^^ os <(( ct, stt, astt, true ))> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds = ds1 ++ [DForce] ++ ds2 .
 Proof.
-  intros c st ast ds stt astt os ct Hev.
-(*
-  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-  induction Hev; subst; simpl; eauto; try discriminate.
-  - destruct b' eqn:Eqb'.
-    + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
-      apply IHHev1 in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
-      exists ds3; exists (ds4 ++ ds2). split; auto.
-      rewrite app_comm_cons. rewrite app_assoc. simpl in Heq. rewrite Heq. reflexivity.
-    + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
-      apply IHHev2 in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
-      exists (ds1 ++ ds3); exists ds4. split.
-      * intros d H. apply in_app_or in H as [Hds1 | Hds3]; auto.
-        eapply ideal_eval_final_spec_bit_false in Hev1; [| eapply Hds1]. auto.
-      * rewrite <- app_assoc. simpl in Heq. rewrite Heq. reflexivity.
-  - (* IF non-speculative *)
-    simpl in Hev. destruct (beval st be) eqn:Eqbe.
-    + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
-      apply IHHev in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
-      exists (DStep::ds3); exists ds4. split; simpl.
-      * intros d H; destruct H; auto.
-      * simpl in Heq. rewrite Heq. reflexivity.
-    + assert (L1: false = false) by reflexivity; assert (L2: true = true) by reflexivity.
-      apply IHHev in L2; auto. destruct L2 as [ds3 [ds4 [Hin Heq] ] ].
-      exists (DStep::ds3); exists ds4. split; simpl.
-      * intros d H; destruct H; auto.
-      * simpl in Heq. rewrite Heq. reflexivity.
-  - (* IF speculative *)
-    exists []; exists ds. split; simpl.
-    + intros d H; destruct H.
-    + reflexivity.
-*)
+  induction c; intros.
+  + inversion H; subst; clear H. inversion H0.
+  + inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    inversion H1; subst; clear H1. inversion H.
+  +
 Admitted.
 
 Lemma ideal_eval_no_spec : forall c st ast ds stt astt bt os,
@@ -1872,14 +1857,16 @@ Proof.
   subst. now apply ideal_eval_spec_eval_no_spec.
 Qed.
 
-Lemma ideal_exec_split_by_dirs : forall c st ast b ds stt astt bt os ds1 ds2,
-  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
+Lemma ideal_exec_split_by_dirs : forall c ct st ast b ds stt astt bt os ds1 ds2,
+  <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   ds = ds1 ++ ds2 ->
   exists cm stm astm bm os1 os2,
     <((c, st, ast, b))> -->i*_ds1^^os1 <((cm, stm, astm, bm))> /\
-    |-i <(stm, astm, bm, ds2)> =[ cm ]=> <(stt, astt, bt, os2)> /\
+    <((cm, stm, astm, bm))> -->i*_ds2^^os2 <((ct, stt, astt, bt))> /\
     os = os1++os2.
 Proof.
+
+(*
   intros c st ast b ds stt astt bt os ds1 ds2 Hev.
   generalize dependent ds2; generalize dependent ds1.
   induction Hev; intros ds3 ds4 Hds.
@@ -1985,7 +1972,8 @@ Proof.
         econstructor.
       * econstructor.
       * eauto.
-Qed.
+*)
+Admitted.
 
 (* HIDE *)
 (* Currently unused, but maybe helpful in the future. *)
@@ -2177,37 +2165,88 @@ Proof.
     apply IHHev1 in H9; auto.
 Qed.
 
-Lemma gilles_lemma : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2 c1 c2,
+Ltac invert H := inversion H; subst; clear H.
+
+Lemma gilles_lemma : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
   <((c, st1, ast1, true))> -->i*_ds^^os1 <((c1, stt1, astt1, true))> ->
   <((c, st2, ast2, true))> -->i*_ds^^os2 <((c2, stt2, astt2, true))> ->
   os1 = os2.
-(*
-  b = true ->
-  bt = true ->
-  os1 = os2.
 Proof.
-  intros c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt os1 os2 Hev1.
-  generalize dependent os2;  generalize dependent astt2;
-  generalize dependent stt2;  generalize dependent ast2;
-  generalize dependent st2.
-  induction Hev1; intros st2 ast2 stt2 astt2 ost2 Hev2 Hb Hbt;
-  try (now inversion Hev2; subst; auto).
-  - inversion Hev2; subst; clear Hev2.
-    apply ideal_eval_spec_bit_monotonic in H5 as Hb'0; subst.
-    apply ideal_eval_spec_bit_monotonic in Hev1_1 as Hb'; subst.
-    assert (L: ds0 = ds1).
-    { apply app_eq_prefix in H1 as Hpre.
-      eapply ideal_prefix_dirs in Hpre; eauto. } subst.
-    apply app_inv_head_iff in H1. subst.
-    apply IHHev1_1 in H5; auto. apply IHHev1_2 in H10; auto.
-    subst. reflexivity.
-  - inversion Hev2; subst; clear Hev2; simpl in *.
-    apply IHHev1 in H10; auto. subst. reflexivity.
-  - inversion Hev2; subst; clear Hev2; simpl in *.
-    apply IHHev1 in H10; auto. subst. reflexivity.
-  - inversion Hev2; subst; clear Hev2; simpl in *.
-    apply IHHev1 in H9; auto.
-*)
+  intros c ds. eapply prog_size_ind with (c:=c) (ds:=ds). clear. intros. destruct c.
+  + invert H0; [invert H1; [reflexivity|inversion H2]|inversion H2].
+  + invert H0; invert H1; [reflexivity|..].
+    - invert H2. invert H7; [reflexivity|inversion H1].
+    - invert H2. invert H3; [reflexivity|inversion H0].
+    - invert H4. invert H2. invert H3; invert H9; [reflexivity|inversion H1..].
+  + eapply multi_ideal_seq in H0, H1. destruct H0, H1.
+    - do 8 destruct H0, H1. destruct H2, H3, H4, H5. subst.
+      assert (Heq : x3 = true /\ x4 = true) by (split; eapply ideal_eval_spec_bit_monotonic; eassumption). destruct Heq; subst.
+      assert (Heq : x5 = x6 /\ x7 = x8). { admit. }
+      destruct Heq; subst. clear H3.
+      apply ideal_big_to_small_step in H4, H5.
+      assert (x9 = x10). { eapply H; [|eassumption..]. prog_size_auto. }
+      subst. f_equal. eapply H; [|eassumption..]. prog_size_auto.
+    - do 8 destruct H0. destruct H1, H2, H3. destruct H1. subst.
+      assert (x1 = true) by (eapply ideal_eval_spec_bit_monotonic; eassumption). subst.
+      apply ideal_big_to_small_step in H3.
+      assert (x3 = []). { admit. } subst.
+      assert (x5 = []). { eapply H; [|eassumption|apply multi_ideal_refl]. prog_size_auto. } subst.
+      rewrite ?app_nil_r in *. eapply H; [|eassumption..]. prog_size_auto.
+    - do 8 destruct H1. destruct H0, H2, H3. destruct H0. subst.
+      assert (x1 = true) by (eapply ideal_eval_spec_bit_monotonic; eassumption). subst.
+      apply ideal_big_to_small_step in H3.
+      assert (x3 = []). { admit. } subst.
+      assert (x5 = []). { eapply H; [|eassumption|apply multi_ideal_refl]. prog_size_auto. } subst.
+      rewrite ?app_nil_r in *. eapply H; [|eassumption..]. prog_size_auto.
+    - do 2 destruct H0, H1. subst. eapply H; [|eassumption..]. prog_size_auto.
+  + invert H0; invert H1.
+    - reflexivity.
+    - apply app_eq_nil in H0. destruct H0; subst. inversion H2.
+    - symmetry in H6. apply app_eq_nil in H6. destruct H6; subst. inversion H2.
+    - invert H2; invert H4; [|discriminate..|].
+      all: invert H0. all:simpl in *. all:f_equal. all:eapply H; [|eassumption..]. all:prog_size_auto.
+  + invert H0; invert H1.
+    { reflexivity. }
+    { apply app_eq_nil in H0. destruct H0; subst. invert H2. invert H7; [reflexivity|]. apply app_eq_nil in H0. destruct H0; subst. inversion H1. }
+    { symmetry in H6. apply app_eq_nil in H6. destruct H6; subst. invert H2. invert H3; [reflexivity|]. apply app_eq_nil in H0. destruct H0; subst. inversion H1. }
+    invert H2; invert H4. simpl in *. subst.
+    invert H3; invert H9.
+    { reflexivity. }
+    { apply app_eq_nil in H0. destruct H0; subst. inversion H1. }
+    { symmetry in H5. apply app_eq_nil in H5. destruct H5; subst. inversion H0. }
+    invert H0; invert H3; [|discriminate..|].
+    all: invert H2. all:simpl in *. all:f_equal.
+    { invert H1; [|inversion H0]. invert H8; [reflexivity|inversion H1]. }
+    eapply multi_ideal_seq in H1, H8. destruct H1, H8.
+    - do 8 destruct H0, H1. destruct H2, H3, H4, H5. subst.
+      assert (Heq : x3 = true /\ x4 = true) by (split; eapply ideal_eval_spec_bit_monotonic; eassumption). destruct Heq; subst.
+      assert (Heq : x5 = x6 /\ x7 = x8). { admit. }
+      destruct Heq; subst. clear H3.
+      apply ideal_big_to_small_step in H4, H5.
+      assert (x9 = x10). { eapply H; [|eassumption..]. prog_size_auto. }
+      subst. f_equal. eapply H; [|eassumption..]. prog_size_auto.
+    - do 8 destruct H0. destruct H1, H2, H3. destruct H1. subst.
+      assert (x1 = true) by (eapply ideal_eval_spec_bit_monotonic; eassumption). subst.
+      apply ideal_big_to_small_step in H3.
+      assert (x3 = []). { admit. } subst.
+      assert (x5 = []). { eapply H; [|eassumption|apply multi_ideal_refl]. prog_size_auto. } subst.
+      rewrite ?app_nil_r in *. eapply H; [|eassumption..]. prog_size_auto.
+    - do 8 destruct H1. destruct H0, H2, H3. destruct H0. subst.
+      assert (x1 = true) by (eapply ideal_eval_spec_bit_monotonic; eassumption). subst.
+      apply ideal_big_to_small_step in H3.
+      assert (x3 = []). { admit. } subst.
+      assert (x5 = []). { eapply H; [|eassumption|apply multi_ideal_refl]. prog_size_auto. } subst.
+      rewrite ?app_nil_r in *. eapply H; [|eassumption..]. prog_size_auto.
+    - do 2 destruct H0, H1. subst. eapply H; [|eassumption..]. prog_size_auto.
+  + invert H0; invert H1.
+    { reflexivity. }
+    { apply app_eq_nil in H0. destruct H0; subst. invert H2. }
+    { symmetry in H6. apply app_eq_nil in H6. destruct H6; subst. invert H2. }
+    invert H2. invert H4. f_equal. invert H0.
+    invert H3; invert H9.
+    { reflexivity. } { apply app_eq_nil in H0. destruct H0; subst. invert H1. }
+    { symmetry in H5. apply app_eq_nil in H5. destruct H5; subst. inversion H0. }
+    inversion H3.
 Admitted.
 
 (** * Conjectures for the proof of ideal_eval_relative_secure *)
@@ -2248,11 +2287,10 @@ Abort.
 Lemma multi_ideal_single_force_direction :
   forall c st ast ct astt stt os,
     <(( c, st, ast, false ))> -->i*_ [DForce]^^ os <((ct, stt, astt, true))> ->
-    exists cm1 stm1 astm1 os1 cm2 stm2 astm2 os2 os3,
-    <((c, st, ast, false))> -->i*_[]^^os1 <((cm1, stm1, astm1, false))> /\
-    <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
-    <((cm2, stm2, astm2, true))>  -->i*_[]^^os3 <((ct, stt, astt, true))> /\
-    os = os1 ++ os2 ++ os3.
+    exists cm1 stm1 astm1 cm2 stm2 astm2,
+    <((c, st, ast, false))> -->i*_[]^^[] <((cm1, stm1, astm1, false))> /\
+    <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os <((cm2, stm2, astm2, true))> /\
+    <((cm2, stm2, astm2, true))>  -->i*_[]^^[] <((ct, stt, astt, true))>.
 Proof.
   intros c st ast ct astt stt os Hev. remember [DForce] as ds eqn:Eqds.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
@@ -2264,18 +2302,20 @@ Proof.
   - assert (Hb': b' = false).
     { destruct b' eqn:Eqb'; auto. apply ideal_eval_small_step_spec_needs_force in H. simpl in H. destruct H. }
     apply IHHev in Eqds; auto; subst.
-    destruct Eqds as [cm1 [stm1 [astm1 [osm1 [cm2 [stm2 [astm2 [os3 [os4 [H1 [H2 [H3 H4] ] ] ] ] ] ] ] ] ] ] ].
-    exists cm1; exists stm1; exists astm1; exists (os1++osm1); exists cm2; exists stm2; exists astm2; exists os3; exists os4.
-    split; [| split; [| split] ]; auto.
-    + replace ([] :dirs) with ([]++[] :dirs) by (apply app_nil_l).
-      eapply multi_ideal_trans; eauto.
-    + rewrite <- app_assoc. rewrite H4. reflexivity.
+    destruct Eqds as [cm1 [stm1 [astm1 [cm2 [stm2 [astm2 [H1 [H2 H3] ] ] ] ] ] ] ].
+    exists cm1, stm1, astm1, cm2, stm2, astm2.
+    assert (os1 = []). { apply length_zero_iff_nil. apply ideal_eval_small_step_obs_length in H. now rewrite <- H. } subst.
+    split; [| split]; auto.
+    replace ([] :dirs) with ([]++[] :dirs) by (apply app_nil_l).
+    rewrite <- app_nil_l with (l:=[]:obs). eapply multi_ideal_trans; eauto.
   - rewrite app_nil_r in Eqds. subst.
     assert (Hb': b' = true).
     { destruct b' eqn:Eqb'; auto. apply ideal_eval_small_step_final_spec_bit_false with (d:=DForce) in H; simpl; auto.
       inversion H. } subst.
-    exists c; exists st; exists ast; exists []; exists c'; exists st'; exists ast'; exists os1; exists os2.
-    split; [| split; [| split] ]; auto.
+    exists c; exists st; exists ast; exists c'; exists st'; exists ast'.
+    assert (os2 = []). { apply length_zero_iff_nil. apply multi_ideal_obs_length in Hev. now rewrite <- Hev. } subst.
+    rewrite !app_nil_r.
+    split; [| split]; auto.
     apply multi_ideal_refl.
 Qed.
 
@@ -2295,79 +2335,29 @@ Qed.
 (* HIDE *)
 (* This lemma was replaced by [ideal_exec_split_v2] and is here only as an
    initial idea on how to prove the new version. *)
-Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2,
-  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
-  (forall d, In d ds1 -> d = DStep) ->
-  ds = ds1 ++ [DForce] ++ ds2 ->
-  exists cm1 stm1 astm1 os1 cm2 stm2 astm2 os2 os3,
-    <((c, st, ast, false))> -->i*_ds1^^os1 <((cm1, stm1, astm1, false))>  /\
-    <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
-    |-i <(stm2, astm2, true, ds2)> =[ cm2 ]=> <(stt, astt, true, os3)> /\
-    os = os1 ++ os2 ++ os3.
-Proof.
-  intros c st ast ds stt astt os ds1 ds2 Hev Hds1 Hds. subst.
-  apply ideal_exec_split_by_dirs with (ds1:=ds1) (ds2:=[DForce]++ds2) in Hev; auto.
-  destruct Hev as [cm1 [stm1 [astm1 [bm1 [os1 [os' [Hsmall1 [Hbig Hos1] ] ] ] ] ] ] ].
-  assert(L: bm1 = false).
-  { destruct bm1 eqn:Eqbm1; auto.
-    apply multi_ideal_spec_needs_force in Hsmall1.
-    apply Hds1 in Hsmall1. discriminate. } subst.
-  apply ideal_exec_split_by_dirs with (ds1:=[DForce]) (ds2:=ds2) in Hbig; auto.
-  destruct Hbig as [cm4 [stm4 [astm4 [bm4 [os'' [os5 [Hsmall2 [Hbig Hos'] ] ] ] ] ] ] ].
-  assert (L: bm4 = true).
-  { destruct bm4 eqn:Eqb4; auto.
-    apply multi_ideal_final_spec_bit_false with (d:=DForce) in Hsmall2; simpl; auto.
-    discriminate. } subst.
-  apply multi_ideal_single_force_direction in Hsmall2.
-  destruct Hsmall2 as [cm2 [stm2 [astm2 [os2 [cm3 [stm3 [astm3 [os3 [os4 [Hsmall2 [Hsmall3 [Hsamll4 Hos''] ] ] ] ] ] ] ] ] ] ] ].
-  exists cm2; exists stm2; exists astm2; exists (os1++os2).
-  exists cm3; exists stm3; exists astm3; exists (os3). exists (os4++os5).
-  split; [| split; [| split] ].
-  - replace(ds1) with (ds1++[]) by (apply app_nil_r).
-    eapply multi_ideal_combined_executions; eauto.
-  - apply Hsmall3.
-  - replace(ds2) with ([]++ds2) by (apply app_nil_l).
-    eapply ideal_eval_multi_steps; eauto.
-  - subst. rewrite app_assoc. do 4 rewrite <- app_assoc.
-    reflexivity.
-Qed.
-(* /HIDE *)
-
-(* HIDE: CH: If we wanted to stick to the original [ideal_exec_split] above,
-   can't we even obtain the new conjunct 2 from conjunct 3 and some notion of
-   determinism? I don't think that v2 version below is harder to prove than the
-   original version though.
-         Léon: The additionnal conclusion is actually implied by the other.
-   This lemma is equivalent to the previous one. *)
-
-Lemma ideal_exec_split_v2 : forall c st ast ds stt astt os ds1 ds2 cm3,
+Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2 cm3,
   <((c, st, ast, false))> -->i*_ds^^os <((cm3, stt, astt, true))> ->
   (forall d, In d ds1 -> d = DStep) ->
   ds = ds1 ++ [DForce] ++ ds2 ->
   exists cm1 stm1 astm1 os1 cm2 stm2 astm2 os2 os3,
     <((c, st, ast, false))> -->i*_ds1^^os1 <((cm1, stm1, astm1, false))>  /\
-    ~( exists cm1' stm1' astm1',
-          <((cm1, stm1, astm1, false))> -->i_[]^^[] <((cm1', stm1', astm1', false))> ) /\
     <((cm1, stm1, astm1, false))>  -->i_[DForce]^^os2 <((cm2, stm2, astm2, true))> /\
     <((cm2, stm2, astm2, true))> -->i*_ds2^^os3  <((cm3, stt, astt, true))> /\
     os = os1 ++ os2 ++ os3.
 Proof.
   intros.
-(*
-  specialize (ideal_exec_split c st ast ds stt astt os ds1 ds2 H H0 H1).
-  intros [cm1 [ stm1 [ astm1 [ os1 [ cm2 [ stm2 [ astm2 [ os2 [ os3 H' ] ] ] ] ] ] ] ] ].
-  destruct H' as [Hc [Hcm1 [ Hcm2 Hos ] ] ].
-  repeat eexists; eauto.
-  inversion Hcm1; subst.
-  + intros [? [? [? Hfalse] ] ].
-    inversion Hfalse; subst.
-    - eapply ideal_small_step_obs_length in H13; [|apply H2].
-      now erewrite <- ideal_eval_small_step_obs_length in H13; [|apply H2].
-    - inversion H2.
-  + intros [? [? [? Hfalse] ] ].
-    inversion Hfalse.
-*)
-Admitted.
+  apply ideal_exec_split_by_dirs with (ds1:=ds1) (ds2:=[DForce]++ds2) in H; [|assumption].
+  do 7 destruct H. destruct H2. subst.
+  assert (x2 = false). { destruct x2; [|reflexivity]. now apply multi_ideal_spec_needs_force, H0 in H. } subst.
+  apply ideal_exec_split_by_dirs with (ds1:=[DForce]) (ds2:=ds2) in H2; [|reflexivity].
+  destruct H2. do 6 destruct H1. destruct H2. subst.
+  assert (x7 = true). { destruct x7; [reflexivity|]. apply multi_ideal_final_spec_bit_false with (d:=DForce) in H1; [discriminate|now left]. } subst.
+  eapply multi_ideal_single_force_direction in H1. do 7 destruct H1. destruct H3.
+  do 9 econstructor. split.
+  { rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=ds1). eapply multi_ideal_combined_executions; eassumption. }
+  repeat econstructor; [eassumption|]. rewrite <- app_nil_l. rewrite <- app_nil_l with (l:=ds2). eapply multi_ideal_combined_executions; eassumption.
+Qed.
+(* /HIDE *)
 
 (* This looks quite similar to (and maybe simpler than)
            ideal_small_step_com_deterministic *)
@@ -2449,10 +2439,10 @@ Proof.
   - (* with mis-speculation *)
     eapply ideal_dirs_split in Hev1 as L.
     destruct L as [ds1 [ds2 [Hds1 Heq] ] ]. subst.
-    eapply ideal_exec_split_v2 in Hev1; eauto.
-    destruct Hev1 as [cm1 [stm1 [astm1 [os1_1 [cm2 [stm2 [astm2 [os1_2 [os1_3 [Hsmall1 [Hmax1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ] ].
-    eapply ideal_exec_split_v2 in Hev2; eauto.
-    destruct Hev2 as [cm1' [stm1' [astm1' [os2_1 [cm2' [stm2' [astm2' [os2_2 [os2_3 [Hsmall2 [Hmax2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ] ].
+    eapply ideal_exec_split in Hev1; eauto.
+    destruct Hev1 as [cm1 [stm1 [astm1 [os1_1 [cm2 [stm2 [astm2 [os1_2 [os1_3 [Hsmall1 [Hone1 [Hbig1 Hos1] ] ] ] ] ] ] ] ] ] ] ].
+    eapply ideal_exec_split in Hev2; eauto.
+    destruct Hev2 as [cm1' [stm1' [astm1' [os2_1 [cm2' [stm2' [astm2' [os2_2 [os2_3 [Hsmall2 [Hone2 [Hbig2 Hos2] ] ] ] ] ] ] ] ] ] ] ].
     assert (Hlen2: length os1_1 = length os2_1).
     { apply multi_ideal_obs_length in Hsmall1, Hsmall2. congruence. }
     assert (L: os1_1 = os2_1).
@@ -2462,8 +2452,9 @@ Proof.
     assert (L : cm1' = cm1).
     { eapply multi_ideal_no_spec in Hsmall1, Hsmall2; eauto.
       eapply multi_ideal_lock_step; eauto.
-      all: intro; (do 3 destruct H). 1:apply Hmax2. 2:apply Hmax1.
-      all: eapply seq_to_ideal in H. all: (simpl in H); eauto. } subst.
+      all: intro; (do 3 destruct H). all:eapply seq_to_ideal in H; simpl in *.
+      all: eapply ideal_small_step_obs_length in H. 2:apply Hone2. 3:apply Hone1.
+      all:simpl in H. all:admit. } subst.
     assert (Hsec2: seq_same_obs cm1 stm1 stm1' astm1 astm1').
     { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply multi_seq_preserves_seq_same_obs; eauto. }
@@ -2483,7 +2474,7 @@ Proof.
     eapply multi_ideal_no_spec in Hev2; try assumption.
     assert(H:prefix os1 os2 \/ prefix os2 os1). { eapply Hsec; eassumption. }
     apply prefix_eq_length; assumption.
-Qed.
+Admitted.
 
 (* LATER: Strengthen the conclusion so that our theorem is termination sensitive
    (and also error sensitive) by looking at prefixes there too. *)
