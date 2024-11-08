@@ -935,34 +935,37 @@ Qed.
     relating the speculative semantics of the hardened program with the ideal
     semantics, by means of a backwards compiler correctness (BCC) result. *)
 
+Lemma ideal_unused_overwrite_one_step : forall st ast b ds c c' st' ast' b' os X n,
+  unused X c ->
+  <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
+  <((c, X !-> n; st, ast, b))> -->i_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
+Proof.
+  intros. induction H0.
+  + invert H. repeat econstructor; [|assumption..].
+    rewrite t_update_permute; [constructor|assumption].
+    now apply aeval_unused_update.
+  + invert H. eapply IHideal_eval_small_step in H1. destruct H1.
+    repeat econstructor; assumption.
+  + split; [|now invert H]. apply ISM_Seq_Skip.
+  + invert H. destruct H1. split; [|now destruct (negb b && beval st be)].
+    erewrite <- beval_unused_update; [|eassumption]. constructor.
+  + invert H. destruct H1. split; [|now destruct (negb b && beval st be)].
+    erewrite <- beval_unused_update; [|eassumption]. constructor.
+  + invert H. now repeat constructor.
+  + invert H. repeat constructor. rewrite t_update_permute; [constructor|assumption].
+    { now rewrite aeval_unused_update. } assumption.
+  + invert H. repeat constructor; [now rewrite aeval_unused_update..|assumption].
+Qed.
+
 Lemma ideal_unused_overwrite : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
   <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
   <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((c', X !-> n; st', ast', b'))>.
 Proof.
-(*
-  intros. induction H0.
-  + constructor.
-  + subst. destruct H as [H H'].
-    rewrite t_update_permute; [|assumption].
-    constructor. now rewrite aeval_unused_update.
-  + destruct H. now econstructor; eauto.
-  + destruct H as [Hb [Hc1 Hc2] ].
-    erewrite <- beval_unused_update; [|eassumption]. constructor.
-    rewrite beval_unused_update; [|assumption].
-    apply IHideal_eval. now destruct (negb b && beval st be).
-  + destruct H as [Hb [Hc1 Hc2] ].
-    erewrite <- beval_unused_update; [|eassumption]. constructor.
-    rewrite beval_unused_update; [|assumption].
-    apply IHideal_eval. now destruct (negb b && beval st be).
-  + constructor. apply IHideal_eval. destruct H. now repeat constructor.
-  + subst. destruct H.
-    rewrite t_update_permute; [|assumption].
-    now constructor; [rewrite aeval_unused_update|assumption].
-  + subst. destruct H. now constructor; try rewrite aeval_unused_update.
+  intros. induction H0; [constructor|].
+  eapply ideal_unused_overwrite_one_step in H0; [|eassumption]. destruct H0.
+  econstructor; [eassumption|tauto].
 Qed.
-*)
-Admitted.
 
 Lemma ideal_unused_update : forall st ast b ds c c' st' ast' b' os X n,
   unused X c ->
@@ -1834,11 +1837,22 @@ Proof.
         right. eexists; eauto.
 Qed.
 
-Lemma ideal_dirs_split : forall c st ast ds stt astt os ct,
+Lemma ideal_dirs_split : forall ds c st ast stt astt os ct,
   <(( c, st, ast, false ))> -->i*_ ds ^^ os <(( ct, stt, astt, true ))> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds = ds1 ++ [DForce] ++ ds2 .
 Proof.
-Admitted.
+  intros. remember false as b. remember true as b'.
+  revert Heqb Heqb'.
+  induction H; intros; subst; try discriminate.
+  destruct b'.
+  + assert (ds1 = [DForce]).
+    { clear -H. revert c' H. induction c; intros; invert H; [|reflexivity]. eapply IHc1. eassumption. }
+    subst. exists [], ds2. now repeat econstructor.
+  + destruct IHmulti_ideal; [reflexivity..|]. do 2 destruct H1. subst.
+    exists (ds1++x), x0. split; [|now rewrite app_assoc].
+    intros. apply in_app_or in H2. destruct H2; [|now apply H1].
+    now eapply ideal_eval_small_step_final_spec_bit_false in H; [|eassumption].
+Qed.
 
 Lemma ideal_eval_no_spec : forall c st ast ds stt astt bt os,
   (forall d, In d ds -> d = DStep) ->
