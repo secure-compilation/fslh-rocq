@@ -35,6 +35,8 @@ Set Default Goal Selector "!".
 
 (** Sequential small-step semantics *)
 
+Ltac invert H := inversion H; subst; clear H.
+
 Reserved Notation
   "'<((' c , st , ast '))>' '-->^' os '<((' ct , stt , astt '))>'"
   (at level 40, c custom com at level 99, ct custom com at level 99,
@@ -910,7 +912,7 @@ Proof.
   eapply multi_seq_add_snd_com in Hev1, Hev2. eapply Hsec in Hev2; eauto.
 Qed.
 
-Lemma ideal_one_step_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
+Lemma ideal_one_step_force_obs : forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
   seq_same_obs c st1 st2 ast1 ast2 ->
   <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct, stt1, astt1, true))> ->
   <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct, stt2, astt2, true))> ->
@@ -2165,16 +2167,23 @@ Proof.
     apply IHHev1 in H9; auto.
 Qed.
 
-Ltac invert H := inversion H; subst; clear H.
-
 Lemma gilles_lemma_one_step : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
   <((c, st1, ast1, true))> -->i_ds^^os1 <((c1, stt1, astt1, true))> ->
   <((c, st2, ast2, true))> -->i_ds^^os2 <((c2, stt2, astt2, true))> ->
   os1 = os2 /\ c1 = c2.
 Proof.
-Admitted.
+  intros. remember true as b. rewrite Heqb in H at 2, H0 at 2. remember true as b'.
+  rewrite Heqb' in Heqb.
+  revert Heqb Heqb' st2 ast2 c2 os2 stt2 astt2 H0. induction H; intros; (try now invert H0).
+  + invert H0.
+    - apply IHideal_eval_small_step in H12; try tauto.
+      now destruct H12; subst.
+    - inversion H.
+  + now invert H1.
+  + now invert H2.
+Qed.
 
-Lemma gilles_lemma_maybe_simpler : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
+Lemma gilles_lemma : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
   <((c, st1, ast1, true))> -->i*_ds^^os1 <((c1, stt1, astt1, true))> ->
   <((c, st2, ast2, true))> -->i*_ds^^os2 <((c2, stt2, astt2, true))> ->
   os1 = os2.
@@ -2183,99 +2192,22 @@ Proof.
   remember true as b. rewrite Heqb in H at 2. remember true as b'.
   rewrite Heqb' in Heqb.
   revert Heqb Heqb' st2 ast2 stt2 astt2 os2 c2. induction H; intros.
-  - admit.
+  - symmetry. apply length_zero_iff_nil. apply multi_ideal_obs_length in H. now rewrite <- H.
   - invert H1.
     + symmetry in H7. apply app_eq_nil in H7. destruct H7; subst.
-     admit.
-    + assert(Eqds : ds0 = ds1 /\ ds3 = ds2) by admit. destruct Eqds as [Eqds1 Eqds2]. subst.
-      assert(b'0 = true) by admit. subst.
-      assert(b' = true) by admit. subst.
-      assert(HH:os1 = os3 /\ c' = c'0) by (eapply gilles_lemma_one_step; eassumption).
+      apply multi_ideal_obs_length in H0. apply ideal_eval_small_step_obs_length in H.
+      apply length_zero_iff_nil. now rewrite app_length, <- H, <- H0.
+    + assert (b' = true) by now apply ideal_eval_small_step_spec_bit_monotonic in H. subst.
+      assert (b'0 = true) by now apply ideal_eval_small_step_spec_bit_monotonic in H3. subst.
+      assert(Eqds : ds0 = ds1).
+      { apply app_eq_prefix in H2. apply prefix_eq_length; [|tauto].
+        do 2 (erewrite ideal_eval_small_step_obs_length; [|eassumption]).
+        eapply ideal_small_step_obs_length; eassumption. } subst.
+      apply app_inv_head in H2. subst.
+      assert(HH:os3 = os1 /\ c'0 = c') by (eapply gilles_lemma_one_step; eassumption).
       destruct HH; subst. f_equal.
-      eapply IHmulti_ideal; try reflexivity. eassumption.
-Admitted.
-
-Lemma gilles_lemma : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
-  <((c, st1, ast1, true))> -->i*_ds^^os1 <((c1, stt1, astt1, true))> ->
-  <((c, st2, ast2, true))> -->i*_ds^^os2 <((c2, stt2, astt2, true))> ->
-  os1 = os2.
-Proof.
-  intros c ds. eapply prog_size_ind with (c:=c) (ds:=ds). clear. intros. destruct c.
-  + invert H0; [invert H1; [reflexivity|inversion H2]|inversion H2].
-  + invert H0; invert H1; [reflexivity|..].
-    - invert H2. invert H7; [reflexivity|inversion H1].
-    - invert H2. invert H3; [reflexivity|inversion H0].
-    - invert H4. invert H2. invert H3; invert H9; [reflexivity|inversion H1..].
-  + eapply multi_ideal_seq in H0, H1. destruct H0, H1.
-    - do 8 destruct H0, H1. destruct H2, H3, H4, H5. subst.
-      assert (Heq : x3 = true /\ x4 = true) by (split; eapply ideal_eval_spec_bit_monotonic; eassumption). destruct Heq; subst.
-      assert (Heq : x5 = x6 /\ x7 = x8). { admit. }
-      destruct Heq; subst. clear H3.
-      apply ideal_big_to_small_step in H4, H5.
-      assert (x9 = x10). { eapply H; [|eassumption..]. prog_size_auto. }
-      subst. f_equal. eapply H; [|eassumption..]. prog_size_auto.
-    - do 8 destruct H0. destruct H1, H2, H3. destruct H1. subst.
-      assert (x1 = true) by (eapply ideal_eval_spec_bit_monotonic; eassumption). subst.
-      apply ideal_big_to_small_step in H3.
-      assert (x3 = []). { admit. } subst.
-      assert (x5 = []). { eapply H; [|eassumption|apply multi_ideal_refl]. prog_size_auto. } subst.
-      rewrite ?app_nil_r in *. eapply H; [|eassumption..]. prog_size_auto.
-    - do 8 destruct H1. destruct H0, H2, H3. destruct H0. subst.
-      assert (x1 = true) by (eapply ideal_eval_spec_bit_monotonic; eassumption). subst.
-      apply ideal_big_to_small_step in H3.
-      assert (x3 = []). { admit. } subst.
-      assert (x5 = []). { eapply H; [|eassumption|apply multi_ideal_refl]. prog_size_auto. } subst.
-      rewrite ?app_nil_r in *. eapply H; [|eassumption..]. prog_size_auto.
-    - do 2 destruct H0, H1. subst. eapply H; [|eassumption..]. prog_size_auto.
-  + invert H0; invert H1.
-    - reflexivity.
-    - apply app_eq_nil in H0. destruct H0; subst. inversion H2.
-    - symmetry in H6. apply app_eq_nil in H6. destruct H6; subst. inversion H2.
-    - invert H2; invert H4; [|discriminate..|].
-      all: invert H0. all:simpl in *. all:f_equal. all:eapply H; [|eassumption..]. all:prog_size_auto.
-  + invert H0; invert H1.
-    { reflexivity. }
-    { apply app_eq_nil in H0. destruct H0; subst. invert H2. invert H7; [reflexivity|]. apply app_eq_nil in H0. destruct H0; subst. inversion H1. }
-    { symmetry in H6. apply app_eq_nil in H6. destruct H6; subst. invert H2. invert H3; [reflexivity|]. apply app_eq_nil in H0. destruct H0; subst. inversion H1. }
-    invert H2; invert H4. simpl in *. subst.
-    invert H3; invert H9.
-    { reflexivity. }
-    { apply app_eq_nil in H0. destruct H0; subst. inversion H1. }
-    { symmetry in H5. apply app_eq_nil in H5. destruct H5; subst. inversion H0. }
-    invert H0; invert H3; [|discriminate..|].
-    all: invert H2. all:simpl in *. all:f_equal.
-    { invert H1; [|inversion H0]. invert H8; [reflexivity|inversion H1]. }
-    eapply multi_ideal_seq in H1, H8. destruct H1, H8.
-    - do 8 destruct H0, H1. destruct H2, H3, H4, H5. subst.
-      assert (Heq : x3 = true /\ x4 = true) by (split; eapply ideal_eval_spec_bit_monotonic; eassumption). destruct Heq; subst.
-      assert (Heq : x5 = x6 /\ x7 = x8). { admit. }
-      destruct Heq; subst. clear H3.
-      apply ideal_big_to_small_step in H4, H5.
-      assert (x9 = x10). { eapply H; [|eassumption..]. prog_size_auto. }
-      subst. f_equal. eapply H; [|eassumption..]. prog_size_auto.
-    - do 8 destruct H0. destruct H1, H2, H3. destruct H1. subst.
-      assert (x1 = true) by (eapply ideal_eval_spec_bit_monotonic; eassumption). subst.
-      apply ideal_big_to_small_step in H3.
-      assert (x3 = []). { admit. } subst.
-      assert (x5 = []). { eapply H; [|eassumption|apply multi_ideal_refl]. prog_size_auto. } subst.
-      rewrite ?app_nil_r in *. eapply H; [|eassumption..]. prog_size_auto.
-    - do 8 destruct H1. destruct H0, H2, H3. destruct H0. subst.
-      assert (x1 = true) by (eapply ideal_eval_spec_bit_monotonic; eassumption). subst.
-      apply ideal_big_to_small_step in H3.
-      assert (x3 = []). { admit. } subst.
-      assert (x5 = []). { eapply H; [|eassumption|apply multi_ideal_refl]. prog_size_auto. } subst.
-      rewrite ?app_nil_r in *. eapply H; [|eassumption..]. prog_size_auto.
-    - do 2 destruct H0, H1. subst. eapply H; [|eassumption..]. prog_size_auto.
-  + invert H0; invert H1.
-    { reflexivity. }
-    { apply app_eq_nil in H0. destruct H0; subst. invert H2. }
-    { symmetry in H6. apply app_eq_nil in H6. destruct H6; subst. invert H2. }
-    invert H2. invert H4. f_equal. invert H0.
-    invert H3; invert H9.
-    { reflexivity. } { apply app_eq_nil in H0. destruct H0; subst. invert H1. }
-    { symmetry in H5. apply app_eq_nil in H5. destruct H5; subst. inversion H0. }
-    inversion H3.
-Admitted.
+      eapply IHmulti_ideal; eauto.
+Qed.
 
 (** * Conjectures for the proof of ideal_eval_relative_secure *)
 
@@ -2481,14 +2413,16 @@ Proof.
     { eapply multi_ideal_no_spec in Hsmall1, Hsmall2; eauto.
       eapply multi_ideal_lock_step; eauto.
       all: intro; (do 3 destruct H). all:eapply seq_to_ideal in H; simpl in *.
-      all: eapply ideal_small_step_obs_length in H. 2:apply Hone2. 3:apply Hone1.
-      all:simpl in H. all:admit. } subst.
+      2: assert (os1_2 = []) by now (apply length_zero_iff_nil; eapply ideal_small_step_obs_length in Hone1; eauto; rewrite <- Hone1).
+      1: assert (os2_2 = []) by now (apply length_zero_iff_nil; eapply ideal_small_step_obs_length in Hone2; eauto; rewrite <- Hone2).
+      all:subst. 2: now eapply ideal_eval_small_step_obs_length in Hone1.
+      now eapply ideal_eval_small_step_obs_length in Hone2. } subst.
     assert (Hsec2: seq_same_obs cm1 stm1 stm1' astm1 astm1').
     { apply multi_ideal_no_spec in Hsmall1, Hsmall2; auto.
       eapply multi_seq_preserves_seq_same_obs; eauto. }
     assert (L: cm2 = cm2').
     { eapply ideal_small_step_com_deterministic in Hone2; eauto. } subst.
-    eapply ideal_one_step_obs in Hone2; eauto.
+    eapply ideal_one_step_force_obs in Hone2; eauto.
     eapply gilles_lemma in Hbig1; eauto. congruence.
   - (* without mis-speculation *)
     (* LATER: this case is similar to the start of the more interesting case
@@ -2502,7 +2436,7 @@ Proof.
     eapply multi_ideal_no_spec in Hev2; try assumption.
     assert(H:prefix os1 os2 \/ prefix os2 os1). { eapply Hsec; eassumption. }
     apply prefix_eq_length; assumption.
-Admitted.
+Qed.
 
 (* LATER: Strengthen the conclusion so that our theorem is termination sensitive
    (and also error sensitive) by looking at prefixes there too. *)
