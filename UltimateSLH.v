@@ -1838,12 +1838,6 @@ Lemma ideal_dirs_split : forall c st ast ds stt astt os ct,
   <(( c, st, ast, false ))> -->i*_ ds ^^ os <(( ct, stt, astt, true ))> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds = ds1 ++ [DForce] ++ ds2 .
 Proof.
-  induction c; intros.
-  + inversion H; subst; clear H. inversion H0.
-  + inversion H; subst; clear H.
-    inversion H0; subst; clear H0.
-    inversion H1; subst; clear H1. inversion H.
-  +
 Admitted.
 
 Lemma ideal_eval_no_spec : forall c st ast ds stt astt bt os,
@@ -1859,7 +1853,39 @@ Proof.
   subst. now apply ideal_eval_spec_eval_no_spec.
 Qed.
 
-Lemma ideal_exec_split_by_dirs : forall c ct st ast b ds stt astt bt os ds1 ds2,
+Lemma ideal_eval_small_step_obs_length_zero_one : forall c st ast b ct stt astt bt ds os,
+  <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+  os = [] \/ length os = 1.
+Proof.
+  induction c; intros; invert H; auto.
+  eapply IHc1. eassumption.
+Qed.
+
+Lemma ideal_eval_small_step_split_by_dir : forall c ct st ast b d ds stt astt bt o os,
+  <((c, st, ast, b))> -->i*_d::ds^^o::os <((ct, stt, astt, bt))> ->
+  exists cm stm astm bm cm' stm' astm' bm',
+    <((c, st, ast, b))> -->i*_[]^^[] <((cm, stm, astm, bm))> /\
+    <((cm, stm, astm, bm))> -->i_[d]^^[o] <((cm', stm', astm', bm'))> /\
+    <((cm', stm', astm', bm'))> -->i*_ds^^os <((ct, stt, astt, bt))>.
+Proof.
+  intros. remember (d::ds) as ds0. remember (o::os) as os0.
+  revert o os d ds Heqds0 Heqos0. induction H; intros; [discriminate|].
+  edestruct ideal_eval_small_step_obs_length_zero_one; [apply H|subst; simpl in *; subst..].
+  + apply app_eq_cons in Heqds0. destruct Heqds0.
+    2:{ do 2 destruct H1; subst. apply ideal_eval_small_step_obs_length in H. simpl in H. lia. }
+    destruct H1; subst. edestruct IHmulti_ideal; [reflexivity..|].
+    do 8 destruct H1. destruct H2. eapply multi_ideal_trans in H1; [|eassumption].
+    repeat eexists; eassumption.
+  + apply app_eq_cons in Heqos0. destruct Heqos0; [destruct H2; subst; simpl in *; lia|].
+    do 2 destruct H2. subst. simpl in H1. invert H1. apply length_zero_iff_nil in H3. subst.
+    assert (ds1 = [d]).
+    { apply ideal_eval_small_step_obs_length in H. apply app_eq_cons in Heqds0.
+      destruct Heqds0; [destruct H1; subst; simpl in *; lia|]. do 2 destruct H1.
+      subst. simpl in H. invert H. apply length_zero_iff_nil in H2. now subst. }
+    subst. simpl in *. invert Heqds0. repeat eexists; [constructor|eassumption..].
+Qed.
+
+Lemma ideal_eval_small_step_split_by_dirs : forall ds1 c ct st ast b ds stt astt bt os ds2,
   <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   ds = ds1 ++ ds2 ->
   exists cm stm astm bm os1 os2,
@@ -1867,115 +1893,16 @@ Lemma ideal_exec_split_by_dirs : forall c ct st ast b ds stt astt bt os ds1 ds2,
     <((cm, stm, astm, bm))> -->i*_ds2^^os2 <((ct, stt, astt, bt))> /\
     os = os1++os2.
 Proof.
-
-(*
-  intros c st ast b ds stt astt bt os ds1 ds2 Hev.
-  generalize dependent ds2; generalize dependent ds1.
-  induction Hev; intros ds3 ds4 Hds.
-  - (* Skip *)
-    symmetry in Hds. apply app_eq_nil in Hds. destruct Hds; subst.
-    eexists; eexists; eexists; eexists; eexists; eexists; split; [| split].
-    + eapply multi_ideal_refl.
-    + eapply Ideal_Skip.
-    + reflexivity.
-  - (* Asgn *)
-    symmetry in Hds. apply app_eq_nil in Hds. destruct Hds; subst.
-    eexists; eexists; eexists; eexists; eexists; eexists; split; [| split].
-    + eapply multi_ideal_refl.
-    + eapply Ideal_Asgn. reflexivity.
-    + reflexivity.
-  - (* Seq *)
-    destruct (app_eq_prefix Hds) as [ [ds H] | [ds H] ]; subst.
-    + rewrite <- app_assoc in Hds. apply app_inv_head in Hds. subst.
-      destruct (IHHev2 ds ds4) as [ cm [ stm [ astm [ bm [ os3 [ os4 [ H [ H' ? ] ] ] ] ] ] ] ]; [reflexivity|subst].
-      exists cm, stm, astm, bm, (os1 ++ os3), os4.
-      split.
-      { apply ideal_big_to_small_step in Hev1.
-        eapply multi_ideal_combined_executions.
-        { eapply multi_ideal_add_snd_com. eassumption. }
-        change ds with ([] ++ ds). change os3 with ([] ++ os3).
-        econstructor; [constructor|assumption]. }
-      split; [assumption|now rewrite app_assoc].
-    + rewrite <- app_assoc in Hds. apply app_inv_head in Hds. subst.
-      destruct (IHHev1 ds3 ds) as [ cm [ stm [ astm [ bm [ os3 [ os4 [ H [ H' ? ] ] ] ] ] ] ] ]; [reflexivity|subst].
-      exists (Seq cm c2), stm, astm, bm, os3, (os4 ++ os2).
-      split. { now apply multi_ideal_add_snd_com. }
-      split; [|now rewrite app_assoc].
-      econstructor; eassumption.
-  - (* IF *)
-    apply app_eq_head_tail in Hds as L.
-    destruct L as [Hds3 | [dsm Hdsm] ].
-    + eexists; eexists; eexists; eexists; eexists; eexists; split; [| split].
-      * subst. apply multi_ideal_refl.
-      * subst; simpl in Hds; subst.
-        econstructor; eauto.
-      * auto.
-    + subst. simpl in Hds. inversion Hds.
-      apply IHHev in H0.
-      destruct H0 as [cm [stm [astm [bm [os3 [os4 [Hsmall [Hideal Hos] ] ] ] ] ] ] ].
-      eexists; eexists; eexists; eexists; eexists; eexists; split; [| split]; eauto.
-      * replace (DStep::dsm) with ([DStep]++dsm) by auto.
-        eapply multi_ideal_trans; [econstructor | eauto].
-      * subst; eauto.
-  - (* IF_F *)
-    apply app_eq_head_tail in Hds as L.
-    destruct L as [Hds3 | [dsm Hdsm] ].
-    + eexists; eexists; eexists; eexists; eexists; eexists; split; [| split].
-      * subst. apply multi_ideal_refl.
-      * subst; simpl in Hds; subst.
-        econstructor; eauto.
-      * auto.
-    + subst. simpl in Hds. inversion Hds.
-      apply IHHev in H0.
-      destruct H0 as [cm [stm [astm [bm [os3 [os4 [Hsmall [Hideal Hos] ] ] ] ] ] ] ].
-      eexists; eexists; eexists; eexists; eexists; eexists; split; [| split]; eauto.
-      * replace (DForce::dsm) with ([DForce]++dsm) by auto.
-        eapply multi_ideal_trans; [econstructor | eauto].
-      * subst; eauto.
-  - (* While *)
-    apply IHHev in Hds.
-    destruct Hds as [cm [stm [astm [bm [os3 [os4 [Hsmall [Hideal Hos] ] ] ] ] ] ] ].
-    eexists; eexists; eexists; eexists; eexists; eexists; split; [| split].
-    + replace (ds3) with ([]++ds3) by (apply app_nil_l).
-      eapply multi_ideal_trans.
-      * econstructor.
-      * eapply Hsmall.
-    + eauto.
-    + eauto.
-  - (* Aread *)
-    apply app_eq_head_tail in Hds as L.
-    destruct L as [Hds3 | [dsm Hdsm] ].
-    + eexists; eexists; eexists; eexists; eexists; eexists; split; [| split].
-      * subst. apply multi_ideal_refl.
-      * subst; simpl in Hds; subst.
-        econstructor; eauto.
-      * subst; eauto.
-    + subst. simpl in Hds. inversion Hds.
-      symmetry in H1. apply app_eq_nil in H1. destruct H1; subst.
-      eexists; eexists; eexists; eexists; eexists; eexists; split; [| split]; eauto.
-      * replace ([DStep]) with ([DStep]++[]) by (apply app_nil_r).
-        eapply multi_ideal_trans; [econstructor |]; eauto.
-        econstructor.
-      * econstructor.
-      * eauto.
-  - (* Write *)
-    apply app_eq_head_tail in Hds as L.
-    destruct L as [Hds3 | [dsm Hdsm] ].
-    + eexists; eexists; eexists; eexists; eexists; eexists; split; [| split].
-      * subst. apply multi_ideal_refl.
-      * subst; simpl in Hds; subst.
-        econstructor; eauto.
-      * subst; eauto.
-    + subst. simpl in Hds. inversion Hds.
-      symmetry in H0. apply app_eq_nil in H0. destruct H0; subst.
-      eexists; eexists; eexists; eexists; eexists; eexists; split; [| split]; eauto.
-      * replace ([DStep]) with ([DStep]++[]) by (apply app_nil_r).
-        eapply multi_ideal_trans; [econstructor |]; eauto.
-        econstructor.
-      * econstructor.
-      * eauto.
-*)
-Admitted.
+  induction ds1; intros; subst.
+  - simpl in H. repeat eexists; [constructor|eassumption|reflexivity].
+  - simpl in *. destruct os.
+    { apply multi_ideal_obs_length in H. simpl in H. lia. }
+    apply ideal_eval_small_step_split_by_dir in H. do 9 destruct H. destruct H0.
+    eapply IHds1 in H1; [|reflexivity]. do 7 destruct H1. destruct H2. subst.
+    eapply multi_ideal_trans in H1; [|eassumption].
+    eapply multi_ideal_combined_executions in H1; [|eassumption]. simpl in H1. clear H H0.
+    repeat econstructor; eauto.
+Qed.
 
 (* HIDE *)
 (* Currently unused, but maybe helpful in the future. *)
@@ -2306,10 +2233,10 @@ Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2 cm3,
     os = os1 ++ os2 ++ os3.
 Proof.
   intros.
-  apply ideal_exec_split_by_dirs with (ds1:=ds1) (ds2:=[DForce]++ds2) in H; [|assumption].
+  apply ideal_eval_small_step_split_by_dirs with (ds1:=ds1) (ds2:=[DForce]++ds2) in H; [|assumption].
   do 7 destruct H. destruct H2. subst.
   assert (x2 = false). { destruct x2; [|reflexivity]. now apply multi_ideal_spec_needs_force, H0 in H. } subst.
-  apply ideal_exec_split_by_dirs with (ds1:=[DForce]) (ds2:=ds2) in H2; [|reflexivity].
+  apply ideal_eval_small_step_split_by_dirs with (ds1:=[DForce]) (ds2:=ds2) in H2; [|reflexivity].
   destruct H2. do 6 destruct H1. destruct H2. subst.
   assert (x7 = true). { destruct x7; [reflexivity|]. apply multi_ideal_final_spec_bit_false with (d:=DForce) in H1; [discriminate|now left]. } subst.
   eapply multi_ideal_single_force_direction in H1. do 7 destruct H1. destruct H3.
