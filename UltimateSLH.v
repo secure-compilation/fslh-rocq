@@ -215,20 +215,16 @@ Lemma multi_spec_trans_nil_l c st ast b c' st' ast' b' ct stt astt bt ds os :
   <((c', st', ast', b'))> -->*_ds^^os <((ct, stt, astt, bt))> ->
   <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))>.
 Proof.
-Admitted.
+  intros. rewrite <- app_nil_l. rewrite <- app_nil_l with (l:=ds). eapply multi_spec_trans; eassumption.
+Qed.
 
 Lemma multi_spec_trans_nil_r c st ast b c' st' ast' b' ct stt astt bt ds os :
   <((c, st, ast, b))> -->_ds^^os <((c', st', ast', b'))> ->
   <((c', st', ast', b'))> -->*_[]^^[] <((ct, stt, astt, bt))> ->
   <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))>.
 Proof.
-Admitted.
-
-Lemma multi_spec_seq_assoc c1 c2 c3 st ast b c' st' ast' b' ds os :
-  <(((c1; c2); c3, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-  exists c'', 
-  <((c1; c2; c3, st, ast, b))> -->*_ds^^os <((c'', st', ast', b'))> /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}>).
-Admitted.
+  intros. rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=ds). eapply multi_spec_trans; eassumption.
+Qed.
 
 Lemma multi_spec_combined_executions : forall c st ast cm stm astm osm ct stt astt ost ds ds' b b' b'',
   <((c, st, ast, b))> -->*_ds^^osm <((cm, stm, astm, b'))> ->
@@ -269,6 +265,26 @@ Proof.
     - do 2 destruct H. subst. clear IHmulti_spec.
       right. repeat eexists. econstructor; eassumption.
   + left. repeat eexists; [constructor|eassumption].
+Qed.
+
+Lemma multi_spec_seq_assoc c1 c2 c3 st ast b c' st' ast' b' ds os :
+  <(((c1; c2); c3, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  exists c'', 
+  <((c1; c2; c3, st, ast, b))> -->*_ds^^os <((c'', st', ast', b'))> /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}>).
+Proof.
+  intros. apply multi_spec_seq in H. destruct H.
+  + do 8 destruct H. destruct H0, H1. subst. apply multi_spec_seq in H1. destruct H1.
+    - do 8 destruct H. destruct H0, H1. subst. exists c'. split; [|tauto].
+      rewrite <- !app_assoc. eapply multi_spec_combined_executions; [apply multi_spec_add_snd_com, H1|].
+      eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|]. eapply multi_spec_combined_executions; [apply multi_spec_add_snd_com, H3|].
+      eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|apply H2].
+    - destruct H as (c''&abs&_). discriminate abs.
+  + destruct H as (c''&->&H). apply multi_spec_seq in H. destruct H.
+    - do 8 destruct H. destruct H0, H1. subst. exists <{{ c''; c3 }}>.
+      split; [|discriminate]. eapply multi_spec_combined_executions; [apply multi_spec_add_snd_com, H1|].
+      eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|]. apply multi_spec_add_snd_com, H2.
+    - destruct H as (c'&->&H). exists <{{ c'; c2; c3 }}>. split; [|discriminate].
+      apply multi_spec_add_snd_com, H.
 Qed.
 
 (** * Definition of Relative Secure *)
@@ -379,14 +395,16 @@ Lemma multi_ideal_trans_nil_l c st ast b c' st' ast' b' ct stt astt bt ds os :
   <((c', st', ast', b'))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
 Proof.
-Admitted.
+  intros. rewrite <- app_nil_l. rewrite <- app_nil_l with (l:=ds). eapply multi_ideal_trans; eassumption.
+Qed.
 
 Lemma multi_ideal_trans_nil_r c st ast b c' st' ast' b' ct stt astt bt ds os :
   <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
   <((c', st', ast', b'))> -->i*_[]^^[] <((ct, stt, astt, bt))> ->
   <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
 Proof.
-Admitted.
+  intros. rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=ds). eapply multi_ideal_trans; eassumption.
+Qed.
 
 Definition ideal_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
@@ -408,19 +426,6 @@ Proof.
     + apply IHHev1. apply Hev2.
 Qed.
 
-(*
-Lemma multi_ideal_seq : forall c1 c2 cm st ast b stm astm bm ds os,
-  <((c1; c2, st, ast, b))> -->i*_ds^^os <((cm, stm, astm, bm))> ->
-  (exists st' ast' b' ds1 ds2 os1 os2,
-  os = os1 ++ os2 /\ ds = ds1 ++ ds2 /\
-  |-i <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)> /\
-   <((c2, st', ast', b'))> -->i*_ds2^^os2 <((cm, stm, astm, bm))>) \/
-  (exists c', cm = <{{ c'; c2 }}> /\
-   <((c1, st, ast, b))> -->i*_ds^^os <((c', stm, astm, bm))>).
-Proof.
-Admitted.
-*)
-
 Lemma multi_ideal_add_snd_com : forall c st ast ct stt astt ds os c2 b bt,
   <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   <((c;c2, st, ast, b))> -->i*_ds^^os <((ct;c2, stt, astt, bt))>.
@@ -438,29 +443,12 @@ Proof.
   induction Heval; subst; eauto.
 Qed.
 
-Lemma spec_eval_small_step_spec_bit_monotonic : forall c st ast ds ct stt astt bt os,
-  <((c, st, ast, true))> -->_ds^^os <((ct, stt, astt, bt))> ->
-  bt = true.
-Proof.
-  intros c st ast ds ct stt astt bt os Heval. remember true as b eqn:Eqb.
-  induction Heval; subst; eauto.
-Qed.
-
 Lemma multi_ideal_spec_bit_monotonic : forall c st ast ds ct stt astt bt os,
   <((c, st, ast, true))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   bt = true.
 Proof.
   intros c st ast ds ct stt astt bt os Heval. remember true as b eqn:Eqb.
   induction Heval; subst; eauto. apply ideal_eval_small_step_spec_bit_monotonic in H; subst.
-  auto.
-Qed.
-
-Lemma multi_spec_spec_bit_monotonic : forall c st ast ds ct stt astt bt os,
-  <((c, st, ast, true))> -->*_ds^^os <((ct, stt, astt, bt))> ->
-  bt = true.
-Proof.
-  intros c st ast ds ct stt astt bt os Heval. remember true as b eqn:Eqb.
-  induction Heval; subst; eauto. apply spec_eval_small_step_spec_bit_monotonic in H; subst.
   auto.
 Qed.
 
@@ -608,17 +596,6 @@ Lemma seq_to_ideal : forall c st ast ct stt astt os,
 Proof.
   intros.
   now induction H; constructor.
-Qed.
-
-Lemma multi_seq_to_ideal : forall c st ast ct stt astt os,
-  <((c, st, ast ))> -->*^os <((ct, stt, astt))> ->
-  <((c, st, ast, false))> -->i*_(repeat DStep (length os))^^os <((ct, stt, astt, false))>.
-Proof.
-  intros. induction H.
-  - apply multi_ideal_refl.
-  - apply seq_to_ideal in H.
-    rewrite app_length, repeat_app.
-    eapply multi_ideal_trans; eauto.
 Qed.
 
 Lemma seq_small_step_if_total : forall c be ct cf st ast,
@@ -828,44 +805,6 @@ Proof.
   + now apply String.eqb_eq in Heq; subst; rewrite t_update_eq, upd_length.
   + now apply String.eqb_neq in Heq; rewrite t_update_neq.
 Qed.
-
-Lemma flag_zero_check_spec_bit : forall (st :state) (X :string) (b b' :bool),
-  st X = (if b then 1 else 0) ->
-  (st X =? 0)%nat = b' ->
-  b = negb b'.
-Proof.
- intros st X b b' Hflag Heqb. destruct b; destruct b'; try reflexivity;
- rewrite Hflag in Heqb; simpl in Heqb; discriminate.
-Qed.
-
-Lemma flag_one_check_spec_bit : forall (st :state) (X :string) (b b' :bool),
-  st X = (if b then 1 else 0) ->
-  (st X =? 1)%nat = b' ->
-  b = b'.
-Proof.
- intros st X b b' Hflag Heqb. destruct b; destruct b'; try reflexivity;
- rewrite Hflag in Heqb; simpl in Heqb; discriminate.
-Qed.
-
-Lemma ultimate_slh_fcc_one_step : forall c st ast (b b' : bool) c' st' ast' ds os,
-  nonempty_arrs ast ->
-  unused "b" c ->
-  st "b" = (if b then 1 else 0) ->
-  <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
-  exists c'',
-  <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c'', "b" !-> (if b' then 1 else 0); st', ast', b'))>.
-Proof.
-Abort.
-
-Lemma ultimate_slh_fcc : forall c st ast (b b' : bool) c' st' ast' ds os,
-  nonempty_arrs ast ->
-  unused "b" c ->
-  st "b" = (if b then 1 else 0) ->
-  <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
-  exists c'',
-  <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c'', "b" !-> (if b' then 1 else 0); st', ast', b'))>.
-Proof.
-Abort.
 
 
 Ltac solve_refl :=
@@ -1121,24 +1060,6 @@ Proof.
       inversion Hlen. eapply IH in H0; eauto.
 Qed.
 
-Lemma app_eq_head_tail : forall {X :Type} (l1 l2 l3: list X) (x :X),
-  x::l1 = l2 ++ l3 ->
-  l2 = []  \/ (exists l2', l2 = x::l2').
-Proof.
-  intros X. induction l1 as [| x1 l1' IH]; intros l2 l3 x Heq.
-  - symmetry in Heq. apply app_eq_unit in Heq.
-    destruct Heq as [ [Hl2 Hl3] | [Hl2 Hl3] ].
-    + left; auto.
-    + right; eexists; eauto.
-  - destruct l2 as [| x2 l2'] eqn:Eql2.
-    + left. reflexivity.
-    + simpl in Heq. inversion Heq.
-      apply IH in H1; subst. destruct H1 as [H | H].
-      * right. eexists; eauto.
-      * destruct H as [l Hl].
-        right. eexists; eauto.
-Qed.
-
 Lemma ideal_dirs_split : forall ds c st ast stt astt os ct,
   <(( c, st, ast, false ))> -->i*_ ds ^^ os <(( ct, stt, astt, true ))> ->
   exists ds1 ds2, (forall d, In d ds1 -> d = DStep) /\ ds = ds1 ++ [DForce] ++ ds2 .
@@ -1207,31 +1128,6 @@ Proof.
     repeat econstructor; eauto.
 Qed.
 
-(* HIDE *)
-(* Currently unused, but maybe helpful in the future. *)
-Lemma seq_eval_small_step_preserves_seq_same_obs :
-  forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
-    <((c, st1, ast1))>  -->^os1 <((ct, stt1, astt1))> ->
-    <((c, st2, ast2))>  -->^os2 <((ct, stt2, astt2))> ->
-    seq_same_obs c st1 st2 ast1 ast2 ->
-    seq_same_obs ct stt1 stt2 astt1 astt2.
-Proof.
-  intros c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2 Hev1 Hev2 Hsec .
-  unfold seq_same_obs. intros stt1' stt2' astt1' astt2' os1' os2' ct1 ct2 Hmul1 Hmul2.
-  assert (L1: <((c, st1, ast1))> -->*^ (os1++os1') <((ct1, stt1', astt1'))> ).
-  { eapply multi_seq_trans; eauto. }
-  assert (L2: <((c, st2, ast2))> -->*^ (os2++os2') <((ct2, stt2', astt2'))> ).
-  { eapply multi_seq_trans; eauto. }
-  eapply Hsec in L2; eauto. destruct L2 as [Hpre | Hpre].
-  - apply prefix_app_front_eq_length in Hpre; auto.
-    eapply seq_small_step_obs_length in Hev2; eauto.
-  - apply prefix_app_front_eq_length in Hpre; auto.
-    eapply seq_small_step_obs_length in Hev2; eauto.
-Qed.
-(* /HIDE *)
-
-(* SOONER: It could hold that the [seq_same_obs]
-   is even preserved for different final coms. *)
 (* CH: Maybe better is to just drop the length assumption instead though *)
 Lemma multi_seq_preserves_seq_same_obs :
   forall c ct st1 ast1 stt1 astt1 os1 st2 ast2 stt2 astt2 os2,
@@ -1251,53 +1147,6 @@ Proof.
   - apply prefix_app_front_eq_length in Hpre; auto.
   - apply prefix_app_front_eq_length in Hpre; auto.
 Qed.
-
-(* HIDE *)
-(* Currently unused but maybe helpful in the future. *)
-Lemma seq_eval_small_step_com_deterministic :
-    forall c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2,
-    <((c, st1, ast1))>  -->^os1 <((ct1, stt1, astt1))> ->
-    <((c, st2, ast2))>  -->^os2 <((ct2, stt2, astt2))> ->
-    seq_same_obs c st1 st2 ast1 ast2 ->
-    ct1 = ct2.
-Proof.
-  intros c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2 Hev1.
-  generalize dependent os2; generalize dependent astt2;
-  generalize dependent stt2; generalize dependent ct2;
-  generalize dependent ast2 ; generalize dependent st2.
-  induction Hev1; intros st2 ast2 ct2 stt2 astt2 ost2 Hev2 Hsec;
-  try (now inversion Hev2; subst; auto).
-  - inversion Hev2; subst; auto.
-    + apply seq_same_obs_com_seq in Hsec as Hc1.
-      apply IHHev1 in H7; subst; auto.
-    + inversion Hev1.
-  - apply seq_same_obs_com_if in Hsec.
-    inversion Hev2; subst. rewrite Hsec. reflexivity.
-Qed.
-
-Lemma ideal_eval_small_step_com_deterministic :
-    forall c st1 ast1 b ds ct1 stt1 astt1 bt os1 st2 ast2 ct2 stt2 astt2 os2,
-    <((c, st1, ast1, b))>  -->i_ds^^os1 <((ct1, stt1, astt1, bt))> ->
-    <((c, st2, ast2, b))>  -->i_ds^^os2 <((ct2, stt2, astt2, bt))> ->
-    seq_same_obs c st1 st2 ast1 ast2 ->
-    ct1 = ct2.
-Proof.
-  intros c st1 ast1 b ds ct1 stt1 astt1 bt os1 st2 ast2 ct2 stt2 astt2 os2 Hev1.
-  generalize dependent os2; generalize dependent astt2;
-  generalize dependent stt2; generalize dependent ct2;
-  generalize dependent ast2 ; generalize dependent st2.
-  induction Hev1; intros st2 ast2 ct2 stt2 astt2 ost2 Hev2 Hsec;
-  try (now inversion Hev2; subst; auto).
-  - inversion Hev2; subst; auto.
-    + apply seq_same_obs_com_seq in Hsec as Hc1.
-      apply IHHev1 in H10; subst; auto.
-    + inversion Hev1.
-  - apply seq_same_obs_com_if in Hsec.
-    inversion Hev2; subst. rewrite Hsec. reflexivity.
-  - apply seq_same_obs_com_if in Hsec.
-    inversion Hev2; subst. rewrite Hsec. reflexivity.
-Qed.
-(* /HIDE *)
 
 Lemma ideal_small_step_com_deterministic :
   forall c b ds st1 ast1 ct1 stt1 astt1 bt1 os1 st2 ast2 ct2 stt2 astt2 bt2 os2,
@@ -1395,41 +1244,6 @@ Proof.
       eapply IHmulti_ideal; eauto.
 Qed.
 
-(** * Conjectures for the proof of ideal_eval_relative_secure *)
-
-(* HIDE *)
-
-(* This conjecture does not hold, look at c = skip; skip; skip :
-      <((c, st1, ast1))>  -->*^[] <((skip; skip, st1, ast1))> /\
-      <((c, st2, ast2))>  -->*^[] <((skip, st2, ast2))> /\
-      seq  seq_same_obs c st1 st2 ast1 ast2 /\
-      length [] = length []
-    But: skip; skip <> skip
-*)
-Lemma multi_seq_com_deterministic :
-    forall c st1 ast1 ct1 stt1 astt1 os1 st2 ast2 ct2 stt2 astt2 os2,
-    <((c, st1, ast1))>  -->*^os1 <((ct1, stt1, astt1))> ->
-    <((c, st2, ast2))>  -->*^os2 <((ct2, stt2, astt2))> ->
-    seq_same_obs c st1 st2 ast1 ast2 ->
-    length os1 = length os2 ->
-    ct1 = ct2.
-Proof.
-Abort.
-
-(* Same problem as in [multi_seq_com_deterministic]. Steps without observations
-   and directions do not destroy the seq_same_obs property. but lead to
-   different ct1 adn ct2. Needs a measure that exactly same amount of single
-  steps are taken. *)
-Lemma multi_ideal_com_deterministic :
-    forall c ds b st1 ast1 ct1 stt1 astt1 bt1 os1 st2 ast2 ct2 stt2 astt2 bt2 os2,
-      <((c, st1, ast1, b))>  -->i*_ds^^os1 <((ct1, stt1, astt1, bt1))> ->
-      <((c, st2, ast2, b))>  -->i*_ds^^os2 <((ct2, stt2, astt2, bt2))> ->
-      seq_same_obs c st1 st2 ast1 ast2 ->
-      ct1 = ct2.
-Proof.
-Abort.
-(* /HIDE *)
-
 Lemma multi_ideal_single_force_direction :
   forall c st ast ct astt stt os,
     <(( c, st, ast, false ))> -->i*_ [DForce]^^ os <((ct, stt, astt, true))> ->
@@ -1465,20 +1279,6 @@ Proof.
     apply multi_ideal_refl.
 Qed.
 
-(* HIDE *)
-(* If this conjecture holds it could also be used to proof [ideal_eval_relative_secure]. *)
-   Conjecture multi_ideal_and_single_step_com_deterministic :
-    forall c st1 ast1 ds os cm1 stm1 astm1 ct1 stt1 astt1
-            st2 ast2 cm2 stm2 astm2 ct2 stt2 astt2,
-      <((c, st1, ast1, false))> -->i*_ds^^os <((cm1, stm1, astm1, false))> ->
-      <((cm1, stm1, astm1, false))> -->i_[DForce]^^os <((ct1, stt1, astt1, true))> ->
-      <((c, st2, ast2, false))> -->i*_ds^^os <(( cm2, stm2, astm2, false))> ->
-      <(( cm2, stm2, astm2, false))>  -->i_[DForce]^^os <((ct2, stt2, astt2, true))> ->
-      seq_same_obs c st1 st2 ast1 ast2 ->
-      cm1 = cm2 /\ ct1 = ct2.
-  (* /HIDE *)
-
-(* HIDE *)
 (* This lemma was replaced by [ideal_exec_split_v2] and is here only as an
    initial idea on how to prove the new version. *)
 Lemma ideal_exec_split : forall c st ast ds stt astt os ds1 ds2 cm3,
@@ -1503,7 +1303,6 @@ Proof.
   { rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=ds1). eapply multi_ideal_combined_executions; eassumption. }
   repeat econstructor; [eassumption|]. rewrite <- app_nil_l. rewrite <- app_nil_l with (l:=ds2). eapply multi_ideal_combined_executions; eassumption.
 Qed.
-(* /HIDE *)
 
 (* This looks quite similar to (and maybe simpler than)
            ideal_small_step_com_deterministic *)
