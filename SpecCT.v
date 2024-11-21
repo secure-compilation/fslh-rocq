@@ -1700,7 +1700,8 @@ Fixpoint com_size (c :com) :nat :=
   | <{{ c1; c2 }}> => 1 + (com_size c1) + (com_size c2)
   | <{{ if be then ct else cf end }}> => 1 + max (com_size ct) (com_size cf)
   | <{{ while be do cw end }}> => 3 + (com_size cw)
-  | _  => 1
+  | <{{ skip }}> => 1
+  | _  => 2
   end.
 
 Definition prog_size (c :com) (ds :dirs) :nat := com_size c + length ds.

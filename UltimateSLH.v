@@ -136,61 +136,6 @@ Proof.
   now destruct H; subst.
 Qed.
 
-Lemma seq_big_to_small_step : forall c st ast stt astt os,
-  <(st, ast)> =[ c ]=> <(stt, astt, os)> ->
-  <((c, st, ast))> -->*^os <((skip, stt, astt))>.
-Proof.
-  intros c st ast stt astt os Hev. induction Hev;
-  try (now rewrite <- app_nil_r; econstructor; econstructor; eauto).
-  - remember Skip as c'. clear Hev1. clear Hev2.
-    induction IHHev1; subst.
-    + eapply multi_seq_trans; eauto.
-      econstructor.
-    + rewrite <- app_assoc.
-      eapply multi_seq_trans.
-      * econstructor. now apply H.
-      * apply IHIHHev1; eauto.
-  - (* If_True *)
-    econstructor.
-    + rewrite <- H. eapply SSM_If.
-    + rewrite H; eauto.
-  - (* If_False *)
-    econstructor.
-    + rewrite <- H. eapply SSM_If.
-    + rewrite H; eauto.
-  - (* While *)
-    rewrite <- app_nil_l. econstructor; [econstructor |]; eauto.
-Qed.
-
-(* HIDE: CH: Why are we going to cteval? Is that used at all in this file? *)
-Lemma seq_eval_one_step : forall c st ast stt astt os c1 os1 st1 ast1,
-  <((c, st, ast))> -->^os1 <((c1, st1, ast1))> ->
-  <(st1, ast1)> =[ c1 ]=> <(stt, astt, os)> ->
-  <(st, ast)> =[ c ]=> <(stt, astt, os1++os)>.
-Proof.
-  intros c st ast stt astt os c1 os1 st1 ast1 H1 H.
-  generalize dependent os. generalize dependent astt.
-  generalize dependent stt.
-  induction H1; intros.
-  - inversion H0. subst. constructor. reflexivity.
-  - inversion H. subst. rewrite app_assoc. econstructor; eauto.
-  - econstructor. { constructor. } { assumption. }
-  - destruct (beval st be) eqn:Heq; now constructor.
-  - now constructor.
-  - inversion H1; subst. now constructor.
-  - inversion H2; subst. now constructor.
-Qed.
-
-Lemma seq_small_to_big_step : forall c st ast stt astt os,
-  <((c, st, ast))> -->*^os <((skip, stt, astt))> ->
-  <(st, ast)> =[ c ]=> <(stt, astt, os)>.
-Proof.
-  intros c st ast stt astt os H. remember Skip as c1.
-  induction H; subst.
-  - constructor.
-  - eapply seq_eval_one_step; eauto.
-Qed.
-
 (** Small-step speculative semantics *)
 
 Reserved Notation
@@ -209,18 +154,14 @@ Inductive spec_eval_small_step :
       <(((c1;c2), st, ast, b))>  -->_ds^^os <(((c1t;c2), stt, astt, bt))>
   | SpecSM_Seq_Skip : forall st ast b c2,
       <(((skip;c2), st, ast, b))>  -->_[]^^[] <((c2, st, ast, b))>
-  | SpecSM_If : forall be ct cf st ast b,
-      <((if be then ct else cf end, st, ast, b))>
-      -->_[DStep]^^[OBranch (beval st be)]
-      <((match beval st be with
-        | true => ct
-        | false => cf end, st, ast, b))>
-  | SpecSM_If_F : forall be ct cf st ast b,
-      <((if be then ct else cf end, st, ast, b))>
-      -->_[DForce]^^[OBranch (beval st be)]
-      <((match beval st be with
-        | true => cf
-        | false => ct end, st, ast, true))>
+  | SpecSM_If : forall be ct cf st ast b c' b',
+      b' = beval st be ->
+      c' = (if b' then ct else cf) ->
+      <((if be then ct else cf end, st, ast, b))> -->_[DStep]^^[OBranch b'] <((c', st, ast, b))>
+  | SpecSM_If_F : forall be ct cf st ast b c' b',
+      b' = beval st be ->
+      c' = (if b' then cf else ct) ->
+      <((if be then ct else cf end, st, ast, b))> -->_[DForce]^^[OBranch b'] <((c', st, ast, true))>
   | SpecSM_While : forall be c st ast b,
       <((while be do c end, st, ast, b))> -->_[]^^[]
       <((if be then c; while be do c end else skip end, st, ast, b))>
@@ -269,6 +210,26 @@ Inductive multi_spec (c:com) (st:state) (ast:astate) (b:bool) :
   where "<(( c , st , ast , b ))> -->*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (multi_spec c st ast b ct stt astt bt ds os).
 
+Lemma multi_spec_trans_nil_l c st ast b c' st' ast' b' ct stt astt bt ds os :
+  <((c, st, ast, b))> -->_[]^^[] <((c', st', ast', b'))> ->
+  <((c', st', ast', b'))> -->*_ds^^os <((ct, stt, astt, bt))> ->
+  <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))>.
+Proof.
+Admitted.
+
+Lemma multi_spec_trans_nil_r c st ast b c' st' ast' b' ct stt astt bt ds os :
+  <((c, st, ast, b))> -->_ds^^os <((c', st', ast', b'))> ->
+  <((c', st', ast', b'))> -->*_[]^^[] <((ct, stt, astt, bt))> ->
+  <((c, st, ast, b))> -->*_ds^^os <((ct, stt, astt, bt))>.
+Proof.
+Admitted.
+
+Lemma multi_spec_seq_assoc c1 c2 c3 st ast b c' st' ast' b' ds os :
+  <(((c1; c2); c3, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  exists c'', 
+  <((c1; c2; c3, st, ast, b))> -->*_ds^^os <((c'', st', ast', b'))> /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}>).
+Admitted.
+
 Lemma multi_spec_combined_executions : forall c st ast cm stm astm osm ct stt astt ost ds ds' b b' b'',
   <((c, st, ast, b))> -->*_ds^^osm <((cm, stm, astm, b'))> ->
   <((cm, stm, astm, b'))> -->*_ds'^^ost <((ct, stt, astt, b''))> ->
@@ -293,24 +254,22 @@ Lemma multi_spec_seq : forall c1 c2 cm st ast b stm astm bm ds os,
   <((c1; c2, st, ast, b))> -->*_ds^^os <((cm, stm, astm, bm))> ->
   (exists st' ast' b' ds1 ds2 os1 os2,
   os = os1 ++ os2 /\ ds = ds1 ++ ds2 /\
-  <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)> /\
-   <((c2, st', ast', b'))> -->*_ds2^^os2 <((cm, stm, astm, bm))>) \/
+  <((c1, st, ast, b))> -->*_ds1^^os1 <((skip, st', ast', b'))> /\
+  <((c2, st', ast', b'))> -->*_ds2^^os2 <((cm, stm, astm, bm))>) \/
   (exists c', cm = <{{ c'; c2 }}> /\
    <((c1, st, ast, b))> -->*_ds^^os <((c', stm, astm, bm))>).
 Proof.
-Admitted.
-
-Lemma spec_small_to_big_step : forall c st ast b ds os stm astm b',
-  <((c, st, ast, b))> -->*_ds^^os <((skip, stm, astm, b'))> ->
-  <(st, ast, b, ds)> =[ c ]=> <(stm, astm, b', os)>.
-Proof.
-Admitted.
-
-Lemma spec_big_to_small_step : forall c st ast b ds os stm astm b',
-  <(st, ast, b, ds)> =[ c ]=> <(stm, astm, b', os)> ->
-  <((c, st, ast, b))> -->*_ds^^os <((skip, stm, astm, b'))>.
-Proof.
-Admitted.
+  intros. remember <{{ c1; c2 }}> as c. revert c1 c2 Heqc.
+  induction H; intros; subst.
+  { right. repeat eexists. constructor. }
+  invert H.
+  + edestruct IHmulti_spec; [reflexivity|..].
+    - do 8 destruct H. destruct H1, H2. subst. clear IHmulti_spec.
+      left. rewrite !app_assoc. repeat eexists; [econstructor|]; eassumption.
+    - do 2 destruct H. subst. clear IHmulti_spec.
+      right. repeat eexists. econstructor; eassumption.
+  + left. repeat eexists; [constructor|eassumption].
+Qed.
 
 (** * Definition of Relative Secure *)
 
@@ -353,59 +312,6 @@ Fixpoint ultimate_slh (c:com) :=
 Definition nonempty_arrs (ast : astate) :Prop :=
   forall a, 0 < length (ast a).
 
-(** * Ideal big-step evaluation *)
-
-(** As in SpecCT, we define an ideal big-step evaluation relation, which
-    abstractly captures the masking done by USLH. *)
-
-Reserved Notation
-  "'|-i' '<(' st , ast , b , ds ')>' '=[' c ']=>' '<(' stt , astt , bb , os ')>'"
-  (at level 40, c custom com at level 99,
-   st constr, ast constr, stt constr, astt constr at next level).
-
-Inductive ideal_eval :
-    com -> state -> astate -> bool -> dirs ->
-           state -> astate -> bool -> obs -> Prop :=
-  | Ideal_Skip : forall st ast b,
-      |-i <(st, ast, b, [])> =[ skip ]=> <(st, ast, b, [])>
-  | Ideal_Asgn  : forall st ast b e n x,
-      aeval st e = n ->
-      |-i <(st, ast, b, [])> =[ x := e ]=> <(x !-> n; st, ast, b, [])>
-  | Ideal_Seq : forall c1 c2 st ast b st' ast' b' st'' ast'' b'' os1 os2 ds1 ds2,
-      |-i <(st, ast, b, ds1)> =[ c1 ]=> <(st', ast', b', os1)>  ->
-      |-i <(st', ast', b', ds2)> =[ c2 ]=> <(st'', ast'', b'', os2)> ->
-      |-i <(st, ast, b, ds1++ds2)>  =[ c1 ; c2 ]=> <(st'', ast'', b'', os1++os2)>
-  | Ideal_If : forall st ast b st' ast' b' be c1 c2 os1 ds,
-      |-i <(st, ast, b, ds)> =[ match negb b && beval st be  with
-                                 | true => c1
-                                 | false => c2 end ]=> <(st', ast', b', os1)> ->
-      |-i <(st, ast, b, DStep :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', [OBranch (negb b && beval st be)]++os1)>
-  | Ideal_If_F : forall st ast b st' ast' b' be c1 c2 os1 ds,
-      |-i <(st, ast, true, ds)> =[ match negb b && beval st be  with
-                                 | true => c2 (* <-- branches swapped *)
-                                 | false => c1 end ]=> <(st', ast', b', os1)> ->
-      |-i <(st, ast, b, DForce :: ds)> =[ if be then c1 else c2 end ]=>
-        <(st', ast', b', [OBranch (negb b && beval st be)]++os1)>
-  | Ideal_While : forall be st ast b ds st' ast' b' os c,
-      |-i <(st, ast, b, ds)> =[ if be then c; while be do c end else skip end ]=>
-        <(st', ast', b', os)> ->
-      |-i <(st, ast, b, ds)> =[ while be do c end ]=> <(st', ast', b', os)>
-  | Ideal_ARead : forall st ast (b :bool) x a ie i,
-      (if b then 0 else (aeval st ie)) = i ->
-      i < length (ast a) ->
-      |-i <(st, ast, b, [DStep])> =[ x <- a[[ie]] ]=>
-        <(x !-> nth i (ast a) 0; st, ast, b, [OARead a i])>
-  | Ideal_Write : forall st ast (b :bool) a ie i e n,
-      aeval st e = n ->
-      (if b then 0 else (aeval st ie)) = i ->
-      i < length (ast a) ->
-      |-i <(st, ast, b, [DStep])> =[ a[ie] <- e ]=>
-        <(st, a !-> upd i (ast a) n; ast, b, [OAWrite a i])>
-
-  where "|-i <( st , ast , b , ds )> =[ c ]=> <( stt , astt , bb , os )>" :=
-    (ideal_eval c st ast b ds stt astt bb os).
-
 (** * Ideal small-step evaluation *)
 
 Reserved Notation
@@ -424,18 +330,14 @@ Inductive ideal_eval_small_step :
       <(((c1;c2), st, ast, b))>  -->i_ds^^os <(((c1t;c2), stt, astt, bt))>
   | ISM_Seq_Skip : forall st ast b c2,
       <(((skip;c2), st, ast, b))>  -->i_[]^^[] <((c2, st, ast, b))>
-  | ISM_If : forall be ct cf st ast b,
-      <((if be then ct else cf end, st, ast, b))>
-      -->i_[DStep]^^[OBranch (negb b && beval st be)]
-      <((match negb b && beval st be with
-        | true => ct
-        | false => cf end, st, ast, b))>
-  | ISM_If_F : forall be ct cf st ast b,
-      <((if be then ct else cf end, st, ast, b))>
-      -->i_[DForce]^^[OBranch (negb b && beval st be)]
-      <((match negb b && beval st be with
-        | true => cf
-        | false => ct end, st, ast, true))>
+  | ISM_If : forall be ct cf st ast b c' b',
+      b' = negb b && beval st be ->
+      c' = (if b' then ct else cf) ->
+      <((if be then ct else cf end, st, ast, b))> -->i_[DStep]^^[OBranch b'] <((c', st, ast, b))>
+  | ISM_If_F : forall be ct cf st ast b c' b',
+      b' = negb b && beval st be ->
+      c' = (if b' then cf else ct) ->
+      <((if be then ct else cf end, st, ast, b))> -->i_[DForce]^^[OBranch b'] <((c', st, ast, true))>
   | ISM_While : forall be c st ast b,
       <((while be do c end, st, ast, b))> -->i_[]^^[]
       <((if be then c; while be do c end else skip end, st, ast, b))>
@@ -472,6 +374,20 @@ Inductive multi_ideal (c:com) (st:state) (ast:astate) (b:bool) :
   where "<(( c , st , ast , b ))> -->i*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (multi_ideal c st ast b ct stt astt bt ds os).
 
+Lemma multi_ideal_trans_nil_l c st ast b c' st' ast' b' ct stt astt bt ds os :
+  <((c, st, ast, b))> -->i_[]^^[] <((c', st', ast', b'))> ->
+  <((c', st', ast', b'))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
+Proof.
+Admitted.
+
+Lemma multi_ideal_trans_nil_r c st ast b c' st' ast' b' ct stt astt bt ds os :
+  <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
+  <((c', st', ast', b'))> -->i*_[]^^[] <((ct, stt, astt, bt))> ->
+  <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
+Proof.
+Admitted.
+
 Definition ideal_same_obs c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
     <((c, st1, ast1, false))> -->i*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
@@ -492,6 +408,7 @@ Proof.
     + apply IHHev1. apply Hev2.
 Qed.
 
+(*
 Lemma multi_ideal_seq : forall c1 c2 cm st ast b stm astm bm ds os,
   <((c1; c2, st, ast, b))> -->i*_ds^^os <((cm, stm, astm, bm))> ->
   (exists st' ast' b' ds1 ds2 os1 os2,
@@ -502,6 +419,7 @@ Lemma multi_ideal_seq : forall c1 c2 cm st ast b stm astm bm ds os,
    <((c1, st, ast, b))> -->i*_ds^^os <((c', stm, astm, bm))>).
 Proof.
 Admitted.
+*)
 
 Lemma multi_ideal_add_snd_com : forall c st ast ct stt astt ds os c2 b bt,
   <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
@@ -510,234 +428,7 @@ Proof.
   intros. induction H; repeat econstructor; eauto.
 Qed.
 
-(* Should be similar to seq_big_to_small_step *)
-Lemma ideal_big_to_small_step : forall c st ast b stt astt bt ds os,
-  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  <((c, st, ast, b))> -->i*_ds^^os <((skip, stt, astt, bt))>.
-Proof.
-  intros c st ast b stt astt bt ds os Hbig. induction Hbig.
-  - (* Skip *) apply multi_ideal_refl.
-  - (* Asgn*)
-    replace ([] :dirs) with ([]++[] :dirs) by (apply app_nil_r).
-    replace ([] :obs) with ([]++[] :obs) by (apply app_nil_r).
-    eapply multi_ideal_trans.
-    + eapply ISM_Asgn. eapply H.
-    + apply multi_ideal_refl.
-  - (* Seq *)
-    remember Skip as c'. clear Hbig1. clear Hbig2.
-    induction IHHbig1; subst.
-    + eapply multi_ideal_trans; eauto.
-      econstructor.
-    + rewrite <- !app_assoc.
-      eapply multi_ideal_trans.
-      * econstructor. now apply H.
-      * apply IHIHHbig1; eauto.
-  - (* IF *)
-    replace (DStep:: ds) with ([DStep] ++ ds) by reflexivity.
-    eapply multi_ideal_trans.
-    + apply ISM_If.
-    + apply IHHbig.
-  - (* IF_F *)
-    replace (DForce:: ds) with ([DForce] ++ ds) by reflexivity.
-    eapply multi_ideal_trans.
-    + apply ISM_If_F.
-    + apply IHHbig.
-  - (* While *)
-    replace (ds) with ([]++ds) by reflexivity.
-    replace (os) with ([]++os) by reflexivity.
-    eapply multi_ideal_trans.
-    + eapply ISM_While.
-    + apply IHHbig.
-  - (* ARead *)
-    replace ([DStep]) with ([DStep]++[]) by (apply app_nil_r).
-    replace ([OARead a i]) with ([OARead a i]++[]) by (apply app_nil_r).
-    eapply multi_ideal_trans.
-    + eapply ISM_ARead; auto.
-    + apply multi_ideal_refl.
-  - (* AWrite *)
-    replace ([DStep]) with ([DStep]++[]) by (apply app_nil_r).
-    replace ([OAWrite a i]) with ([OAWrite a i]++[]) by (apply app_nil_r).
-    eapply multi_ideal_trans.
-    + eapply ISM_Write; auto.
-    + rewrite H. apply multi_ideal_refl.
-Qed.
-
-
-Lemma ideal_eval_one_step : forall c1 c2 st stm stt ast astm astt b bm bt ds1 ds2 os1 os2,
-  <((c1, st, ast, b))> -->i_ds1^^os1 <((c2, stm, astm, bm))> ->
-  |-i <(stm, astm, bm, ds2)> =[ c2 ]=> <(stt, astt, bt, os2)> ->
-  |-i <(st, ast, b, ds1++ds2)> =[ c1 ]=> <(stt, astt, bt, os1++os2)>.
-Proof.
-  intros c1 c2 st stm stt ast astm astt b bm bt ds1 ds2 os1 os2 Hsmall.
-  generalize dependent os2; generalize dependent ds2;
-  generalize dependent bt; generalize dependent astt;
-  generalize dependent stt.
-  induction Hsmall; intros stt' astt' bt' ds2 os2 Hbig.
-  - (* ISM_Asgn *)
-    inversion Hbig; subst; simpl in *. apply Ideal_Asgn; auto.
-  - (* ISM_Seq *)
-    inversion Hbig; subst; simpl in *. apply IHHsmall in H1.
-    replace (ds ++ ds1 ++ ds0) with ((ds ++ ds1) ++ ds0) by (rewrite app_assoc; auto).
-    replace (os ++ os1 ++ os0) with ((os ++ os1) ++ os0) by (rewrite app_assoc; auto).
-    eapply Ideal_Seq; eauto.
-  - (* ISM_Seq_Skip *)
-    eapply Ideal_Seq; eauto. apply Ideal_Skip.
-  - (* ISM_If *)
-    apply Ideal_If; auto.
-  - (* ISM_If_F *)
-    apply Ideal_If_F; auto.
-  - (* ISM_While *)
-    do 2 rewrite app_nil_l. apply Ideal_While. apply Hbig.
-  - (* ISM_ARead *)
-    inversion Hbig; subst; simpl in *. apply Ideal_ARead; auto.
-  - (* ISM_Write *)
-  inversion Hbig; subst; simpl in *. apply Ideal_Write; auto.
-Qed.
-
-Lemma ideal_eval_multi_steps : forall c1 c2 st stm stt ast astm astt b bm bt ds1 ds2 os1 os2,
-  <((c1, st, ast, b))> -->i*_ds1^^os1 <((c2, stm, astm, bm))> ->
-  |-i <(stm, astm, bm, ds2)> =[ c2 ]=> <(stt, astt, bt, os2)> ->
-  |-i <(st, ast, b, ds1++ds2)> =[ c1 ]=> <(stt, astt, bt, os1++os2)>.
-Proof.
-  intros. generalize dependent os2. generalize dependent ds2. induction H.
-  + intros. apply H0.
-  + intros. rewrite <- !app_assoc.
-    eapply ideal_eval_one_step; eauto.
-Qed.
-
-Lemma ideal_small_to_big_step : forall c st ast b stt astt bt ds os,
-  <((c, st, ast, b))> -->i*_ds^^os <((skip, stt, astt, bt))> ->
-  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)>.
-Proof.
-  intros c st ast b stt astt bt ds os Hsmall.
-  remember <{{skip}}> as ct eqn:Eqct. induction Hsmall; subst.
-  - apply Ideal_Skip.
-  - assert (L: <{{ skip }}> = <{{ skip }}>) by reflexivity.
-    apply IHHsmall in L. eapply ideal_eval_one_step; eauto.
-Qed.
-
 (** * Lemmas for the proof of [ideal_eval_relative_secure] *)
-
-Lemma ideal_eval_dirs : forall c st ast b ds stt astt bt os,
-  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  (forall d, In d ds -> d = DStep \/ d = DForce).
-Proof.
-  intros c sst ast b ds stt astt bt os Hev.
-  induction Hev; intros d Hin; simpl in Hin; try (now destruct Hin; auto).
-  - apply in_app_or in Hin as [Hds1 | Hds2]; auto.
-  - apply IHHev; auto.
-Qed.
-
-Lemma ideal_eval_spec_needs_force : forall c st ast ds stt astt os,
-  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, true, os)> ->
-  In DForce ds.
-Proof.
-  intros c st ast ds stt astt os Heval.
-  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-  induction Heval; subst; simpl; eauto; try discriminate.
-  apply in_or_app. destruct b'; eauto.
-Qed.
-
-Lemma ideal_eval_spec_bit_monotonic : forall c st ast ds stt astt bt os,
-  |-i <(st, ast, true, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  bt = true.
-Proof.
-  intros c st ast ds stt astt bt os Heval. remember true as b eqn:Eqb.
-  induction Heval; subst; eauto.
-Qed.
-
-Lemma ideal_eval_spec_eval_no_spec : forall c st ast ds stt astt os,
-  |-i <( st, ast, false, ds )> =[ c ]=> <( stt, astt, false, os )> ->
-    <( st, ast, false, ds )> =[ c ]=> <( stt, astt, false, os )>.
-Proof.
-  intros. remember false as b in H at 1. rewrite <- Heqb at 1. remember false as b' in H.
-  rewrite <- Heqb'.
-  induction H; try (now subst; econstructor; eauto).
-  + destruct b'; [apply ideal_eval_spec_bit_monotonic in H0|now econstructor;eauto].
-    now subst.
-  + apply ideal_eval_spec_bit_monotonic in H. now subst.
-Qed.
-
-Lemma ideal_eval_final_spec_bit_false : forall c st ast ds stt astt os ct,
-  <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, false))> ->
-  (forall d, In d ds -> d = DStep).
-Proof.
-(*
-  intros c st ast ds stt astt os Hev. remember false as b eqn:Eqb.
-  induction Hev; intros d Hin; subst; simpl in *; try (now destruct Hin; auto); auto.
-  - (* Seq *)
-    destruct b' eqn:Eqb'.
-    + apply ideal_eval_spec_bit_monotonic in Hev2. discriminate Hev2.
-    + apply in_app_or in Hin as [Hds1 | Hds2].
-      * apply IHHev1; auto.
-      * apply IHHev2; auto.
-  - apply ideal_eval_spec_bit_monotonic in Hev. discriminate Hev.
-Qed.
-*)
-Admitted.
-
-Lemma ideal_eval_spec_bit_deterministic :
-  forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
-    <(( c, st1, ast1, b ))> -->i*_ ds ^^ os1 <(( c1, stt1, astt1, bt1 ))> ->
-    <(( c, st2, ast2, b ))> -->i*_ ds ^^ os2 <(( c2, stt2, astt2, bt2 ))> ->
-    bt1 = bt2.
-Proof.
-  intros c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2 Hev1 Hev2.
-  destruct b eqn:Eqb.
-(*
-  - apply ideal_eval_spec_bit_monotonic in Hev1, Hev2. subst; auto.
-  - destruct bt1 eqn:Eqbt1; destruct bt2 eqn:Eqbt2; auto.
-    + apply ideal_eval_spec_needs_force in Hev1.
-      eapply ideal_eval_final_spec_bit_false in Hev1; eauto. inversion Hev1.
-    + apply ideal_eval_spec_needs_force in Hev2.
-      eapply ideal_eval_final_spec_bit_false in Hev2; eauto. inversion Hev2.
-*)
-Admitted.
-
-Lemma ideal_eval_obs_length : forall c st ast b ds stt astt bt os,
-  |-i <(st, ast, b, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  length ds = length os.
-Proof.
-  intros c st ast b ds stt astt bt os Hev. induction Hev; simpl; auto.
-  do 2 rewrite app_length. auto.
-Qed.
-
-Lemma ideal_eval_small_step_obs_length : forall c st ast b ds ct stt astt bt os,
-  <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
-  length ds = length os.
-Proof.
-  intros c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
-Qed.
-
-Lemma multi_ideal_obs_length : forall c st ast b ds ct stt astt bt os,
-  <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
-  length ds = length os.
-Proof.
-  intros c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
-  do 2 rewrite app_length. apply ideal_eval_small_step_obs_length in H.
-  auto.
-Qed.
-
-Lemma ideal_eval_small_step_spec_needs_force : forall c st ast ds ct stt astt os,
-  <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
-  In DForce ds.
-Proof.
-  intros c st ast ds ct stt astt os Hev.
-  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-  induction Hev; subst; simpl in *; try discriminate; auto.
-Qed.
-
-Lemma multi_ideal_spec_needs_force : forall c st ast ds ct stt astt os,
-  <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
-  In DForce ds.
-Proof.
-  intros c st ast ds ct stt astt os Hev.
-  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
-  induction Hev; subst; simpl in *; try discriminate.
-  apply in_or_app. destruct b' eqn:Eqb'.
-  - apply ideal_eval_small_step_spec_needs_force in H; auto.
-  - right. apply IHHev; auto.
-Qed.
 
 Lemma ideal_eval_small_step_spec_bit_monotonic : forall c st ast ds ct stt astt bt os,
   <((c, st, ast, true))> -->i_ds^^os <((ct, stt, astt, bt))> ->
@@ -770,6 +461,87 @@ Lemma multi_spec_spec_bit_monotonic : forall c st ast ds ct stt astt bt os,
 Proof.
   intros c st ast ds ct stt astt bt os Heval. remember true as b eqn:Eqb.
   induction Heval; subst; eauto. apply spec_eval_small_step_spec_bit_monotonic in H; subst.
+  auto.
+Qed.
+
+Lemma ideal_eval_final_spec_bit_false_one_step : forall c st ast ds stt astt os ct,
+  <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, false))> ->
+  (forall d, In d ds -> d = DStep).
+Proof.
+  intros. remember false as b. rewrite Heqb in H at 2. remember false as b'.
+  rewrite Heqb' in Heqb.
+  revert Heqb Heqb' d H0.
+  induction H; intros; (try discriminate); subst; try (now inversion H0).
+  + apply IHideal_eval_small_step; tauto.
+  + now invert H1.
+  + now invert H1.
+  + now invert H2.
+Qed.
+
+Lemma ideal_eval_final_spec_bit_false : forall c st ast ds stt astt os ct,
+  <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, false))> ->
+  (forall d, In d ds -> d = DStep).
+Proof.
+  intros. remember false as b. rewrite Heqb in H at 2. remember false as b'.
+  rewrite Heqb' in Heqb. revert Heqb Heqb' d H0.
+  induction H; intros; subst.
+  + now apply in_nil in H0.
+  + destruct b'. { now apply multi_ideal_spec_bit_monotonic in H0. }
+    apply in_app_iff in H1. destruct H1.
+    - eapply ideal_eval_final_spec_bit_false_one_step in H; eassumption.
+    - apply IHmulti_ideal; tauto.
+Qed.
+
+Lemma ideal_eval_small_step_spec_needs_force : forall c st ast ds ct stt astt os,
+  <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
+  In DForce ds.
+Proof.
+  intros c st ast ds ct stt astt os Hev.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
+  induction Hev; subst; simpl in *; try discriminate; auto.
+Qed.
+
+Lemma multi_ideal_spec_needs_force : forall c st ast ds ct stt astt os,
+  <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
+  In DForce ds.
+Proof.
+  intros c st ast ds ct stt astt os Hev.
+  remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
+  induction Hev; subst; simpl in *; try discriminate.
+  apply in_or_app. destruct b' eqn:Eqb'.
+  - apply ideal_eval_small_step_spec_needs_force in H; auto.
+  - right. apply IHHev; auto.
+Qed.
+
+Lemma ideal_eval_spec_bit_deterministic :
+  forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
+    <(( c, st1, ast1, b ))> -->i*_ ds ^^ os1 <(( c1, stt1, astt1, bt1 ))> ->
+    <(( c, st2, ast2, b ))> -->i*_ ds ^^ os2 <(( c2, stt2, astt2, bt2 ))> ->
+    bt1 = bt2.
+Proof.
+  intros c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2 Hev1 Hev2.
+  destruct b.
+  - apply multi_ideal_spec_bit_monotonic in Hev1, Hev2. congruence.
+  - destruct bt1, bt2; try reflexivity.
+    + apply multi_ideal_spec_needs_force in Hev1.
+      now eapply ideal_eval_final_spec_bit_false in Hev2; [|eassumption].
+    + apply multi_ideal_spec_needs_force in Hev2.
+      now eapply ideal_eval_final_spec_bit_false in Hev1; [|eassumption].
+Qed.
+
+Lemma ideal_eval_small_step_obs_length : forall c st ast b ds ct stt astt bt os,
+  <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+  length ds = length os.
+Proof.
+  intros c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
+Qed.
+
+Lemma multi_ideal_obs_length : forall c st ast b ds ct stt astt bt os,
+  <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  length ds = length os.
+Proof.
+  intros c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
+  do 2 rewrite app_length. apply ideal_eval_small_step_obs_length in H.
   auto.
 Qed.
 
@@ -947,10 +719,10 @@ Proof.
   + invert H. eapply IHideal_eval_small_step in H1. destruct H1.
     repeat econstructor; assumption.
   + split; [|now invert H]. apply ISM_Seq_Skip.
-  + invert H. destruct H1. split; [|now destruct (negb b && beval st be)].
-    erewrite <- beval_unused_update; [|eassumption]. constructor.
-  + invert H. destruct H1. split; [|now destruct (negb b && beval st be)].
-    erewrite <- beval_unused_update; [|eassumption]. constructor.
+  + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto].
+    now rewrite beval_unused_update.
+  + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto].
+    now rewrite beval_unused_update.
   + invert H. now repeat constructor.
   + invert H. repeat constructor. rewrite t_update_permute; [constructor|assumption].
     { now rewrite aeval_unused_update. } assumption.
@@ -974,6 +746,50 @@ Lemma ideal_unused_update : forall st ast b ds c c' st' ast' b' os X n,
 Proof.
   intros. rewrite <- (t_update_same _ st X) at 1.
   eapply ideal_unused_overwrite with (X:=X) (n:=(st X)) in H0; [|assumption].
+  now rewrite !t_update_shadow in H0.
+Qed.
+
+Lemma spec_unused_overwrite_one_step : forall st ast b ds c c' st' ast' b' os X n,
+  unused X c ->
+  <((c, st, ast, b))> -->_ds^^os <((c', st', ast', b'))> ->
+  <((c, X !-> n; st, ast, b))> -->_ds^^os <((c', X !-> n; st', ast', b'))> /\ unused X c'.
+Proof.
+  intros. induction H0.
+  + invert H. repeat econstructor; [|assumption..].
+    rewrite t_update_permute; [constructor|assumption].
+    now apply aeval_unused_update.
+  + invert H. eapply IHspec_eval_small_step in H1. destruct H1.
+    repeat econstructor; assumption.
+  + split; [|now invert H]. apply SpecSM_Seq_Skip.
+  + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto].
+    now rewrite beval_unused_update.
+  + destruct H, H2. split; [|now destruct b'; subst]. constructor; [|tauto].
+    now rewrite beval_unused_update.
+  + invert H. now repeat constructor.
+  + invert H. repeat constructor. rewrite t_update_permute; [constructor|assumption].
+    { now rewrite aeval_unused_update. } assumption.
+  + invert H. repeat constructor. rewrite t_update_permute; [|tauto]. now constructor; [apply aeval_unused_update|..].
+  + invert H. now repeat constructor; [apply aeval_unused_update..|].
+  + invert H. now repeat constructor; [apply aeval_unused_update..| |].
+Qed.
+
+Lemma spec_unused_overwrite : forall st ast b ds c c' st' ast' b' os X n,
+  unused X c ->
+  <((c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  <((c, X !-> n; st, ast, b))> -->*_ds^^os <((c', X !-> n; st', ast', b'))>.
+Proof.
+  intros. induction H0; [constructor|].
+  eapply spec_unused_overwrite_one_step in H0; [|eassumption]. destruct H0.
+  econstructor; [eassumption|tauto].
+Qed.
+
+Lemma spec_unused_update : forall st ast b ds c c' st' ast' b' os X n,
+  unused X c ->
+  <((c, X !-> n; st, ast, b))> -->*_ds^^os <((c', X !-> n; st', ast', b'))> ->
+  <((c, st, ast, b))> -->*_ds^^os <((c', X !-> st X; st', ast', b'))>.
+Proof.
+  intros. rewrite <- (t_update_same _ st X) at 1.
+  eapply spec_unused_overwrite with (X:=X) (n:=(st X)) in H0; [|assumption].
   now rewrite !t_update_shadow in H0.
 Qed.
 
@@ -1031,764 +847,250 @@ Proof.
  rewrite Hflag in Heqb; simpl in Heqb; discriminate.
 Qed.
 
-Lemma ultimate_slh_flag_big_step : forall c ds st ast (b:bool) st' ast' (b':bool) os,
+Lemma ultimate_slh_fcc_one_step : forall c st ast (b b' : bool) c' st' ast' ds os,
+  nonempty_arrs ast ->
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
-  <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
-  st' "b" = (if b' then 1 else 0).
+  <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
+  exists c'',
+  <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c'', "b" !-> (if b' then 1 else 0); st', ast', b'))>.
 Proof.
-  intros c ds.
-  apply prog_size_ind with (c:=c) (ds:=ds); clear c ds.
-  destruct c; simpl; intros.
-  + now inversion H2; subst.
-  + inversion H2; subst. now rewrite t_update_neq.
-  + inversion H2; subst. eapply H; [..|apply H14].
-    { prog_size_auto. } { now destruct H0. }
-    eapply H; [..|apply H1|apply H5].
-    { prog_size_auto. } now destruct H0.
-  + inversion H2; subst.
-    - simpl in H14. destruct b.
-      * rewrite H1 in H14. simpl in H14.
-        inversion H14; subst.
-        eapply H; [..|apply H15].
-        { prog_size_auto. } { now destruct H0. }
-        inversion H5; subst. rewrite t_update_eq.
-        simpl. now rewrite H1.
-      * rewrite H1 in H14. simpl in H14.
-        destruct (beval st be) eqn:Heq; inversion H14; subst; (eapply H; [..|apply H15]; [prog_size_auto|now destruct H0|]).
-        all: inversion H5; subst. all:rewrite t_update_eq; simpl.
-        all:now rewrite H1, Heq.
-    - simpl in H14. destruct b.
-      * rewrite H1 in H14. simpl in H14.
-        inversion H14; subst.
-        eapply H; [..|apply H15].
-        { prog_size_auto. } { now destruct H0. }
-        inversion H5; subst. rewrite t_update_eq.
-        simpl. now rewrite H1.
-      * rewrite H1 in H14. simpl in H14.
-        destruct (beval st be) eqn:Heq; inversion H14; subst; (eapply H; [..|apply H15]; [prog_size_auto|now destruct H0|]).
-        all: inversion H5; subst. all:rewrite t_update_eq; simpl.
-        all:now rewrite H1, Heq.
-  + inversion H2; subst; clear H2.
-    inversion H5; subst; clear H5.
-    inversion H13; subst; clear H13.
-    - destruct b.
-      * simpl in H15. rewrite H1 in H15.
-        simpl in H15. inversion H15; subst; clear H15.
-        inversion H14; subst; clear H14.
-        rewrite t_update_eq. simpl. now rewrite H1.
-      * simpl in H15. rewrite H1 in H15. destruct (beval st be) eqn:Heq.
-        ++ simpl in H15. inversion H15; subst; clear H15.
-           inversion H4; subst; clear H4.
-           inversion H5; subst; clear H5.
-           assert (Hwhile : <( st'1, ast'1, b'1, ds0++ds2 )> =[ ultimate_slh <{{ while be do c end }}> ]=> <( st', ast', b', os3++os2 )>).
-           { simpl. inversion H14; subst; clear H14. inversion H13; subst; clear H13. econstructor.
-             + econstructor. apply H12.
-             + now constructor. }
-           eapply H; [..|apply Hwhile]. { prog_size_auto. } { now destruct H0. }
-           eapply H; [..|apply H16]. { prog_size_auto. } { now destruct H0. }
-           rewrite t_update_eq. simpl. now rewrite H1, Heq.
-        ++ simpl in H15. inversion H15; subst; clear H15.
-           inversion H14; subst; clear H14. rewrite t_update_eq. simpl. now rewrite H1, Heq.
-    - assert (b'0 = true) by (eapply speculation_bit_monotonic; eauto); subst.
-      assert (b' = true) by (eapply speculation_bit_monotonic; eauto); subst.
-      simpl in H15. destruct b.
-      * rewrite H1 in H15. simpl in H15. inversion H15; subst; clear H15.
-        inversion H4; subst; clear H4.
-        inversion H5; subst; clear H5.
-        assert (b' = true) by (eapply speculation_bit_monotonic; eauto); subst.
-        assert (Hwhile : <( st'1, ast'1, true, ds0++ds2 )> =[ ultimate_slh <{{ while be do c end }}> ]=> <( st', ast', true, os3++os2 )>).
-        { simpl. inversion H14; subst; clear H14. inversion H13; subst; clear H13. econstructor.
-          + econstructor. apply H12.
-          + now constructor. }
-        erewrite H; [..|apply Hwhile]. { reflexivity. } { prog_size_auto. } { now destruct H0. }
-        eapply H; [..|apply H16]. { prog_size_auto. } { now destruct H0. }
-        rewrite t_update_eq. simpl. now rewrite H1.
-      * simpl in H15. rewrite H1 in H15. destruct (beval st be) eqn:Heq.
-        ++ simpl in H15. inversion H15; subst; clear H15.
-           inversion H14; subst; clear H14. rewrite t_update_eq. simpl. now rewrite H1, Heq.
-        ++ simpl in H15. inversion H15; subst; clear H15.
-           inversion H4; subst; clear H4.
-           inversion H5; subst; clear H5.
-           assert (b' = true) by (eapply speculation_bit_monotonic; eauto); subst.
-           assert (Hwhile : <( st'1, ast'1, true, ds0++ds2 )> =[ ultimate_slh <{{ while be do c end }}> ]=> <( st', ast', true, os3++os2 )>).
-           { simpl. inversion H14; subst; clear H14. inversion H13; subst; clear H13. econstructor.
-             + econstructor. apply H12.
-             + now constructor. }
-           erewrite H; [..|apply Hwhile]. { reflexivity. } { prog_size_auto. } { now destruct H0. }
-           eapply H; [..|apply H16]. { prog_size_auto. } { now destruct H0. }
-           rewrite t_update_eq. simpl. now rewrite H1, Heq.
-  + inversion H2; subst; now rewrite t_update_neq.
-  + now inversion H2; subst.
-Qed.
+Abort.
 
-Lemma ultimate_slh_flag : forall c ds st ast (b : bool) st' ast' b' os c',
+Lemma ultimate_slh_fcc : forall c st ast (b b' : bool) c' st' ast' ds os,
+  nonempty_arrs ast ->
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
-  <(((ultimate_slh c), st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-  st' "b" = (if b' then 1 else 0).
+  <((c, st, ast, b))> -->i*_ds^^os <((c', st', ast', b'))> ->
+  exists c'',
+  <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c'', "b" !-> (if b' then 1 else 0); st', ast', b'))>.
 Proof.
-Admitted.
-(*
-  apply prog_size_ind. unfold ultimate_slh_flag_prop.
-  destruct c; simpl; intros.
-  + now inversion H2; subst.
-  + inversion H2; subst. now rewrite t_update_neq.
-  + inversion H2; subst. eapply H; [..|apply H14].
-    { prog_size_auto. } { now destruct H0. }
-    eapply H; [..|apply H1|apply H5].
-    { prog_size_auto. } now destruct H0.
-  + inversion H2; subst.
-    - simpl in H14. destruct b.
-      * rewrite H1 in H14. simpl in H14.
-        inversion H14; subst.
-        eapply H; [..|apply H15].
-        { prog_size_auto. } { now destruct H0. }
-        inversion H5; subst. rewrite t_update_eq.
-        simpl. now rewrite H1.
-      * rewrite H1 in H14. simpl in H14.
-        destruct (beval st be) eqn:Heq; inversion H14; subst; (eapply H; [..|apply H15]; [prog_size_auto|now destruct H0|]).
-        all: inversion H5; subst. all:rewrite t_update_eq; simpl.
-        all:now rewrite H1, Heq.
-    - simpl in H14. destruct b.
-      * rewrite H1 in H14. simpl in H14.
-        inversion H14; subst.
-        eapply H; [..|apply H15].
-        { prog_size_auto. } { now destruct H0. }
-        inversion H5; subst. rewrite t_update_eq.
-        simpl. now rewrite H1.
-      * rewrite H1 in H14. simpl in H14.
-        destruct (beval st be) eqn:Heq; inversion H14; subst; (eapply H; [..|apply H15]; [prog_size_auto|now destruct H0|]).
-        all: inversion H5; subst. all:rewrite t_update_eq; simpl.
-        all:now rewrite H1, Heq.
-  + inversion H2; subst; clear H2.
-    inversion H5; subst; clear H5.
-    inversion H13; subst; clear H13.
-    - destruct b.
-      * simpl in H15. rewrite H1 in H15.
-        simpl in H15. inversion H15; subst; clear H15.
-        inversion H14; subst; clear H14.
-        rewrite t_update_eq. simpl. now rewrite H1.
-      * simpl in H15. rewrite H1 in H15. destruct (beval st be) eqn:Heq.
-        ++ simpl in H15. inversion H15; subst; clear H15.
-           inversion H4; subst; clear H4.
-           inversion H5; subst; clear H5.
-           assert (Hwhile : <( st'1, ast'1, b'1, ds0++ds2 )> =[ ultimate_slh <{{ while be do c end }}> ]=> <( st', ast', b', os3++os2 )>).
-           { simpl. inversion H14; subst; clear H14. inversion H13; subst; clear H13. econstructor.
-             + econstructor. apply H12.
-             + now constructor. }
-           eapply H; [..|apply Hwhile]. { prog_size_auto. } { now destruct H0. }
-           eapply H; [..|apply H16]. { prog_size_auto. } { now destruct H0. }
-           rewrite t_update_eq. simpl. now rewrite H1, Heq.
-        ++ simpl in H15. inversion H15; subst; clear H15.
-           inversion H14; subst; clear H14. rewrite t_update_eq. simpl. now rewrite H1, Heq.
-    - assert (b'0 = true) by (eapply speculation_bit_monotonic; eauto); subst.
-      assert (b' = true) by (eapply speculation_bit_monotonic; eauto); subst.
-      simpl in H15. destruct b.
-      * rewrite H1 in H15. simpl in H15. inversion H15; subst; clear H15.
-        inversion H4; subst; clear H4.
-        inversion H5; subst; clear H5.
-        assert (b' = true) by (eapply speculation_bit_monotonic; eauto); subst.
-        assert (Hwhile : <( st'1, ast'1, true, ds0++ds2 )> =[ ultimate_slh <{{ while be do c end }}> ]=> <( st', ast', true, os3++os2 )>).
-        { simpl. inversion H14; subst; clear H14. inversion H13; subst; clear H13. econstructor.
-          + econstructor. apply H12.
-          + now constructor. }
-        erewrite H; [..|apply Hwhile]. { reflexivity. } { prog_size_auto. } { now destruct H0. }
-        eapply H; [..|apply H16]. { prog_size_auto. } { now destruct H0. }
-        rewrite t_update_eq. simpl. now rewrite H1.
-      * simpl in H15. rewrite H1 in H15. destruct (beval st be) eqn:Heq.
-        ++ simpl in H15. inversion H15; subst; clear H15.
-           inversion H14; subst; clear H14. rewrite t_update_eq. simpl. now rewrite H1, Heq.
-        ++ simpl in H15. inversion H15; subst; clear H15.
-           inversion H4; subst; clear H4.
-           inversion H5; subst; clear H5.
-           assert (b' = true) by (eapply speculation_bit_monotonic; eauto); subst.
-           assert (Hwhile : <( st'1, ast'1, true, ds0++ds2 )> =[ ultimate_slh <{{ while be do c end }}> ]=> <( st', ast', true, os3++os2 )>).
-           { simpl. inversion H14; subst; clear H14. inversion H13; subst; clear H13. econstructor.
-             + econstructor. apply H12.
-             + now constructor. }
-           erewrite H; [..|apply Hwhile]. { reflexivity. } { prog_size_auto. } { now destruct H0. }
-           eapply H; [..|apply H16]. { prog_size_auto. } { now destruct H0. }
-           rewrite t_update_eq. simpl. now rewrite H1, Heq.
-  + inversion H2; subst; now rewrite t_update_neq.
-  + now inversion H2; subst.
-Qed.
-*)
+Abort.
 
-Lemma ultimate_slh_bcc_big_step : forall c ds st ast (b: bool) st' ast' b' os,
-    nonempty_arrs ast ->
-    unused "b" c ->
-    st "b" = (if b then 1 else 0) ->
-    <(st, ast, b, ds)> =[ ultimate_slh c ]=> <(st', ast', b', os)> ->
-    |-i <(st, ast, b, ds)> =[ c ]=> <("b" !-> st "b"; st', ast', b', os)>.
+
+Ltac solve_refl :=
+  match goal with
+  | Heq : beval ?ST _ = _, st_b : ?ST "b" = _ |- _ => simpl; eexists; (split; [|discriminate]); (try rewrite !app_nil_l); (try (eapply multi_ideal_trans_nil_l; [constructor|]));
+          (eapply multi_ideal_trans_nil_r; [|constructor]); simpl; rewrite ?Heq, ?st_b; simpl;
+          rewrite <- ?st_b, ?t_update_shadow, !t_update_same, ?andb_false_r; now (constructor; try rewrite Heq, andb_false_r)
+  end.
+
+Ltac fold_cons :=
+  repeat match goal with
+  | |- context [?A :: ?B] =>
+    lazymatch B with
+    | [] => fail
+    | _ => change (A :: B) with ([A] ++ B)
+    end
+  end.
+
+Ltac com_step :=
+  repeat ((try now apply multi_ideal_refl); (try now apply multi_spec_refl);
+  lazymatch goal with
+  | |- <(( <{{ skip; _ }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => eapply multi_ideal_trans_nil_l; [now apply ISM_Seq_Skip|]
+  | |- <(( <{{ _; ?C }}>, _, _, _ ))> -->i*_ _^^_ <(( <{{ _; ?C }}>, _, _, _ ))> => apply multi_ideal_add_snd_com; eassumption
+  | |- <(( <{{ _; _ }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com; eassumption|]
+  | |- <(( <{{ if _ then _ else _ end }}>, _, _, _ ))> -->i*_ [_]^^[_] <(( _, _, _, _ ))> => eapply multi_ideal_trans_nil_r; [|now constructor]
+  | Heq : beval _ _ = _ |- <(( <{{ if _ then _ else _ end }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> =>
+    fold_cons; econstructor; [constructor; [(try now rewrite Heq); now rewrite andb_comm, Heq|reflexivity]|]
+  | |- <(( <{{ if _ then _ else _ end }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => fold_cons; econstructor; [now constructor|]
+  | |- <(( <{{ while _ do _ end }}>, _, _, _ ))> -->i*_ _^^_ <(( _, _, _, _ ))> => eapply multi_ideal_trans_nil_l; [now constructor|]
+  | |- _ => now constructor
+  end).
+
+Lemma ultimate_slh_bcc : forall c ds st ast (b b' : bool) c' st' ast' os,
+  nonempty_arrs ast ->
+  unused "b" c ->
+  st "b" = (if b then 1 else 0) ->
+  <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  exists c'', <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
 Proof.
-  intros c ds. apply prog_size_ind with (c := c) (ds:=ds). clear c ds.
-  intros c ds IH st ast b st' ast' b' os Hast Hunused Hstb Heval.
-  destruct c; simpl in *; inversion Heval; subst; clear Heval.
-  - (* Skip *)
-    rewrite t_update_same. apply Ideal_Skip.
+  intros.
+  assert (H':exists c'', <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))> /\
+                      (c' = Skip -> c'' = Skip /\ (st' "b" = if b' then 1 else 0))).
+  2:destruct H' as (c''&H1'&_); eexists; eassumption.
+  revert st ast b b' c' st' ast' os H H0 H1 H2.
+  apply prog_size_ind with (c:=c) (ds:=ds). clear.
+  intros c ds IH. intros until os. intros ast_arrs unused_c st_b st_st'.
+  invert st_st'.
+  { rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
+    split; [|tauto]. now destruct c; try discriminate. }
+  destruct c; simpl in *; invert H.
   - (* Asgn *)
-    rewrite t_update_permute; [| tauto].
-    rewrite t_update_same.
-    constructor. reflexivity.
-  - (* Seq *)
-    eapply Ideal_Seq.
-    + apply IH in H1; try tauto.
-      * eassumption.
-      * prog_size_auto.
-    + apply ultimate_slh_flag_big_step in H1 as Hstb'0; try tauto.
-      apply IH in H10; try tauto.
-      * apply ideal_small_to_big_step. apply ideal_big_to_small_step in H10.
-        replace st'0 with ("b" !-> st'0 "b"; "b" !-> st"b"; st'0) in H10 at 1.
-        { eapply ideal_unused_update in H10; tauto. }
-        now rewrite t_update_shadow, t_update_same.
-      * prog_size_auto.
-      * eapply spec_big_to_small_step, spec_eval_preserves_nonempty_arrs in H1; auto.
-  (* IF *)
-  - (* non-speculative *)
-    simpl in *. destruct (st "b" =? 0)%nat eqn:Eqstb; simpl in *.
-    + (* true *)
-      destruct (beval st be) eqn:Eqbe; simpl in H10;
-      inversion H10; inversion H1; subst; clear H10; clear H1; simpl in *;
-      eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
-      * replace (OBranch true) with (OBranch (negb b'0 && beval st be))
-          by (rewrite Eqbe; rewrite Hbit; reflexivity).
-        rewrite Eqbe, Eqstb in H11; simpl in H11. rewrite t_update_same in H11.
-        apply Ideal_If. rewrite <- app_nil_l. rewrite Eqbe; subst; simpl.
-        apply IH in H11; try tauto. prog_size_auto.
-      * replace (OBranch false) with (OBranch (negb b'0 && beval st be))
-          by (rewrite Eqbe, Hbit; reflexivity).
-        rewrite Eqbe, Eqstb in H11; simpl in H11. rewrite t_update_same in H11.
-        apply Ideal_If. rewrite <- app_nil_l. rewrite Eqbe; subst; simpl.
-        apply IH in H11; try tauto. prog_size_auto.
-    + (* false *)
-      inversion H10; inversion H1; subst; clear H10; clear H1; simpl in *.
-      rewrite Eqstb in H11; simpl in H11. rewrite t_update_same in H11.
-      eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
-      replace (OBranch false) with (OBranch (negb b'0 && beval st be))
-        by (rewrite Hbit; reflexivity).
-      apply Ideal_If. rewrite <- app_nil_l. subst; simpl.
-      apply IH in H11; try tauto. prog_size_auto.
-  - (* speculative *)
-    simpl in *. destruct (st "b" =? 0)%nat eqn:Eqstb; simpl in *.
-    + (* true *)
-      destruct (beval st be) eqn:Eqbe; simpl in H10;
-      inversion H10; inversion H1; subst; clear H10; clear H1; simpl in *;
-      eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
-      * replace (OBranch true) with (OBranch (negb b && beval st be))
-          by (rewrite Eqbe, Hbit; reflexivity).
-        rewrite Eqbe, Eqstb in H11; simpl in H11.
-        apply Ideal_If_F. rewrite <- app_nil_l. rewrite Eqbe; subst; simpl.
-        apply IH in H11; try tauto.
-        { rewrite t_update_eq in H11.
-          apply ideal_small_to_big_step. apply ideal_big_to_small_step in H11.
-          eapply ideal_unused_update in H11; tauto. }
-        { prog_size_auto. }
-      * replace (OBranch false) with (OBranch (negb b && beval st be))
-          by (rewrite Eqbe, Hbit; reflexivity).
-        rewrite Eqbe, Eqstb in H11; simpl in H11.
-        apply Ideal_If_F. rewrite <- app_nil_l. rewrite Eqbe; subst; simpl.
-        apply IH in H11; try tauto.
-        { rewrite t_update_eq in H11.
-          apply ideal_small_to_big_step. apply ideal_big_to_small_step in H11.
-          eapply ideal_unused_update in H11; tauto. }
-        { prog_size_auto. }
-    + (* false *)
-      inversion H10; inversion H1; subst; clear H10; clear H1; simpl in *.
-      rewrite Eqstb in H11; simpl in H11.
-      eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
-      replace (OBranch false) with (OBranch (negb b && beval st be))
-        by (rewrite Hbit; reflexivity).
-      apply Ideal_If_F. rewrite <- app_nil_l. subst; simpl.
-      apply IH in H11; try tauto.
-      { rewrite t_update_eq in H11.
-        apply ideal_small_to_big_step. apply ideal_big_to_small_step in H11.
-        eapply ideal_unused_update in H11; tauto. }
-      { prog_size_auto. }
-  - (* While *)
-    eapply Ideal_While.
-    inversion H1; subst; clear H1.
-    inversion H11; subst; clear H11; simpl in *.
-    + (* non-speculative *)
-      assert(Lnil: os2 = [] /\ ds2 = []).
-      { inversion H10; subst; eauto. }
-      destruct Lnil; subst; simpl. do 2 rewrite app_nil_r.
-      destruct (st "b" =? 0)%nat eqn:Eqstb; simpl in *.
-      * destruct (beval st be) eqn:Eqbe;
-        inversion H12; subst; clear H12.
-        { assert(Hwhile: <(st'1, ast'1, b'1, ds2)>
-              =[ ultimate_slh <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
-          { simpl. replace ds2 with (ds2 ++ [])%list by (rewrite app_nil_r; reflexivity).
-            replace os2 with (os2 ++ [])%list by (apply app_nil_r).
-            eapply Spec_Seq; eassumption. }
-          clear H11; clear H10.
-          eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
-          replace (OBranch true) with (OBranch (negb b && beval st be))
-            by (rewrite Eqbe, Hbit; reflexivity).
-          apply Ideal_If. rewrite Eqbe; subst; simpl.
-          apply (Ideal_Seq _ _ _ _ _ ("b" !-> st "b"; st'1) ast'1 b'1 _ _ _ os1).
-          - inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
-            rewrite <- app_nil_r. rewrite Eqbe, Eqstb in H11; simpl in H11.
-            rewrite t_update_same in H11. apply IH in H11; try tauto.
-            + rewrite app_nil_r. auto.
-            + prog_size_auto.
-          - apply IH in Hwhile; try tauto.
-            + apply ideal_small_to_big_step. apply ideal_big_to_small_step in Hwhile.
-              erewrite <- t_update_same, <- t_update_shadow in Hwhile at 1.
-              apply ideal_unused_update in Hwhile; eauto. rewrite t_update_eq in Hwhile; eauto.
-            + prog_size_auto.
-            + eapply spec_big_to_small_step, spec_eval_preserves_nonempty_arrs in H1; auto.
-            + auto.
-            + inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
-              rewrite Eqbe, Eqstb in H11; simpl in H11. rewrite t_update_same in H11.
-              apply ultimate_slh_flag_big_step in H11; try tauto. }
-        { eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
-          replace (OBranch false) with (OBranch (negb b'0 && beval st'0 be))
-            by (rewrite Hbit, Eqbe; reflexivity).
-          apply Ideal_If. rewrite Eqbe; subst; simpl.
-          inversion H10; subst; clear H10; simpl in *. rewrite Eqbe, Eqstb; simpl.
-          rewrite t_update_shadow. rewrite t_update_same. apply Ideal_Skip. }
-      * eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
-        replace (OBranch false) with (OBranch (negb b && beval st be))
-          by (rewrite Hbit; reflexivity).
-        apply Ideal_If. subst; simpl.
-        inversion H12; subst; clear H12.
-        inversion H10; subst; clear H10; simpl in *.
-        rewrite Eqstb; simpl. rewrite t_update_shadow. rewrite t_update_same.
-        apply Ideal_Skip.
-    + (* non-speculative *)
-      assert(Lnil: os2 = [] /\ ds2 = []).
-      { inversion H10; subst; eauto. }
-      destruct Lnil; subst; simpl. do 2 rewrite app_nil_r.
-      destruct (st "b" =? 0)%nat eqn:Eqstb; simpl in *.
-      * destruct (beval st be) eqn:Eqbe;
-        inversion H12; subst; clear H12.
-        { eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
-          replace (OBranch true) with (OBranch (negb b && beval st'0 be))
-            by (rewrite Hbit, Eqbe; reflexivity).
-          apply Ideal_If_F. rewrite Eqbe; subst; simpl.
-          inversion H10; subst; clear H10; simpl in *.
-          rewrite Eqstb; simpl. rewrite t_update_shadow. rewrite t_update_same.
-          apply Ideal_Skip. }
-        { assert(Hwhile: <(st'1, ast'1, b'1, ds2)>
-              =[ ultimate_slh <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
-          { simpl. replace ds2 with (ds2 ++ [])%list by (apply app_nil_r).
-            replace os2 with (os2++[])%list by (apply app_nil_r).
-            eapply Spec_Seq; eassumption. }
-          clear H11; clear H10.
-          eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
-          replace (OBranch false) with (OBranch (negb b && beval st be))
-            by (rewrite Eqbe, Hbit; reflexivity).
-          apply Ideal_If_F. rewrite Eqbe; subst; simpl.
-          apply (Ideal_Seq _ _ _ _ _ ("b" !-> st "b"; st'1) ast'1 b'1 _ _ _ os1).
-          - inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
-            rewrite Eqbe, Eqstb in H11; simpl in H11.
-            apply IH in H11; try tauto.
-            + apply ideal_big_to_small_step in H11. apply ideal_small_to_big_step.
-              eapply ideal_unused_update in H11; tauto.
-            + prog_size_auto.
-          - apply IH in Hwhile; try tauto.
-            + apply ideal_small_to_big_step. apply ideal_big_to_small_step in Hwhile.
-              erewrite <- t_update_same, <- t_update_shadow in Hwhile at 1.
-              apply ideal_unused_update in Hwhile; eauto. rewrite t_update_eq in Hwhile; eauto.
-            + prog_size_auto.
-            + eapply spec_big_to_small_step, spec_eval_preserves_nonempty_arrs in H1; auto.
-            + auto.
-            + inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
-              rewrite Eqbe, Eqstb in H11; simpl in H11.
-              apply ultimate_slh_flag_big_step in H11; try tauto. }
-      * inversion H12; subst; clear H12.
-        assert(Hwhile: <(st'1, ast'1, b'1, ds2)>
-              =[ ultimate_slh <{{while be do c end}}> ]=> <(st', ast', b', os2)> ).
-          { simpl. replace ds2 with (ds2 ++ [])%list by (apply app_nil_r).
-            replace os2 with (os2++[])%list by (apply app_nil_r).
-            eapply Spec_Seq; eassumption. }
-          clear H11; clear H10.
-          eapply flag_zero_check_spec_bit in Hstb as Hbit; eauto; simpl in Hbit.
-          replace (OBranch false) with (OBranch (negb b && beval st be))
-            by (rewrite Hbit; reflexivity).
-          apply Ideal_If_F. subst; simpl.
-          apply (Ideal_Seq _ _ _ _ _ ("b" !-> st "b"; st'1) ast'1 b'1 _ _ _ os1).
-          { inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
-            rewrite Eqstb in H11; simpl in H11.
-            apply IH in H11; try tauto.
-            - rewrite t_update_eq in H11.
-              apply ideal_big_to_small_step in H11. apply ideal_small_to_big_step.
-              eapply ideal_unused_update in H11; tauto.
-            -  prog_size_auto. }
-          { apply IH in Hwhile; try tauto.
-            - apply ideal_small_to_big_step. apply ideal_big_to_small_step in Hwhile.
-              erewrite <- t_update_same, <- t_update_shadow in Hwhile at 1.
-              apply ideal_unused_update in Hwhile; eauto. rewrite t_update_eq in Hwhile; eauto.
-            - prog_size_auto.
-            - eapply spec_big_to_small_step, spec_eval_preserves_nonempty_arrs in H1; auto.
-            - auto.
-            - inversion H1; subst; clear H1; inversion H2; subst; clear H2; simpl in *.
-              rewrite Eqstb in H11; simpl in H11.
-              apply ultimate_slh_flag_big_step in H11; try tauto. }
-  - (* ARead *)
-    simpl in H11. destruct (st "b" =? 1)%nat eqn:Eqstb;
-    eapply flag_one_check_spec_bit in Hstb as Hbit; eauto; simpl in *;
-    rewrite Eqstb in *.
-    + rewrite t_update_permute; [| tauto]. rewrite t_update_same.
-      apply Ideal_ARead; auto. rewrite Hbit. reflexivity.
-    + rewrite t_update_permute; [| tauto]. rewrite t_update_same.
-      apply Ideal_ARead; auto. rewrite Hbit. reflexivity.
-  - (* ARead; contradiction *) simpl in H11. rewrite Hstb in H11; simpl in H11.
-    specialize (Hast a). apply lt_neq in Hast. apply le_0_r in H11.
-    exfalso; auto.
-  - (* AWrite *)
-    simpl in H12. destruct (st' "b" =? 1)%nat eqn:Eqstb;
-    eapply flag_one_check_spec_bit in Hstb as Hbit; eauto; simpl in *;
-    rewrite Eqstb in *.
-    + rewrite t_update_same. apply Ideal_Write; auto.
-      rewrite Hbit. reflexivity.
-    + rewrite t_update_same. apply Ideal_Write; auto.
-      rewrite Hbit. reflexivity.
-  - (* AWrite; contradiction *) simpl in H12. rewrite Hstb in H12; simpl in H12.
-    specialize (Hast a). apply lt_neq in Hast. apply le_0_r in H12.
-    exfalso; auto.
-Qed.
-
-Definition ultimate_slh_bcc_prop (c: com) (ds :dirs) :Prop :=
-  forall st ast (b: bool) st' ast' b' os c',
-    nonempty_arrs ast ->
-    unused "b" c ->
-    st "b" = (if b then 1 else 0) ->
-    <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-    exists c'',
-    <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
-
-Lemma ultimate_slh_bcc : forall c ds,
-  ultimate_slh_bcc_prop c ds.
-Proof.
-  apply prog_size_ind. unfold ultimate_slh_bcc_prop.
-  intros c ds IH st ast b st' ast' b' os c' Hast Hunused Hstb Heval.
-  inversion Heval; subst; clear Heval.
-  { rewrite t_update_same. eexists. apply multi_ideal_refl. }
-  destruct c; simpl in *; inversion H; subst; clear H.
-  - (* Asgn *)
-    inversion H0; subst; clear H0; [| now inversion H].
-    eexists. eapply multi_ideal_trans.
+    invert H0; [|now inversion H].
+    eexists. split; [eapply multi_ideal_trans|split; [tauto|] ].
     + apply ISM_Asgn. reflexivity.
     + rewrite t_update_permute; [| tauto].
       rewrite t_update_same. apply multi_ideal_refl.
+    + rewrite t_update_neq; tauto.
   - (* Seq *)
     eapply multi_spec_seq in H0.
     destruct H0.
-    + do 8 destruct H. destruct H0. destruct H1. subst.
-      apply spec_big_to_small_step in H1.
+    + do 8 destruct H. destruct H0, H1. subst.
       eapply multi_spec_trans in H12; [|apply H1]. clear H1.
-      remember H12 as H; clear HeqH.
-      apply spec_small_to_big_step in H12.
-      eapply ultimate_slh_bcc_big_step in H12; [|destruct Hunused; assumption..].
-      apply ideal_big_to_small_step in H12.
+      eapply IH in H12; [|prog_size_auto|tauto..].
+      destruct H12 as (c''&st_x&->&Hx); [reflexivity|].
       eapply IH in H2.
-      { destruct H2. exists x6. rewrite !app_assoc.
-        eapply multi_ideal_combined_executions with (cm:=<{{skip; c2}}>); [apply multi_ideal_add_snd_com; eauto|].
-        rewrite <- app_nil_l with (l:=x3). rewrite <- app_nil_l with (l:=x5).
-        eapply multi_ideal_trans; [apply ISM_Seq_Skip|].
-        erewrite <- t_update_same, <- t_update_shadow in H0 at 1.
-        apply ideal_unused_update in H0; try tauto. rewrite t_update_eq in H0; eauto. }
+      { destruct H2, H. exists x6. split; [|tauto]. rewrite !app_assoc. com_step.
+        erewrite <- t_update_same, <- t_update_shadow in H at 1.
+        apply ideal_unused_update in H; try tauto. rewrite t_update_eq in H; eauto. }
       { unfold prog_size. rewrite !app_length. simpl. lia. }
       { eapply ideal_eval_preserves_nonempty_arrs; eassumption. }
       { tauto. }
-      eapply ultimate_slh_flag; [|eassumption..]. tauto.
+      tauto.
     + do 2 destruct H. subst.
       eapply multi_spec_trans in H12; [|apply H0].
       eapply IH in H12; [|prog_size_auto|tauto..].
-      destruct H12.
-      inversion H; subst; clear H.
-      { repeat econstructor. }
-      exists <{{ x0; c2 }}>. apply multi_ideal_add_snd_com.
-      econstructor; eassumption.
+      destruct H12 as (c''&st_st'&H').
+      exists <{{ c''; c2 }}>. split; [|discriminate]. com_step.
   - (* Seq-Skip *)
-    destruct c1; inversion H2; clear H2.
-    eapply IH in H0; [destruct H0|prog_size_auto|tauto..].
-    exists x. econstructor; [apply ISM_Seq_Skip|assumption].
+    destruct c1; invert H2.
+    eapply IH in H0; [destruct H0 as (c''&st'0_st'&H')|prog_size_auto|tauto..].
+    exists c''. split; [|tauto]. simpl. now com_step.
   - (* If *)
-    simpl in H0. case (beval st'0 be) eqn:Heq; rewrite Hstb in H0.
+    simpl in H0. case (beval st'0 be) eqn:Heq; rewrite st_b in H0.
     + destruct b'0; simpl in H0.
-      * inversion H0; subst; clear H0.
-        { exists c2. econstructor; [|apply multi_ideal_refl]. simpl. rewrite Heq, Hstb. simpl.
-          rewrite <- Hstb, t_update_same. constructor. }
-        inversion H; subst; clear H.
-        inversion H12; subst; clear H12.
-        inversion H1; subst; clear H1.
-        { exists c2. rewrite app_nil_l with (l:=[] : obs). rewrite app_nil_l.
-          econstructor; [|apply multi_ideal_refl]. simpl. rewrite Hstb, Heq. simpl. rewrite <- Hstb, !t_update_same.
-          constructor. }
-        inversion H; subst; clear H.
-        { inversion H12. }
-        simpl in H0. rewrite Hstb, Heq in H0. simpl in H0. rewrite <- Hstb, t_update_same in H0.
-        eapply IH in H0; [destruct H0|prog_size_auto|tauto..].
-        exists x. simpl. rewrite Hstb, Heq. simpl. change (DStep :: ds2) with ([DStep] ++ ds2).
-        change (OBranch false :: os2) with ([OBranch false] ++ os2). econstructor; [|rewrite <- Hstb; eauto].
-        constructor.
-      * inversion H0; subst; clear H0.
-        { eexists. econstructor; [|apply multi_ideal_refl]. simpl. rewrite Heq, Hstb. simpl.
-          rewrite <- Hstb, t_update_same. replace true with (negb false && beval st' be) by auto. constructor. }
-        inversion H; subst; clear H.
-        inversion H12; subst; clear H12.
-        inversion H1; subst; clear H1.
-        { eexists. rewrite app_nil_l with (l:=[] : obs). rewrite app_nil_l.
-          econstructor; [|apply multi_ideal_refl]. simpl. rewrite Hstb, Heq. simpl. rewrite <- Hstb, !t_update_same.
-          replace true with (negb false && beval st'0 be) by auto. constructor. }
-        inversion H; subst; clear H.
-        { inversion H12. }
-        simpl in H0. rewrite Hstb, Heq in H0. simpl in H0. rewrite <- Hstb, t_update_same in H0.
-        eapply IH in H0; [destruct H0|prog_size_auto|tauto..].
-        eexists. simpl. rewrite Hstb, Heq. simpl. change (DStep :: ds2) with ([DStep] ++ ds2).
-        change (OBranch true :: os2) with ([OBranch true] ++ os2). econstructor; [|rewrite <- Hstb; eauto].
-        replace true with (negb false && beval st'0 be) by auto.
-        replace c1 with (if (negb false && beval st'0 be) then c1 else c2) at 2 by now rewrite Heq.
-        constructor.
+      * invert H0; [solve_refl|].
+        invert H. invert H12. invert H1; [solve_refl|].
+        invert H; [inversion H12|].
+        simpl in H0. rewrite st_b, Heq in H0. simpl in H0. rewrite <- st_b, t_update_same in H0.
+        eapply IH in H0; [destruct H0 as (c''&st'0_st'&H')|prog_size_auto|tauto..].
+        exists c''. simpl. split; [|tauto]. rewrite st_b, Heq. simpl. com_step. now rewrite <- st_b.
+      * invert H0; [solve_refl|].
+        invert H. invert H12. invert H1; [solve_refl|].
+        invert H; [inversion H12|].
+        simpl in H0. rewrite st_b, Heq in H0. simpl in H0. rewrite <- st_b, t_update_same in H0.
+        eapply IH in H0; [destruct H0 as (c''&st'0_st'&H')|prog_size_auto|tauto..].
+        exists c''. simpl. split; [|tauto]. rewrite st_b, Heq. simpl. com_step. now rewrite <- st_b.
     + rewrite andb_false_r in H0.
-      inversion H0; subst; clear H0.
-      { eexists. econstructor; [|apply multi_ideal_refl]. rewrite t_update_same. simpl.
-        rewrite Hstb. destruct b'; constructor. }
-      inversion H; subst; clear H.
-      inversion H12; subst; clear H12.
-      simpl in H1. rewrite Heq, andb_false_r, t_update_same in H1.
-      inversion H1; subst; clear H1.
-      { eexists. econstructor; [|apply multi_ideal_refl]. simpl. replace (st' "b" =? 0)%nat with (negb b') by now rewrite Hstb; destruct b'.
-        rewrite t_update_same. constructor. }
-      inversion H; subst; clear H. { inversion H12. }
-      eapply IH in H0; [destruct H0|prog_size_auto|tauto..].
-      eexists. simpl. change (DStep :: ds2) with ([DStep] ++ ds2).
-      replace (OBranch _ :: os2) with ([OBranch (negb b'0 && beval st'1 be)] ++ os2) by now rewrite Hstb; destruct b'0.
-      econstructor; [|eassumption].
-      replace c2 with (if negb b'0 && beval st'1 be then c1 else c2) at 2 by now rewrite Heq, andb_false_r.
-      constructor.
+      invert H0; [solve_refl|].
+      invert H. invert H12. invert H1; [solve_refl|].
+      invert H; [inversion H12|].
+      simpl in H0. rewrite st_b, Heq in H0. simpl in H0. rewrite <- st_b, andb_false_r, t_update_same in H0.
+      eapply IH in H0; [destruct H0 as (c''&st'0_st'&H')|prog_size_auto|tauto..].
+      exists c''. simpl. split; [|tauto]. rewrite Heq, andb_false_r. now com_step.
   - (* If-Force *)
-    simpl in H0. rewrite Hstb in H0. destruct b.
-    + simpl in H0. inversion H0; subst; clear H0.
-      { eexists. econstructor; [|apply multi_ideal_refl]. simpl. rewrite t_update_same, Hstb. simpl.
-        constructor. }
-      inversion H; subst; clear H.
-      inversion H12; subst; clear H12.
-      inversion H1; subst; clear H1.
-      { eexists. econstructor; [|apply multi_ideal_refl]. simpl. rewrite Hstb. simpl. rewrite <- Hstb, !t_update_same.
-        constructor. }
-      inversion H; subst; clear H.
-      { inversion H12. }
-      simpl in H0. rewrite Hstb in H0. simpl in H0. rewrite <- Hstb, t_update_same in H0.
-      eapply IH in H0; [destruct H0|prog_size_auto|tauto..].
-      rewrite !app_nil_l. do 2 econstructor; [|eassumption].
-      simpl. rewrite Hstb. simpl. constructor.
-    + simpl in H0. case (beval st'0 be) eqn:Heq.
-      * inversion H0; subst; clear H0.
-        { eexists. econstructor; [|apply multi_ideal_refl]. simpl. rewrite t_update_same, Hstb. simpl.
-        constructor. }
-        inversion H; subst; clear H.
-        inversion H12; subst; clear H12.
-        inversion H1; subst; clear H1.
-        { eexists. econstructor; [|apply multi_ideal_refl]. simpl. rewrite Hstb, Heq. simpl. rewrite t_update_shadow, <- Hstb, !t_update_same.
-          replace true with (negb false && beval st'0 be) at 2 by now rewrite Heq. constructor. }
-        inversion H; subst; clear H.
-        { inversion H12. }
-        simpl in H0. rewrite Hstb, Heq in H0. simpl in H0.
-        eapply IH in H0; [destruct H0|prog_size_auto|tauto..].
-        rewrite t_update_eq in H. apply ideal_unused_update in H; [|tauto].
-        eexists. rewrite !app_nil_l. econstructor; [|eassumption].
-        simpl. rewrite Hstb, Heq. simpl.
-        replace true with (negb false && beval st'0 be) at 2 by now rewrite Heq.
-        replace c2 with (if (negb false && beval st'0 be) then c2 else c1) at 2 by now rewrite Heq.
-        constructor.
-      * inversion H0; subst; clear H0.
-        { eexists. econstructor; [|apply multi_ideal_refl]. simpl. rewrite t_update_same, Hstb. simpl.
-        constructor. }
-        inversion H; subst; clear H.
-        inversion H12; subst; clear H12.
-        inversion H1; subst; clear H1.
-        { eexists. econstructor; [|apply multi_ideal_refl]. simpl. rewrite Hstb, Heq. simpl. rewrite t_update_shadow, <- Hstb, !t_update_same.
-          replace false with (negb false && beval st'0 be) at 2 by now rewrite Heq. constructor. }
-        inversion H; subst; clear H.
-        { inversion H12. }
-        simpl in H0. rewrite Hstb, Heq in H0. simpl in H0.
-        eapply IH in H0; [destruct H0|prog_size_auto|tauto..].
-        rewrite t_update_eq in H. apply ideal_unused_update in H; [|tauto].
-        eexists. rewrite !app_nil_l. econstructor; [|eassumption].
-        simpl. rewrite Hstb, Heq. simpl.
-        replace false with (negb false && beval st'0 be) at 2 by now rewrite Heq.
-        replace c1 with (if (negb false && beval st'0 be) then c2 else c1) at 2 by now rewrite Heq.
-        constructor.
+    simpl in H0. case (beval st'0 be) eqn:Heq; rewrite st_b in H0.
+    + destruct b; simpl in H0.
+      * invert H0; [solve_refl|].
+        invert H. invert H12. invert H1; [solve_refl|].
+        invert H; [inversion H12|].
+        simpl in H0. rewrite st_b, Heq in H0. simpl in H0. rewrite <- st_b, t_update_same in H0.
+        eapply IH in H0; [destruct H0 as (c''&st'0_st'&H')|prog_size_auto|tauto..].
+        exists c''. simpl. split; [|tauto]. rewrite st_b, Heq. simpl. com_step. now rewrite <- st_b.
+      * invert H0; [solve_refl|].
+        invert H. invert H12. invert H1; [solve_refl|].
+        invert H; [inversion H12|].
+        simpl in H0. rewrite st_b, Heq in H0. simpl in H0.
+        eapply IH in H0; [destruct H0 as (c''&st'0_st'&H')|prog_size_auto|tauto..].
+        rewrite t_update_eq in st'0_st'. apply ideal_unused_update in st'0_st'; [|tauto].
+        exists c''. simpl. split; [|tauto]. rewrite st_b, Heq. simpl. com_step. now rewrite <- st_b.
+    + rewrite andb_false_r in H0.
+      invert H0; [solve_refl|].
+      invert H. invert H12. invert H1; [solve_refl|].
+      invert H; [inversion H12|].
+      simpl in H0. rewrite st_b, Heq, andb_false_r in H0.
+      eapply IH in H0; [destruct H0 as (c''&st'0_st'&H')|prog_size_auto|tauto..].
+      rewrite t_update_eq in st'0_st'. apply ideal_unused_update in st'0_st'; [|tauto].
+      exists c''. simpl. split; [|tauto]. rewrite st_b, Heq, andb_false_r. com_step. now rewrite <- st_b.
   - (* While *)
-    inversion H12; subst; clear H12.
-    inversion H0; subst; clear H0.
-    { eexists. simpl. rewrite t_update_same. econstructor. }
-    inversion H; subst; clear H.
-    inversion H12; subst; clear H12.
-    + simpl in H1. rewrite Hstb in H1. destruct b'1; simpl in H1.
-      * inversion H1; subst; clear H1.
-        { repeat econstructor. simpl. rewrite t_update_same, Hstb. simpl. constructor. }
-        inversion H; subst; clear H.
-        { inversion H12. }
-        inversion H0; subst; clear H0.
-        { repeat econstructor. simpl. rewrite t_update_same, Hstb. simpl. constructor. }
-        inversion H; subst; clear H.
-        inversion H1; subst; clear H1; [|inversion H].
-        repeat econstructor. simpl. rewrite t_update_shadow, t_update_same, Hstb. simpl.
-        constructor.
-      * destruct (beval st'1 be) eqn:Heq.
-        ++ inversion H1; subst; clear H1.
-           { repeat econstructor. simpl. rewrite t_update_same, Hstb. simpl. constructor. }
-           inversion H; subst; clear H.
-           inversion H12; subst; clear H12.
-           inversion H11; subst; clear H11.
-           inversion H12; subst; clear H12.
-           inversion H0; subst; clear H0.
-           { repeat econstructor. simpl. rewrite t_update_shadow, t_update_same, Hstb, Heq. simpl.
-             replace true with (negb false && beval st'1 be) by now rewrite Heq. constructor. }
-           inversion H; subst; clear H.
-           inversion H12; subst; clear H12.
-           inversion H11; subst; clear H11. { inversion H12. }
-           simpl in H1. rewrite Hstb, Heq in H1. simpl in H1. rewrite <- Hstb in H1 at 6. rewrite t_update_same in H1.
-           assert (forall stt astt bt ds1 os1 ct stt' astt' bt' ds2 os2,
-             ds0 = ds1++[]++ds2 -> os0 = os1++[]++os2 ->
-             <( st'1, ast'1, false, ds1 )> =[ ultimate_slh c ]=> <(stt, astt, bt, os1 )> ->
-             <(( (while ("b" = 0 && be) do "b" := ("b" = 0 && be) ? "b" : 1; (ultimate_slh c) end), stt, astt, bt ))> -->*_ds2^^os2 <(( ct, stt', astt', bt' ))> ->
-             exists ct', <(( while be do c end, st'1, ast'1, false ))> -->i*_ []++[DStep]++ds0 ^^ []++[OBranch true]++os0 <(( ct', "b" !-> st'1 "b"; stt', astt', bt' ))>).
-           { intros. subst. assert (Hstt : stt "b" = if bt then 1 else 0) by now eapply ultimate_slh_flag_big_step; eauto.
-             apply ultimate_slh_bcc_big_step in H2; [|tauto..]. apply ideal_big_to_small_step in H2.
-             assert (HWhile : exists c', <((ultimate_slh <{{ while be do c end }}>, stt, astt, bt))> -->*_ds2^^os2 <((c', stt', astt', bt'))>).
-             { simpl. eexists. now eapply multi_spec_add_snd_com; eauto. }
-             destruct HWhile. eapply IH in H; [|now prog_size_auto|eapply ideal_eval_preserves_nonempty_arrs; eauto|now auto..].
-             destruct H. eexists. do 2 econstructor. { simpl. replace true with (negb false && beval st'1 be) by now rewrite Heq, andb_true_r. constructor. }
-             rewrite Heq. eapply multi_ideal_combined_executions; [eapply multi_ideal_add_snd_com; eassumption|].
-             econstructor; [eapply ISM_Seq_Skip|]. eapply ideal_unused_overwrite  with (X:="b") in H; [|now auto]. rewrite t_update_shadow in H. eassumption. }
-           simpl in *. rewrite Hstb, Heq. rewrite Hstb in H. simpl.
-           eapply multi_spec_seq in H1. destruct H1.
-           { do 8 destruct H0. destruct H1. destruct H2. subst. inversion H2; subst; clear H2.
-             apply spec_big_to_small_step in H13.
-             assert (x3 = [] /\ x5 = [] /\ x0 = ast' /\ x1 = b' /\ (st' = x \/ st' = ("b" !-> (if (x "b" =? 0)%nat && beval x be then 1 else x "b"); x))).
-             { inversion H3; subst; clear H3; [tauto|]. inversion H0; subst; clear H0.
-                now inversion H1; subst; clear H1; [tauto|inversion H0]. }
-             destruct H0. destruct H1. destruct H2. destruct H5. destruct H6; subst; rewrite !app_nil_r, ?t_update_shadow in *; now eapply H; eauto. }
-           do 2 destruct H0. subst. eapply multi_spec_seq in H1. destruct H1.
-           { do 8 destruct H0. destruct H1. destruct H2. subst. now eapply H; eauto. }
-           do 2 destruct H0. subst. clear H. eapply IH in H1; [destruct H1|prog_size_auto|tauto..]. eexists.
-           change (DStep :: ds0) with ([] ++ [DStep] ++ ds0). change (OBranch true :: os0) with ([] ++ [OBranch true] ++ os0).
-           do 2 econstructor. { replace true with (negb false && beval st'1 be) by now rewrite Heq. constructor. }
-           rewrite Heq. simpl. apply multi_ideal_add_snd_com. rewrite Hstb in H. eassumption.
-        ++ inversion H1; subst ; clear H1.
-           { eexists. repeat econstructor. simpl. replace (st' "b" =? 0)%nat with (negb false) by now rewrite Hstb. rewrite t_update_same. constructor. }
-           inversion H; subst; clear H. { inversion H12. } inversion H0; subst; clear H0.
-           { eexists. repeat econstructor. simpl. replace (st' "b" =? 0)%nat with (negb false) by now rewrite Hstb. rewrite t_update_same. constructor. }
-           inversion H; subst; clear H. inversion H1; subst; clear H1; [|inversion H].
-           eexists. repeat econstructor. simpl. rewrite Hstb, Heq. simpl.
-           rewrite <- Hstb, !t_update_same. replace false with (negb false && beval st'0 be) at 3 by now rewrite Heq. constructor.
-    + simpl in H1. rewrite Hstb in H1. destruct b'0; simpl in H1.
-      * inversion H1; subst; clear H1.
-        { repeat econstructor. simpl. rewrite t_update_same, Hstb. simpl. constructor. }
-        inversion H; subst; clear H.
-        inversion H12; subst; clear H12.
-        inversion H11; subst; clear H11.
-        inversion H12; subst; clear H12.
-        inversion H0; subst; clear H0.
-        { repeat econstructor. simpl. rewrite t_update_shadow, t_update_same, Hstb. simpl.
-          change false with (negb true && beval st'1 be). constructor. }
-        inversion H; subst; clear H.
-        inversion H12; subst; clear H12.
-        inversion H11; subst; clear H11. { inversion H12. }
-        simpl in H1. rewrite Hstb in H1. simpl in H1. rewrite <- Hstb in H1 at 3. rewrite t_update_same in H1.
-        assert (forall stt astt ds1 os1 ct stt' astt' ds2 os2,
-          ds0 = ds1++[]++ds2 -> os0 = os1++[]++os2 ->
-          <( st'1, ast'1, true, ds1 )> =[ ultimate_slh c ]=> <(stt, astt, true, os1 )> ->
-          <(( (while ("b" = 0 && be) do "b" := ("b" = 0 && be) ? "b" : 1; (ultimate_slh c) end), stt, astt, true ))> -->*_ds2^^os2 <(( ct, stt', astt', true ))> ->
-          exists ct', <(( while be do c end, st'1, ast'1, true ))> -->i*_ []++[DForce]++ds0 ^^ []++[OBranch false]++os0 <(( ct', "b" !-> st'1 "b"; stt', astt', true ))>).
-        { clear H1. intros. subst. assert (stt "b" = 1) by now apply ultimate_slh_flag_big_step in H1.
-          apply ultimate_slh_bcc_big_step in H1; [|tauto..]. apply ideal_big_to_small_step in H1.
-          assert (HWhile : exists c', <((ultimate_slh <{{ while be do c end }}>, stt, astt, true))> -->*_ds2^^os2 <((c', stt', astt', true))>).
-          { simpl. eexists. now eapply multi_spec_add_snd_com; eauto. }
-          destruct HWhile. eapply IH in H0; [|now prog_size_auto|eapply ideal_eval_preserves_nonempty_arrs; eauto|now auto..].
-          destruct H0. eexists. do 2 econstructor. { simpl. change false with (negb true && beval st'1 be). constructor. }
-          simpl. eapply multi_ideal_combined_executions; [eapply multi_ideal_add_snd_com; eassumption|].
-          rewrite <- app_nil_l. rewrite <- app_nil_l with (l:=ds2). econstructor; [eapply ISM_Seq_Skip|].
-          eapply ideal_unused_overwrite  with (X:="b") in H0; [|now auto]. rewrite t_update_shadow in H0. eassumption. }
-        simpl in *. rewrite Hstb. rewrite Hstb in H. simpl. assert (b' = true) by now eapply multi_spec_spec_bit_monotonic in H1. subst.
-        eapply multi_spec_seq in H1. destruct H1.
-        { do 8 destruct H0. destruct H1. destruct H2. subst. inversion H2; subst; clear H2.
-          apply spec_big_to_small_step in H13.
-          assert (x3 = [] /\ x5 = [] /\ x0 = ast' /\ x1 = true /\ (st' = x \/ st' = ("b" !-> (if (x "b" =? 0)%nat && beval x be then 1 else x "b"); x))).
-          { inversion H3; subst; clear H3; [tauto|]. inversion H0; subst; clear H0.
-             now inversion H1; subst; clear H1; [tauto|inversion H0]. }
-          assert (b' = true) by now apply speculation_bit_monotonic in H4. subst.
-          destruct H0. destruct H1. destruct H2. destruct H5. destruct H6; subst; rewrite !app_nil_r, ?t_update_shadow in *; now eapply H; eauto. }
-        do 2 destruct H0. subst. eapply multi_spec_seq in H1. destruct H1.
-        { do 8 destruct H0. destruct H1. destruct H2. subst. assert (x2 = true) by now eapply speculation_bit_monotonic in H2. subst. eapply H; eauto. }
-        do 2 destruct H0. subst. clear H. eapply IH in H1; [destruct H1|prog_size_auto|tauto..]. eexists.
-        change (DForce :: ds0) with ([] ++ [DForce] ++ ds0). change (OBranch false :: os0) with ([] ++ [OBranch false] ++ os0).
-        do 2 econstructor. { change false with (negb true && beval st'1 be). constructor. }
-        simpl. apply multi_ideal_add_snd_com. rewrite Hstb in H. eassumption.
-      * assert (b' = true) by now apply multi_spec_spec_bit_monotonic in H1. subst.
-        destruct (beval st'1 be) eqn:Heq.
-        ++ inversion H1; subst; clear H1.
-           { repeat econstructor. simpl. rewrite t_update_same, Hstb. simpl. constructor. }
-           inversion H; subst; clear H. { inversion H12. }
-           inversion H0; subst; clear H0.
-           { eexists. do 2 econstructor.
-             { simpl. rewrite Hstb, Heq. simpl. replace true with (negb false && beval st' be) by now rewrite Heq. constructor. }
-             rewrite Heq. simpl. rewrite t_update_same. constructor. }
-           inversion H; subst; clear H. inversion H1; subst; clear H1; [|inversion H].
-           repeat econstructor. rewrite t_update_shadow, t_update_same. simpl. rewrite Hstb, Heq. simpl.
-           replace true with (negb false && beval st'0 be) at 2 by now rewrite Heq. constructor.
-        ++ inversion H1; subst; clear H1.
-           { repeat econstructor. simpl. rewrite t_update_same, Hstb. simpl. constructor. }
-           inversion H; subst; clear H.
-           inversion H12; subst; clear H12.
-           inversion H11; subst; clear H11.
-           inversion H12; subst; clear H12.
-           inversion H0; subst; clear H0.
-           { repeat econstructor. simpl. rewrite t_update_shadow, t_update_same, Hstb, Heq. simpl.
-             replace false with (negb false && beval st'1 be) at 2 by now rewrite Heq. constructor. }
-           inversion H; subst; clear H.
-           inversion H12; subst; clear H12.
-           inversion H11; subst; clear H11. { inversion H12. }
-           simpl in H1. rewrite Hstb, Heq in H1. simpl in H1.
-           assert (forall stt astt ds1 os1 ct stt' astt' ds2 os2,
-             ds0 = ds1++[]++ds2 -> os0 = os1++[]++os2 ->
-             <( "b" !-> 1; st'1, ast'1, true, ds1 )> =[ ultimate_slh c ]=> <(stt, astt, true, os1 )> ->
-             <(( (while ("b" = 0 && be) do "b" := ("b" = 0 && be) ? "b" : 1; (ultimate_slh c) end), stt, astt, true ))> -->*_ds2^^os2 <(( ct, stt', astt', true ))> ->
-             exists ct', <(( while be do c end, st'1, ast'1, false ))> -->i*_ []++[DForce]++ds0 ^^ []++[OBranch false]++os0 <(( ct', "b" !-> 0; stt', astt', true ))>).
-           { intros. subst. assert (Hstt : stt "b" = 1) by now eapply ultimate_slh_flag_big_step in H2.
-             apply ultimate_slh_bcc_big_step in H2; [|tauto..]. apply ideal_big_to_small_step in H2.
-             assert (HWhile : exists c', <((ultimate_slh <{{ while be do c end }}>, stt, astt, true))> -->*_ds2^^os2 <((c', stt', astt', true))>).
-             { simpl. eexists. now eapply multi_spec_add_snd_com; eauto. }
-             destruct HWhile. eapply IH in H; [|now prog_size_auto|eapply ideal_eval_preserves_nonempty_arrs; eauto|now auto..].
-             destruct H. eexists. do 2 econstructor. { simpl. replace false with (negb false && beval st'1 be) at 2 by now rewrite Heq. constructor. }
-             rewrite Heq. rewrite t_update_eq in H2. eapply ideal_unused_update in H2; [|tauto].
-             eapply multi_ideal_combined_executions; [simpl; eapply multi_ideal_add_snd_com; eassumption|].
-             econstructor; [eapply ISM_Seq_Skip|]. eapply ideal_unused_overwrite with (X:="b") in H; [rewrite Hstb|now auto]. rewrite t_update_shadow in H. eassumption. }
-           simpl in *. rewrite Hstb, Heq. simpl.
-           eapply multi_spec_seq in H1. destruct H1.
-           { do 8 destruct H0. destruct H1. destruct H2. subst. inversion H2; subst; clear H2.
-             apply spec_big_to_small_step in H13. assert (b' = true) by now eapply speculation_bit_monotonic in H4. subst.
-             assert (x3 = [] /\ x5 = [] /\ x0 = ast' /\ x1 = true /\ (st' = x \/ st' = ("b" !-> (if (x "b" =? 0)%nat && beval x be then 1 else x "b"); x))).
-             { inversion H3; subst; clear H3; [tauto|]. inversion H0; subst; clear H0.
-                now inversion H1; subst; clear H1; [tauto|inversion H0]. }
-             destruct H0. destruct H1. destruct H2. destruct H5. destruct H6; subst; rewrite !app_nil_r, ?t_update_shadow in *; now eapply H; eauto. }
-           do 2 destruct H0. subst. eapply multi_spec_seq in H1. destruct H1.
-           { do 8 destruct H0. destruct H1. destruct H2. subst. assert (x2 = true) by now eapply speculation_bit_monotonic in H2. subst. now eapply H; eauto. }
-           do 2 destruct H0. subst. clear H. eapply IH in H1; [destruct H1|prog_size_auto|tauto..]. eexists.
-           change (DForce :: ds0) with ([] ++ [DForce] ++ ds0). change (OBranch false :: os0) with ([] ++ [OBranch false] ++ os0).
-           do 2 econstructor. { replace false with (negb false && beval st'1 be) at 2 by now rewrite Heq. constructor. }
-           rewrite Heq. simpl. apply multi_ideal_add_snd_com. rewrite t_update_eq in H. eapply ideal_unused_overwrite with (X := "b") in H; [|tauto].
-           rewrite !t_update_shadow, t_update_same, Hstb in H. eassumption.
+    invert H12. invert H0.
+    { eexists. split; [|discriminate]. simpl. rewrite t_update_same. constructor. }
+    invert H. invert H12; simpl in *.
+    + destruct (beval st'1 be) eqn:Heq.
+      * rewrite ?st_b in *. destruct b'1; simpl in *.
+        -- invert H1; [solve_refl|].
+           invert H; [inversion H12|].
+           invert H0; [solve_refl|].
+           invert H. invert H1; [|inversion H]. simpl. eexists.
+           split.
+           { rewrite t_update_shadow, <- st_b, t_update_same. com_step. }
+           split; [reflexivity|]. now rewrite t_update_eq, st_b.
+        -- invert H1; [solve_refl|].
+           invert H. invert H12. invert H11. invert H12. invert H0; [solve_refl|].
+           invert H. invert H12. invert H11; [inversion H12|]. simpl in H1. rewrite Heq, st_b in H1.
+           simpl in H1. rewrite <- st_b in H1 at 6. rewrite t_update_same in H1. apply multi_spec_seq_assoc in H1.
+           destruct H1 as (c''&H&H'). apply multi_spec_seq in H. destruct H.
+           ++ do 8 destruct H. destruct H0, H1. subst.
+              apply IH in H1; [|prog_size_auto|tauto..].
+              destruct H1 as (c1&st'1_x&(->&Hx)); [reflexivity|].
+              change <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; (ultimate_slh c) end; "b" := ("b" = 0 && be) ? 1 : "b"}}> with
+                (ultimate_slh <{{ while be do c end }}>) in H2.
+              pose proof (ideal_eval_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ ast_arrs st'1_x).
+              apply IH in H2; [|prog_size_auto|simpl; tauto..]. destruct H2 as (ct'&x_st'&H'').
+              eexists. split; [|now auto]. com_step. rewrite !app_nil_l.
+              eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com, st'1_x|].
+              erewrite st_b, <- t_update_shadow with (m:=st'). apply ideal_unused_overwrite; [simpl; tauto|].
+              eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|]. eassumption.
+           ++ do 2 destruct H. subst. apply IH in H0; [|prog_size_auto|tauto..]. destruct H0 as (c''&H&H'').
+              exists <{{ c''; while be do c end }}>. split; [|intro abs; apply H' in abs; discriminate abs]. simpl. rewrite <- st_b. com_step.
+      * rewrite ?andb_false_r in *. invert H1; [solve_refl|]. invert H; [inversion H12|].
+        invert H0; [solve_refl|]. invert H. invert H1; [|inversion H]. eexists. rewrite t_update_shadow, t_update_same, t_update_eq.
+        split; [|split; [reflexivity|simpl; now (rewrite st_b, Heq; destruct b')] ]. com_step.
+    + destruct (beval st'1 be) eqn:Heq.
+      * rewrite ?st_b in *. destruct b'0; simpl in *.
+        -- invert H1; [solve_refl|].
+           invert H. invert H12. invert H11. invert H12. invert H0; [solve_refl|].
+           invert H. invert H12. invert H11; [inversion H12|]. simpl in H1. rewrite Heq, st_b in H1.
+           simpl in H1. rewrite <- st_b in H1 at 3. rewrite t_update_same in H1. apply multi_spec_seq_assoc in H1.
+           destruct H1 as (c''&H&H'). apply multi_spec_seq in H. destruct H.
+           ++ do 8 destruct H. destruct H0, H1. subst.
+              apply IH in H1; [|prog_size_auto|tauto..].
+              destruct H1 as (c1&st'1_x&(->&Hx)); [reflexivity|].
+              change <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; (ultimate_slh c) end; "b" := ("b" = 0 && be) ? 1 : "b"}}> with
+                (ultimate_slh <{{ while be do c end }}>) in H2.
+              pose proof (ideal_eval_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ ast_arrs st'1_x).
+              apply IH in H2; [|prog_size_auto|simpl; tauto..]. destruct H2 as (ct'&x_st'&H'').
+              eexists. split; [|now auto]. com_step. rewrite !app_nil_l.
+              eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com, st'1_x|].
+              erewrite st_b, <- t_update_shadow with (m:=st'). apply ideal_unused_overwrite; [simpl; tauto|].
+              eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|]. eassumption.
+           ++ do 2 destruct H. subst. apply IH in H0; [|prog_size_auto|tauto..]. destruct H0 as (c''&H&H'').
+              exists <{{ c''; while be do c end }}>. split; [|intro abs; apply H' in abs; discriminate abs]. simpl. rewrite <- st_b. com_step.
+        -- invert H1; [solve_refl|].
+           invert H; [inversion H12|].
+           invert H0; [solve_refl|].
+           invert H. invert H1; [|inversion H]. simpl. eexists.
+           split.
+           { rewrite t_update_shadow, <- st_b, t_update_same. com_step. }
+           split; [reflexivity|]. now rewrite t_update_eq, st_b, Heq.
+      * rewrite ?andb_false_r in *. invert H1; [solve_refl|]. invert H. invert H12. invert H11. invert H12.
+        invert H0; [solve_refl|]. invert H. invert H12. invert H11; [inversion H12|].
+        simpl in H1. rewrite Heq, andb_false_r in H1. apply multi_spec_seq_assoc in H1.
+        destruct H1 as (c''&H&H'). apply multi_spec_seq in H. destruct H.
+        ++ do 8 destruct H. destruct H0, H1. subst.
+           apply IH in H1; [|prog_size_auto|tauto..].
+           destruct H1 as (c1&st'1_x&(->&Hx)); [reflexivity|].
+           change <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; (ultimate_slh c) end; "b" := ("b" = 0 && be) ? 1 : "b"}}> with
+             (ultimate_slh <{{ while be do c end }}>) in H2.
+           pose proof (ideal_eval_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ ast_arrs st'1_x).
+           apply IH in H2; [|prog_size_auto|simpl; tauto..]. destruct H2 as (ct'&x_st'&H'').
+           eexists. split; [|now auto]. com_step. rewrite !app_nil_l. rewrite t_update_eq in st'1_x.
+           apply ideal_unused_update in st'1_x; [|tauto].
+           eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com, st'1_x|].
+           erewrite st_b, <- t_update_shadow with (m:=st'). apply ideal_unused_overwrite; [simpl; tauto|].
+           eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|]. eassumption.
+        ++ do 2 destruct H. subst. apply IH in H0; [|prog_size_auto|tauto..]. destruct H0 as (c''&H&H'').
+           exists <{{ c''; while be do c end }}>. split; [|intro abs; apply H' in abs; discriminate abs]. rewrite t_update_eq in H.
+           apply ideal_unused_update in H; [|tauto]. simpl. com_step.
   - (* Read *)
-    inversion H0; subst; clear H0; [|inversion H].
-    repeat econstructor; [now simpl; rewrite Hstb; destruct b'|auto|].
-    simpl. rewrite t_update_permute; [|tauto]. rewrite t_update_same. constructor.
+    invert H0; [|inversion H].
+    exists Skip. split.
+    { repeat econstructor; [now simpl; rewrite st_b; destruct b'|auto|].
+      simpl. rewrite t_update_permute; [|tauto]. rewrite t_update_same. constructor. }
+    split; [reflexivity|]. rewrite t_update_neq; tauto.
   - (* Load *)
-    simpl in H14. rewrite Hstb in H14. simpl in H14.
-    specialize (Hast a). lia.
+    simpl in H14. rewrite st_b in H14. simpl in H14.
+    specialize (ast_arrs a). lia.
   - (* Write *)
-    inversion H0; subst; clear H0; [|inversion H].
-    repeat econstructor; [now simpl; rewrite Hstb; destruct b'|auto|].
-    simpl. rewrite t_update_same. constructor.
+    invert H0; [|inversion H].
+    exists Skip. split.
+    { repeat econstructor; [now simpl; rewrite st_b; destruct b'|auto|].
+      simpl. rewrite t_update_same. constructor. }
+    split; [reflexivity|]. tauto.
   - (* Store *)
-    simpl in H15. rewrite Hstb in H15. simpl in H15.
-    specialize (Hast a). lia.
+    simpl in H15. rewrite st_b in H15. simpl in H15.
+    specialize (ast_arrs a). lia.
 Qed.
 
 (** * More prefix lemmas *)
@@ -1852,19 +1154,6 @@ Proof.
     exists (ds1++x), x0. split; [|now rewrite app_assoc].
     intros. apply in_app_or in H2. destruct H2; [|now apply H1].
     now eapply ideal_eval_small_step_final_spec_bit_false in H; [|eassumption].
-Qed.
-
-Lemma ideal_eval_no_spec : forall c st ast ds stt astt bt os,
-  (forall d, In d ds -> d = DStep) ->
-  |-i <(st, ast, false, ds)> =[ c ]=> <(stt, astt, bt, os)> ->
-  <((c, st, ast ))> -->*^os <((skip, stt, astt))>.
-Proof.
-  intros c st ast ds stt astt bt os Hds Heval.
-  apply seq_big_to_small_step. apply cteval_equiv_seq_spec_eval.
-  unfold seq_spec_eval. exists ds. split; [assumption|].
-  assert(bt = false). { destruct bt; [|reflexivity].
-    apply ideal_eval_spec_needs_force in Heval. apply Hds in Heval. discriminate. }
-  subst. now apply ideal_eval_spec_eval_no_spec.
 Qed.
 
 Lemma ideal_eval_small_step_obs_length_zero_one : forall c st ast b ct stt astt bt ds os,
@@ -2065,49 +1354,6 @@ Qed.
 
 (** * Gilles Lemma *)
 
-Lemma ideal_prefix_dirs :
-  forall c st1 st2 ast1 ast2 b ds1 ds2 stt1 stt2 astt1 astt2 bt os1 os2,
-  |-i <(st1, ast1, b, ds1)> =[ c ]=> <(stt1, astt1, bt, os1)> ->
-  |-i <(st2, ast2, b, ds2)> =[ c ]=> <(stt2, astt2, bt, os2)> ->
-  (prefix ds1 ds2 \/ prefix ds2 ds1) ->
-  b = true ->
-  bt = true ->
-  ds1 = ds2.
-Proof.
-  intros c st1 st2 ast1 ast2 b ds1 ds2 stt1 stt2 astt1 astt2 bt os1 os2 Hev1.
-  generalize dependent os2; generalize dependent astt2;
-  generalize dependent stt2; generalize dependent ds2;
-  generalize dependent ast2; generalize dependent st2.
-  induction Hev1; intros st2 ast2 ds2' stt2 astt2 ost2 Hev2 Hpre Hb Hbt;
-  try (now inversion Hev2; subst; auto).
-  - inversion Hev2; subst; clear Hev2.
-    apply ideal_eval_spec_bit_monotonic in H1 as Hb'0; subst.
-    apply ideal_eval_spec_bit_monotonic in Hev1_1 as Hb'; subst.
-    destruct Hpre as [Hpre | Hpre]; apply prefix_app in Hpre as L.
-    + apply IHHev1_1 in H1; auto. subst.
-      apply prefix_append_front in Hpre.
-      apply IHHev1_2 in H10; auto. subst. reflexivity.
-    + apply IHHev1_1 in H1; try tauto. subst.
-      apply prefix_append_front in Hpre.
-      apply IHHev1_2 in H10; auto. subst. reflexivity.
-  - inversion Hev2; subst; clear Hev2; simpl in *.
-    + destruct Hpre as [Hpre | Hpre];
-      apply prefix_heads_and_tails in Hpre as [_ Hpre];
-      apply IHHev1 in H10; auto; rewrite H10; reflexivity.
-    + destruct Hpre as [Hpre | Hpre];
-      apply prefix_heads_and_tails in Hpre as [Contra _];
-      discriminate.
-  - inversion Hev2; subst; clear Hev2; simpl in *.
-    + destruct Hpre as [Hpre | Hpre];
-      apply prefix_heads_and_tails in Hpre as [Contra _];
-      discriminate.
-    + destruct Hpre as [Hpre | Hpre];
-      apply prefix_heads_and_tails in Hpre as [_ Hpre];
-      apply IHHev1 in H10; auto; rewrite H10; reflexivity.
-  - inversion Hev2; subst; clear Hev2; simpl in *.
-    apply IHHev1 in H9; auto.
-Qed.
-
 Lemma gilles_lemma_one_step : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
   <((c, st1, ast1, true))> -->i_ds^^os1 <((c1, stt1, astt1, true))> ->
   <((c, st2, ast2, true))> -->i_ds^^os2 <((c2, stt2, astt2, true))> ->
@@ -2115,12 +1361,11 @@ Lemma gilles_lemma_one_step : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt
 Proof.
   intros. remember true as b. rewrite Heqb in H at 2, H0 at 2. remember true as b'.
   rewrite Heqb' in Heqb.
-  revert Heqb Heqb' st2 ast2 c2 os2 stt2 astt2 H0. induction H; intros; (try now invert H0).
+  revert Heqb Heqb' st2 ast2 c2 os2 stt2 astt2 H0. induction H; intros; (try now invert H0); (try now invert H1).
   + invert H0.
     - apply IHideal_eval_small_step in H12; try tauto.
       now destruct H12; subst.
     - inversion H.
-  + now invert H1.
   + now invert H2.
 Qed.
 
