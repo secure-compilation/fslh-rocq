@@ -90,21 +90,17 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
   | <{{x := e}}> => <{{x := e}}>
   | <{{c1; c2}}> => <{{ flex_slh P c1; flex_slh P c2}}>
   | <{{if be then c1 else c2 end}}> =>
-      if label_of_bexp P be
-      then (* Selective SLH -- tracking speculation, but not masking *)
-        <{{if be then "b" := be ? "b" : 1; flex_slh P c1
-                 else "b" := be ? 1 : "b"; flex_slh P c2 end}}>
-      else (* Ultimate SLH -- tracking speculation and also masking *)
-        <{{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; flex_slh P c1
-                            else "b" := ("b" = 0 && be) ? 1 : "b"; flex_slh P c2 end}}>
+      let be' := if label_of_bexp P be
+        then be                  (* Selective SLH -- tracking speculation, but not masking *)
+        else <{{"b" = 0 && be}}> (* Ultimate SLH -- tracking speculation and also masking *)
+      in <{{if be' then "b" := be' ? "b" : 1; flex_slh P c1
+                   else "b" := be' ? 1 : "b"; flex_slh P c2 end}}>
   | <{{while be do c end}}> =>
-      if label_of_bexp P be
-      then (* Selective SLH -- tracking speculation, but not masking *)
-        <{{while be do "b" := be ? "b" : 1; flex_slh P c end;
-           "b" := be ? 1 : "b"}}>
-      else (* Ultimate SLH -- tracking speculation and also masking *)
-        <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; flex_slh P c end;
-           "b" := ("b" = 0 && be) ? 1 : "b"}}>
+      let be' := if label_of_bexp P be
+        then be                  (* Selective SLH -- tracking speculation, but not masking *)
+        else <{{"b" = 0 && be}}> (* Ultimate SLH -- tracking speculation and also masking *)
+      in <{{while be' do "b" := be' ? "b" : 1; flex_slh P c end;
+             "b" := be' ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
     if label_of_aexp P i
     then (* Selective SLH -- mask the value of public loads *)
@@ -113,12 +109,11 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
     else (* Ultimate SLH -- mask private address of load *)
       <{{x <- a[[("b" = 1) ? 0 : i]] }}>
   | <{{a[i] <- e}}> =>
-    if label_of_aexp P i
-    then (* Selective SLH *)
-      <{{a[i] <- e}}> (* <- Doing nothing here okay for Spectre v1,
-         but problematic for return address or code pointer overwrites *)
-    else (* Ultimate SLH *)
-      <{{a[("b" = 1) ? 0 : i] <- e}}>
+    let i' := if label_of_aexp P i
+      then i (* Selective SLH -- no mask even if it's out of bounds! *)
+      else <{{("b" = 1) ? 0 : i}}> (* Ultimate SLH *)
+    in <{{a[i'] <- e}}> (* <- Doing nothing here in label_of_aexp P i = true case okay for Spectre v1,
+                              but would be problematic for return address or code pointer overwrites *)
   end)%string.
 
 (* For CT programs this is the same as sel_slh *)
@@ -893,7 +888,7 @@ QuickChick (
   forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
   check_gilles_lemma (flex_slh P c) s1 s2)))))).
 
-(* Directly testing also the top-level statement for OUR(!) Ultimate SLH,
+(* Directly testing also the top-level statement for our naive Ultimate SLH,
    even if it is KIND OF(!) just a special case of flex_slh AllSecret. *)
 
 Fixpoint naive_ultimate_slh (c:com) :=
@@ -974,7 +969,7 @@ QuickChick (
   forAllShrink gen_pub_arrs shrink (fun PA =>
   (check_speculative_noninterference P PA P PA c (naive_ultimate_slh c)))))).
 
-(* Now defining something closer to the original Ultimate SLH, even if it is
+(* Now defining an optimized version of Ultimate SLH, even if it is
    just a special case of flex_slh AllSecret (we prove this below). *)
 
 Fixpoint opt_ultimate_slh (c:com) :=
@@ -1026,8 +1021,6 @@ Proof.
 Qed.
 
 (* Testing opt_ultimate_slh *)
-
-Extract Constant defNumTests => "1000000".
 
 QuickChick (
   forAll (sized gen_com) (fun c =>
