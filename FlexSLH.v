@@ -896,16 +896,16 @@ QuickChick (
 (* Directly testing also the top-level statement for OUR(!) Ultimate SLH,
    even if it is KIND OF(!) just a special case of flex_slh AllSecret. *)
 
-Fixpoint our_ultimate_slh (c:com) :=
+Fixpoint naive_ultimate_slh (c:com) :=
   (match c with
   | <{{skip}}> => <{{skip}}>
   | <{{x := e}}> => <{{x := e}}>
-  | <{{c1; c2}}> => <{{ our_ultimate_slh c1; our_ultimate_slh c2}}>
+  | <{{c1; c2}}> => <{{ naive_ultimate_slh c1; naive_ultimate_slh c2}}>
   | <{{if be then c1 else c2 end}}> =>
-      <{{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; our_ultimate_slh c1
-                          else "b" := ("b" = 0 && be) ? 1 : "b"; our_ultimate_slh c2 end}}>
+      <{{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; naive_ultimate_slh c1
+                          else "b" := ("b" = 0 && be) ? 1 : "b"; naive_ultimate_slh c2 end}}>
   | <{{while be do c end}}> =>
-      <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; our_ultimate_slh c end;
+      <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; naive_ultimate_slh c end;
          "b" := ("b" = 0 && be) ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
     <{{x <- a[[("b" = 1) ? 0 : i]] }}>
@@ -913,7 +913,7 @@ Fixpoint our_ultimate_slh (c:com) :=
   end)%string.
 
 Module RelatingOurUltimateSLH.
-  (* our_ultimate_slh above is just a suboptimal version of `flex_slh AllSecret` *)
+  (* naive_ultimate_slh above is just a suboptimal version of `flex_slh AllSecret` *)
 
   (* Suboptimal because it even masks constant expressions, which clearly cannot
      leak secrets via observations. Still without such constant expressions we
@@ -923,8 +923,8 @@ Module RelatingOurUltimateSLH.
   Axiom no_constant_bexps : forall b, seq.nilp (vars_bexp b) = false.
   Axiom no_constant_aexps : forall a, seq.nilp (vars_aexp a) = false.
 
-  Lemma our_ultimate_slh_is_flex_slh :
-    forall c, our_ultimate_slh c = flex_slh AllSecret c.
+  Lemma naive_ultimate_slh_is_flex_slh :
+    forall c, naive_ultimate_slh c = flex_slh AllSecret c.
   Proof.
     pose proof (fun b => all_secret_bexp b (no_constant_bexps b)).
     pose proof (fun b => all_secret_aexp b (no_constant_aexps b)).
@@ -933,20 +933,20 @@ Module RelatingOurUltimateSLH.
 
 End RelatingOurUltimateSLH.
 
-(* Testing our_ultimate_slh *)
+(* Testing naive_ultimate_slh *)
 
 (* Here is where taint_tracking really shines, since it halves the number of
    discards, and much more than that for long observations traces *)
 
 QuickChick (
   forAll (sized gen_com) (fun c =>
-  (check_relative_security AllSecret AllSecret c (our_ultimate_slh c)))).
+  (check_relative_security AllSecret AllSecret c (naive_ultimate_slh c)))).
 
 QuickChick (
   forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  check_gilles_lemma (our_ultimate_slh c) s1 s2)))).
+  check_gilles_lemma (naive_ultimate_slh c) s1 s2)))).
 
 (* Finally, we check a very weak AllSecret instantiation of speculative
    noninterference, which only gives us something about the final flag. *)
@@ -954,7 +954,7 @@ QuickChick (
 QuickChick (
   forAll (sized gen_com) (fun c =>
   (check_speculative_noninterference AllSecret AllSecret AllSecret AllSecret
-     c (our_ultimate_slh c)))).
+     c (naive_ultimate_slh c)))).
 
 (* This works without any protection though, probably because of the way our
    speculative semantics works and the fact that we share the directions. *)
@@ -965,54 +965,48 @@ QuickChick (
      c c))).
 
 (* There is no other sound instantiation of P and PA that would satisfy the
-   conclusion of check_speculative_noninterference for our_ultimate_slh and
+   conclusion of check_speculative_noninterference for naive_ultimate_slh and
    arbitrary programs though. Here is a very naive attempt -- SHOULD FAIL! *)
 
 QuickChick (
   forAllShrink (sized gen_com) shrink (fun c =>
   forAllShrink gen_pub_vars shrink (fun P =>
   forAllShrink gen_pub_arrs shrink (fun PA =>
-  (check_speculative_noninterference P PA P PA c (our_ultimate_slh c)))))).
+  (check_speculative_noninterference P PA P PA c (naive_ultimate_slh c)))))).
 
 (* Now defining something closer to the original Ultimate SLH, even if it is
    just a special case of flex_slh AllSecret (we prove this below). *)
 
-Fixpoint ultimate_slh (c:com) :=
+Fixpoint opt_ultimate_slh (c:com) :=
   (match c with
   | <{{skip}}> => <{{skip}}>
   | <{{x := e}}> => <{{x := e}}>
-  | <{{c1; c2}}> => <{{ ultimate_slh c1; ultimate_slh c2}}>
+  | <{{c1; c2}}> => <{{ opt_ultimate_slh c1; opt_ultimate_slh c2}}>
   | <{{if be then c1 else c2 end}}> =>
-      if seq.nilp (vars_bexp be) then (* optimized *)
-        <{{if be then "b" := be ? "b" : 1; ultimate_slh c1
-                 else "b" := be ? 1 : "b"; ultimate_slh c2 end}}>
-      else
-        <{{if "b" = 0 && be then "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c1
-                            else "b" := ("b" = 0 && be) ? 1 : "b"; ultimate_slh c2 end}}>
+      let be' := if seq.nilp (vars_bexp be) then be (* optimized *)
+                                            else <{{"b" = 0 && be}}> in
+        <{{if be' then "b" := be' ? "b" : 1; opt_ultimate_slh c1
+                  else "b" := be' ? 1 : "b"; opt_ultimate_slh c2 end}}>
   | <{{while be do c end}}> =>
-      if seq.nilp (vars_bexp be) then (* optimized *)
-        <{{while be do "b" := be ? "b" : 1; ultimate_slh c end;
-           "b" := be ? 1 : "b"}}>
-      else
-        <{{while "b" = 0 && be do "b" := ("b" = 0 && be) ? "b" : 1; ultimate_slh c end;
-           "b" := ("b" = 0 && be) ? 1 : "b"}}>
+      let be' := if seq.nilp (vars_bexp be) then be (* optimized *)
+                                            else <{{"b" = 0 && be}}> in
+        <{{while be' do "b" := be' ? "b" : 1; opt_ultimate_slh c end;
+           "b" := be' ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
-      if seq.nilp (vars_aexp i) then (* optimized -- no mask even if it's out of bounds! *)
-        <{{x <- a[[i]]}}>
-      else
-        <{{x <- a[[("b" = 1) ? 0 : i]] }}>
+      let i' := if seq.nilp (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
+                                          else <{{("b" = 1) ? 0 : i}}> in
+        <{{x <- a[[i']]}}>
   | <{{a[i] <- e}}> =>
-      if seq.nilp (vars_aexp i) then (* optimized *)
-        <{{a[i] <- e}}> (* <- Doing nothing here okay for Spectre v1,
-         but problematic for return address or code pointer overwrites *)
-      else
-        <{{a[("b" = 1) ? 0 : i] <- e}}>
+      let i' := if seq.nilp (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
+                                          else <{{("b" = 1) ? 0 : i}}> in
+        <{{a[i'] <- e}}> (* <- Doing nothing here in the seq.nilp (vars_aexp i) case okay for Spectre v1,
+                               but problematic for return address or code pointer overwrites *)
   end)%string.
 
-(* This `ultimate_slh` version is just `flex_slh AllSecret` *)
+(* This `opt_ultimate_slh` version is just `flex_slh AllSecret` *)
 
-Lemma ultimate_slh_is_flex_slh :
-  forall c, ultimate_slh c = flex_slh AllSecret c.
+Lemma opt_ultimate_slh_is_flex_slh :
+  forall c, opt_ultimate_slh c = flex_slh AllSecret c.
 Proof.
   pose proof all_secret_bexp as Hb.
   pose proof all_secret_aexp as Ha.
@@ -1031,17 +1025,19 @@ Proof.
     + erewrite Ha; eauto.
 Qed.
 
-(* Testing ultimate_slh *)
+(* Testing opt_ultimate_slh *)
+
+Extract Constant defNumTests => "1000000".
 
 QuickChick (
   forAll (sized gen_com) (fun c =>
-  (check_relative_security AllSecret AllSecret c (ultimate_slh c)))).
+  (check_relative_security AllSecret AllSecret c (opt_ultimate_slh c)))).
 
 QuickChick (
   forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  check_gilles_lemma (ultimate_slh c) s1 s2)))).
+  check_gilles_lemma (opt_ultimate_slh c) s1 s2)))).
 
 (** Now testing Standard SLH and Sel SLH *)
 
