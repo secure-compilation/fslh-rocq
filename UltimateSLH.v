@@ -482,7 +482,7 @@ Qed.
 
 Lemma ideal_eval_small_step_spec_needs_force : forall c st ast ds ct stt astt os,
   <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
-  In DForce ds.
+  ds = [DForce].
 Proof.
   intros c st ast ds ct stt astt os Hev.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
@@ -497,7 +497,7 @@ Proof.
   remember false as b eqn:Eqb; remember true as bt eqn:Eqbt.
   induction Hev; subst; simpl in *; try discriminate.
   apply in_or_app. destruct b' eqn:Eqb'.
-  - apply ideal_eval_small_step_spec_needs_force in H; auto.
+  - apply ideal_eval_small_step_spec_needs_force in H. subst. simpl. tauto.
   - right. apply IHHev; auto.
 Qed.
 
@@ -582,8 +582,8 @@ Proof.
     assert (L2: forall d, In d ds2 -> d = DStep).
     { intros d Hd. apply Hds. apply in_or_app. auto. }
     destruct b' eqn:Eqb'.
-    + apply ideal_eval_small_step_spec_needs_force in H.
-      apply L1 in H. inversion H.
+    + apply ideal_eval_small_step_spec_needs_force in H. subst.
+      simpl in L1. specialize (L1 DForce (or_introl (Logic.eq_refl DForce))). discriminate L1.
     + apply ideal_eval_small_step_no_spec in H; auto.
       eapply multi_seq_trans.
       * eapply H.
@@ -837,19 +837,15 @@ Ltac com_step :=
   | |- _ => now constructor
   end).
 
-Lemma ultimate_slh_bcc : forall c ds st ast (b b' : bool) c' st' ast' os,
+Lemma ultimate_slh_bcc_generalized : forall c ds st ast (b b' : bool) c' st' ast' os,
   nonempty_arrs ast ->
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
   <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-  exists c'', <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
+  exists c'', <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>
+  /\ (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)). (* <- generalization *)
 Proof.
-  intros.
-  assert (H':exists c'', <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))> /\
-                      (c' = Skip -> c'' = Skip /\ (st' "b" = if b' then 1 else 0))).
-  2:destruct H' as (c''&H1'&_); eexists; eassumption.
-  revert st ast b b' c' st' ast' os H H0 H1 H2.
-  apply prog_size_ind with (c:=c) (ds:=ds). clear.
+  intros c ds. apply prog_size_ind with (c:=c) (ds:=ds). clear.
   intros c ds IH. intros until os. intros ast_arrs unused_c st_b st_st'.
   invert st_st'.
   { rewrite t_update_same. eexists. split; [apply multi_ideal_refl|].
@@ -1032,6 +1028,16 @@ Proof.
     specialize (ast_arrs a). lia.
 Qed.
 
+Lemma ultimate_slh_bcc : forall c ds st ast (b b' : bool) c' st' ast' os,
+  nonempty_arrs ast ->
+  unused "b" c ->
+  st "b" = (if b then 1 else 0) ->
+  <((ultimate_slh c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  exists c'', <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
+Proof.
+  intros. apply ultimate_slh_bcc_generalized in H2; eauto; firstorder.
+Qed.
+
 (** * More prefix lemmas *)
 
 Lemma prefix_eq_length : forall {X:Type} (ds1 ds2 : list X),
@@ -1068,8 +1074,7 @@ Proof.
   revert Heqb Heqb'.
   induction H; intros; subst; try discriminate.
   destruct b'.
-  + assert (ds1 = [DForce]).
-    { clear -H. revert c' H. induction c; intros; invert H; [|reflexivity]. eapply IHc1. eassumption. }
+  + apply ideal_eval_small_step_spec_needs_force in H.
     subst. exists [], ds2. now repeat econstructor.
   + destruct IHmulti_ideal; [reflexivity..|]. do 2 destruct H1. subst.
     exists (ds1++x), x0. split; [|now rewrite app_assoc].
@@ -1260,7 +1265,7 @@ Proof.
     apply app_eq_nil in H2 as [_ Contra]. inversion Contra. }
   destruct L as [L | L]; subst; simpl in *.
   - assert (Hb': b' = false).
-    { destruct b' eqn:Eqb'; auto. apply ideal_eval_small_step_spec_needs_force in H. simpl in H. destruct H. }
+    { destruct b' eqn:Eqb'; auto. apply ideal_eval_small_step_spec_needs_force in H. discriminate H. }
     apply IHHev in Eqds; auto; subst.
     destruct Eqds as [cm1 [stm1 [astm1 [cm2 [stm2 [astm2 [H1 [H2 H3] ] ] ] ] ] ] ].
     exists cm1, stm1, astm1, cm2, stm2, astm2.
