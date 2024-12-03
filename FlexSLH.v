@@ -33,9 +33,6 @@ with vars_bexp (a:bexp) : list string :=
   | <{ b1 && b2 }> => vars_bexp b1 ++ vars_bexp b2
   end.
 
-Scheme aexp_bexp_ind := Induction for aexp Sort Prop
-  with bexp_aexp_ind := Induction for bexp Sort Prop.
-
 Ltac rewrite_eq :=
   match goal with
   | H:_=_ |- _ => rewrite H; clear H
@@ -108,12 +105,18 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
       in <{{while be' do "b" := be' ? "b" : 1; flex_slh P c end;
              "b" := be' ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
+    let i' := if label_of_aexp P i && negb (P x)
+      then i
+      else <{{("b" = 1) ? 0 : i}}> (* Ultimate SLH *)
+    in <{{x <- a[[i']]}}>
+(* Simplified this (TODO: prove it's equivalent to sel_addr_slh, which needs to be defined):
     if label_of_aexp P i
     then (* Selective SLH -- mask the value of public loads *)
       if P x then <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
                    else <{{x <- a[[i]]}}>
     else (* Ultimate SLH -- mask private address of load *)
       <{{x <- a[[("b" = 1) ? 0 : i]] }}>
+*)
   | <{{a[i] <- e}}> =>
     let i' := if label_of_aexp P i
       then i (* Selective SLH -- no mask even if it's out of bounds! *)
@@ -151,9 +154,10 @@ Module RelatingSelSLH.
     intros P PA c H. induction H; simpl; repeat rewrite_eq; try reflexivity.
     - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
     - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
+    - apply label_of_aexp_unique in H. rewrite <- H. 
+  Admitted. (* reflexivity.
     - apply label_of_aexp_unique in H. rewrite <- H. reflexivity.
-    - apply label_of_aexp_unique in H. rewrite <- H. reflexivity.
-  Qed.
+  Qed. *)
 
 End RelatingSelSLH.
 
@@ -225,17 +229,18 @@ Inductive ideal_eval_small_step :
       P |- <((while be do c end, st, ast, b))> -->i_[]^^[]
             <((if be then c; while be do c end else skip end, st, ast, b))>
   | ISM_ARead : forall P x a ie st ast (b :bool) i,
-      (if negb (label_of_aexp P ie) && b then 0 else (aeval st ie)) = i ->
+      (if (negb (label_of_aexp P ie) || (P x)) && b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
       P |- <((x <- a[[ie]], st, ast, b))> -->i_[DStep]^^[OARead a i]
-            <((skip, x !-> (if label_of_aexp P ie && P x && b then 0 else nth i (ast a) 0); st, ast, b))>
+            <((skip, x !-> (nth i (ast a) 0); st, ast, b))>
   | ISM_ARead_U : forall P x a ie st ast i a' i',
       aeval st ie = i ->
       label_of_aexp P ie = public ->
+      P x = secret ->
       i >= length (ast a) ->
       i' < length (ast a') ->
       P |- <((x <- a[[ie]], st, ast, true))> -->i_[DLoad a' i']^^[OARead a i]
-            <((skip, x !-> (if P x then 0 else nth i' (ast a') 0); st, ast, true))>
+            <((skip, x !-> (nth i' (ast a') 0); st, ast, true))>
   | ISM_Write : forall P a ie e st ast (b :bool) i n,
       aeval st e = n ->
       (if negb (label_of_aexp P ie) && b then 0 else (aeval st ie)) = i ->

@@ -358,12 +358,9 @@ Fixpoint ultimate_slh (c:com) :=
   | <{{a[i] <- e}}> =>
       let i' := if is_empty (vars_aexp i) then i (* optimized -- no mask even if it's out of bounds! *)
                                           else <{{("b" = 1) ? 0 : i}}> in
-        <{{a[i'] <- e}}> (* <- Doing nothing here in the seq.nilp (vars_aexp i) case okay for Spectre v1,
+        <{{a[i'] <- e}}> (* <- Doing nothing here in the is_empty (vars_aexp i) case okay for Spectre v1,
                                but problematic for return address or code pointer overwrites *)
   end)%string.
-
-Scheme aexp_bexp_ind := Induction for aexp Sort Prop
-  with bexp_aexp_ind := Induction for bexp Sort Prop.
 
 (** The masking USLH does for indices requires that our arrays are nonempty. *)
 
@@ -428,6 +425,10 @@ Inductive ideal_eval_small_step :
 
   where "<(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
     (ideal_eval_small_step c st ast b ct stt astt bt ds os).
+
+(* HIDE: This one now has again `_U` cases because of out-of-bounds array
+   accesses at constant indices. Since the array sizes are also statically
+   known, we could easily reject such programs statically.  *)
 
 Reserved Notation
   "'<((' c , st , ast , b '))>' '-->i*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
@@ -1329,11 +1330,15 @@ Qed.
 
 (** * Gilles Lemma *)
 
-Lemma aeval_no_vars : forall st st' a,
-  is_empty (vars_aexp a) = true ->
-  aeval st a = aeval st' a.
+Lemma eval_no_vars : forall st st',
+  (forall a,
+    is_empty (vars_aexp a) = true ->
+    aeval st a = aeval st' a) /\
+  (forall b,
+    is_empty (vars_bexp b) = true ->
+    beval st b = beval st' b).
 Proof.
-  intros st st' a. eapply aexp_bexp_ind with (a:=a) (P0:=fun b => is_empty (vars_bexp b) = true -> beval st b = beval st' b); simpl; intros; try reflexivity; try discriminate.
+  intros st st'. apply aexp_bexp_mutind; simpl; intros; try reflexivity; try discriminate.
   + rewrite is_empty_app in H1. apply andb_prop in H1. destruct H1. apply H in H1. apply H0 in H2. now rewrite H1, H2.
   + rewrite is_empty_app in H1. apply andb_prop in H1. destruct H1. apply H in H1. apply H0 in H2. now rewrite H1, H2.
   + rewrite is_empty_app in H1. apply andb_prop in H1. destruct H1. apply H in H1. apply H0 in H2. now rewrite H1, H2.
@@ -1347,18 +1352,15 @@ Proof.
   + rewrite is_empty_app in H1. apply andb_prop in H1. destruct H1. apply H in H1. apply H0 in H2. now rewrite H1, H2.
 Qed.
 
+Lemma aeval_no_vars : forall st st' a,
+  is_empty (vars_aexp a) = true ->
+  aeval st a = aeval st' a.
+Proof. intros st st' a H. now eapply eval_no_vars. Qed.
+
 Lemma beval_no_vars : forall st st' b,
   is_empty (vars_bexp b) = true ->
   beval st b = beval st' b.
-Proof.
-  induction b; simpl; intros; try reflexivity.
-  + rewrite is_empty_app in H. apply andb_prop in H. destruct H. eapply aeval_no_vars in H, H0. now rewrite H, H0.
-  + rewrite is_empty_app in H. apply andb_prop in H. destruct H. eapply aeval_no_vars in H, H0. now rewrite H, H0.
-  + rewrite is_empty_app in H. apply andb_prop in H. destruct H. eapply aeval_no_vars in H, H0. now rewrite H, H0.
-  + rewrite is_empty_app in H. apply andb_prop in H. destruct H. eapply aeval_no_vars in H, H0. now rewrite H, H0.
-  + apply IHb in H. now rewrite H.
-  + rewrite is_empty_app in H. apply andb_prop in H. destruct H. apply IHb1 in H. apply IHb2 in H0. now rewrite H, H0.
-Qed.
+Proof. intros st st' b H. now eapply eval_no_vars. Qed.
 
 Lemma gilles_lemma_one_step : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
   <((c, st1, ast1, true))> -->i_ds^^os1 <((c1, stt1, astt1, true))> ->
