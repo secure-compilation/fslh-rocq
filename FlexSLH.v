@@ -33,6 +33,26 @@ with vars_bexp (a:bexp) : list string :=
   | <{ b1 && b2 }> => vars_bexp b1 ++ vars_bexp b2
   end.
 
+Fixpoint label_of_aexp (P:pub_vars) (a:aexp) : label :=
+  match a with
+  | ANum n => public
+  | AId x => P x
+  | <{ a1 + a2 }>
+  | <{ a1 - a2 }>
+  | <{ a1 * a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ be ? a1 : a2 }> => join (label_of_bexp P be) (join (label_of_aexp P a1) (label_of_aexp P a2))
+  end
+with label_of_bexp (P:pub_vars) (b:bexp) : label :=
+  match b with
+  | <{ true }> | <{ false }> => public
+  | <{ a1 = a2 }>
+  | <{ a1 <> a2 }>
+  | <{ a1 <= a2 }>
+  | <{ a1 > a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ ~b }> => label_of_bexp P b
+  | <{ b1 && b2 }> => join (label_of_bexp P b1) (label_of_bexp P b2)
+  end.
+
 Ltac rewrite_eq :=
   match goal with
   | H:_=_ |- _ => rewrite H; clear H
@@ -42,50 +62,8 @@ Ltac rewrite_eq :=
 
 Ltac invert H := inversion H; subst; clear H.
 
-Definition label_of_aexp (P:pub_vars) (a:aexp) : label :=
-  List.fold_left (fun l a => join l (P a)) (vars_aexp a) public.
-
-Definition label_of_bexp (P:pub_vars) (b:bexp) : label :=
-  List.fold_left (fun l b => join l (P b)) (vars_bexp b) public.
-
-Definition is_empty {A : Type} (l : list A) := match l with [] => true | _ => false end.
-
-Lemma is_empty_true {A} (l : list A) :
-  is_empty l = true -> l = [].
-Proof. now destruct l. Qed.
-
-Lemma no_vars_public_bexp : forall P b,
-  is_empty (vars_bexp b) = true ->
-  label_of_bexp P b = public.
-Proof. intros P b H. apply is_empty_true in H. unfold label_of_bexp. now rewrite_eq. Qed.
-
-Lemma no_vars_public_aexp : forall P a,
-  is_empty (vars_aexp a) = true ->
-  label_of_aexp P a = public.
-Proof. intros P a H. apply is_empty_true in H. unfold label_of_aexp. now rewrite_eq. Qed.
-
 Definition AllPub : pub_vars := (_!-> public).
 Definition AllSecret : pub_vars := (_!-> secret).
-
-Lemma joining_to_secret : forall l' (xs:list string),
-  List.fold_left (fun l b => join l l') xs secret = secret.
-Proof. intros P xs. induction xs; eauto. Qed.
-
-Lemma all_secret_bexp : forall b,
-  is_empty (vars_bexp b) = false ->
-  label_of_bexp AllSecret b = secret.
-Proof.
-  intros b H. unfold label_of_bexp. destruct (vars_bexp b) eqn:Eq; [discriminate|rewrite_eq].
-  unfold AllSecret, t_empty. simpl. apply joining_to_secret.
-Qed.
-
-Lemma all_secret_aexp : forall a,
-  is_empty (vars_aexp a) = false ->
-  label_of_aexp AllSecret a = secret.
-Proof.
-  intros a H. unfold label_of_aexp. destruct (vars_aexp a) eqn:Eq; [discriminate|rewrite_eq].
-  unfold AllSecret, t_empty. simpl. apply joining_to_secret.
-Qed.
 
 Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
   (match c with
@@ -125,27 +103,37 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
                               but would be problematic for return address or code pointer overwrites *)
   end)%string.
 
+Lemma label_of_exp_sound : forall P,
+  (forall a, P |-a- a \in label_of_aexp P a) /\
+  (forall b, P |-b- b \in label_of_bexp P b).
+Proof. intro P. apply aexp_bexp_mutind; intros; now constructor. Qed.
+
+Corollary label_of_aexp_sound : forall P a,
+  P |-a- a \in label_of_aexp P a.
+Proof. intros. apply label_of_exp_sound. Qed.
+
+Corollary label_of_bexp_sound : forall P b,
+  P |-b- b \in label_of_bexp P b.
+Proof. intros. apply label_of_exp_sound. Qed.
+
+Lemma label_of_exp_unique : forall P,
+  (forall a l, P |-a- a \in l -> l = label_of_aexp P a) /\
+  (forall b l, P |-b- b \in l -> l = label_of_bexp P b).
+Proof. intro P. apply aexp_bexp_has_label_mutind; intros; (repeat rewrite_eq); reflexivity. Qed.
+
+Corollary label_of_aexp_unique : forall P a l,
+  P |-a- a \in l ->
+  l = label_of_aexp P a.
+Proof. intro. apply label_of_exp_unique. Qed.
+
+Corollary label_of_bexp_unique : forall P b l,
+  P |-b- b \in l ->
+  l = label_of_bexp P b.
+Proof. intro. apply label_of_exp_unique. Qed.
+
 (* For CT programs this is the same as sel_slh *)
 
 Module RelatingSelSLH.
-
-  Lemma label_of_aexp_sound : forall P a,
-    P |-a- a \in label_of_aexp P a.
-  Admitted.
-
-  Lemma label_of_aexp_unique : forall P a l,
-    P |-a- a \in l ->
-    l = label_of_aexp P a.
-  Admitted.
-
-  Lemma label_of_bexp_sound : forall P b,
-    P |-b- b \in label_of_bexp P b.
-  Admitted.
-
-  Lemma label_of_bexp_unique : forall P b l,
-    P |-b- b \in l ->
-    l = label_of_bexp P b.
-  Admitted.
 
   Lemma sel_slh_is_flex_slh : forall P PA c,
       ct_well_typed P PA c ->
@@ -155,7 +143,8 @@ Module RelatingSelSLH.
     - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
     - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
     - apply label_of_aexp_unique in H. rewrite <- H. 
-  Admitted. (* reflexivity.
+  Abort.
+  (* reflexivity.
     - apply label_of_aexp_unique in H. rewrite <- H. reflexivity.
   Qed. *)
 
@@ -217,39 +206,43 @@ Inductive ideal_eval_small_step :
       P |- <(((c1;c2), st, ast, b))>  -->i_ds^^os <(((c1t;c2), stt, astt, bt))>
   | ISM_Seq_Skip : forall P st ast b c2,
       P |- <(((skip;c2), st, ast, b))>  -->i_[]^^[] <((c2, st, ast, b))>
-  | ISM_If : forall P be ct cf st ast b c' b',
-      b' = (label_of_bexp P be || negb b) && beval st be ->
+  | ISM_If : forall P be ct cf st ast b c' b' l,
+      P |-b- be \in l ->
+      b' = (l || negb b) && beval st be ->
       c' = (if b' then ct else cf) ->
       P |- <((if be then ct else cf end, st, ast, b))> -->i_[DStep]^^[OBranch b'] <((c', st, ast, b))>
-  | ISM_If_F : forall P be ct cf st ast b c' b',
-      b' = (label_of_bexp P be || negb b) && beval st be ->
+  | ISM_If_F : forall P be ct cf st ast b c' b' l,
+      P |-b- be \in l ->
+      b' = (l || negb b) && beval st be ->
       c' = (if b' then cf else ct) ->
       P |- <((if be then ct else cf end, st, ast, b))> -->i_[DForce]^^[OBranch b'] <((c', st, ast, true))>
   | ISM_While : forall P be c st ast b,
       P |- <((while be do c end, st, ast, b))> -->i_[]^^[]
             <((if be then c; while be do c end else skip end, st, ast, b))>
-  | ISM_ARead : forall P x a ie st ast (b :bool) i,
-      (if (negb (label_of_aexp P ie) || (P x)) && b then 0 else (aeval st ie)) = i ->
+  | ISM_ARead : forall P x a ie st ast (b :bool) i li,
+      P |-a- ie \in li ->
+      (if (negb li || (P x)) && b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
       P |- <((x <- a[[ie]], st, ast, b))> -->i_[DStep]^^[OARead a i]
             <((skip, x !-> (nth i (ast a) 0); st, ast, b))>
   | ISM_ARead_U : forall P x a ie st ast i a' i',
       aeval st ie = i ->
-      label_of_aexp P ie = public ->
+      P |-a- ie \in public ->
       P x = secret ->
       i >= length (ast a) ->
       i' < length (ast a') ->
       P |- <((x <- a[[ie]], st, ast, true))> -->i_[DLoad a' i']^^[OARead a i]
             <((skip, x !-> (nth i' (ast a') 0); st, ast, true))>
-  | ISM_Write : forall P a ie e st ast (b :bool) i n,
+  | ISM_Write : forall P a ie e st ast (b :bool) i n li,
       aeval st e = n ->
-      (if negb (label_of_aexp P ie) && b then 0 else (aeval st ie)) = i ->
+      P |-a- ie \in li ->
+      (if negb li && b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
       P |- <((a[ie] <- e, st, ast, b))> -->i_[DStep]^^[OAWrite a i]
             <((skip, st, a !-> upd i (ast a) n; ast, b))>
   | ISM_Write_U : forall P a ie e st ast i n a' i',
       aeval st e = n ->
-      label_of_aexp P ie = public ->
+      P |-a- ie \in public ->
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
@@ -320,6 +313,74 @@ Definition ideal_same_obs P c st1 st2 ast1 ast2 : Prop :=
     P |- <((c, st2, ast2, false))> -->i*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
     os1 = os2.
 
+Lemma t_update_nonempty_arrs : forall ast a i n,
+  nonempty_arrs ast -> nonempty_arrs (a !-> upd i (ast a) n; ast).
+Proof.
+  intros ast a i n H a'.
+  case (a =? a') eqn:Heq.
+  + apply String.eqb_eq in Heq. rewrite Heq, t_update_eq, upd_length. now apply H.
+  + apply String.eqb_neq in Heq. rewrite t_update_neq; [|tauto]. now apply H.
+Qed.
+
+Lemma ideal_eval_preserves_nonempty_arrs : forall P c st ast b ct stt astt bt ds os,
+  nonempty_arrs ast ->
+  P |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+  nonempty_arrs astt.
+Proof.
+  intros.
+  induction H0; [tauto..|now apply t_update_nonempty_arrs|now apply t_update_nonempty_arrs].
+Qed.
+
+Lemma multi_ideal_preserves_nonempty_arrs : forall P c st ast b ct stt astt bt ds os,
+  nonempty_arrs ast ->
+  P |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  nonempty_arrs astt.
+Proof.
+  intros. induction H0; [tauto|].
+  apply ideal_eval_preserves_nonempty_arrs in H0; tauto.
+Qed.
+
+Lemma ideal_unused_overwrite : forall P c st ast b ct stt astt bt ds os X n,
+  unused X c ->
+  P |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+  P |- <((c, X !-> n; st, ast, b))> -->i_ds^^os <((ct, X !-> n; stt, astt, bt))> /\ unused X ct.
+Proof.
+  intros. induction H0; simpl in *.
+  + split; [|trivial]. rewrite t_update_permute; [|tauto]. constructor. now rewrite aeval_unused_update.
+  + repeat constructor; tauto.
+  + now repeat constructor.
+  + split; [|rewrite_eq; destruct b'; tauto]. econstructor; [eassumption|now rewrite beval_unused_update|tauto].
+  + split; [|rewrite_eq; destruct b'; tauto]. econstructor; [eassumption|now rewrite beval_unused_update|tauto].
+  + now repeat constructor.
+  + split; [|trivial]. rewrite t_update_permute; [|tauto]. econstructor; [eassumption|now rewrite aeval_unused_update|tauto].
+  + split; [|trivial]. rewrite t_update_permute; [|tauto]. econstructor; [now rewrite aeval_unused_update|tauto..].
+  + split; [|trivial]. econstructor. 2, 4:eassumption. all:now rewrite aeval_unused_update.
+  + split; [|trivial]. econstructor. 1, 3: now rewrite aeval_unused_update. all:tauto.
+Qed.
+
+Lemma multi_ideal_unused_overwrite : forall P c st ast b ct stt astt bt ds os X n,
+  unused X c ->
+  P |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  P |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((ct, X !-> n; stt, astt, bt))>.
+Proof.
+  intros. induction H0; [constructor|].
+  eapply ideal_unused_overwrite in H0; [|eassumption].
+  destruct H0. now econstructor; eauto.
+Qed.
+
+Lemma multi_ideal_unused_update : forall P c st ast b ct stt astt bt ds os X n,
+  unused X c ->
+  P |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((ct, X !-> n; stt, astt, bt))> ->
+  P |- <((c, st, ast, b))> -->i*_ds^^os <((ct, X !-> st X; stt, astt, bt))>.
+Proof.
+  intros. eapply multi_ideal_unused_overwrite with (n:=st X) in H0; [|eassumption].
+  now rewrite !t_update_shadow, t_update_same in H0.
+Qed.
+
+Ltac solve_refl :=
+  now eexists; split; [|(try discriminate); (try now repeat econstructor)]; rewrite ?t_update_shadow, t_update_same;
+  repeat econstructor; (repeat rewrite_eq); rewrite ?andb_false_r; (try now apply label_of_exp_sound).
+
 Lemma flex_slh_bcc_generalized : forall c ds P st ast (b:bool) c' st' ast' b' os,
   nonempty_arrs ast ->
   unused "b" c ->
@@ -331,38 +392,70 @@ Proof.
   intros c ds P. eapply prog_size_ind with (c:=c) (ds:=ds). clear.
   intros c ds IH. intros until os. intros Harrs Hunused st_b H.
   destruct c; simpl in *.
-  + invert H. { eexists. rewrite t_update_same. now repeat constructor. } invert H0.
-  + invert H. { eexists. rewrite t_update_same. now repeat constructor. } invert H0. invert H1; [|inversion H]. rewrite t_update_permute; [|tauto]. rewrite t_update_same.
+  + invert H; [solve_refl|]. invert H0.
+  + invert H; [solve_refl|]. invert H0. invert H1; [|inversion H]. rewrite t_update_permute; [|tauto]. rewrite t_update_same.
     eexists. repeat econstructor. rewrite t_update_neq; tauto.
-  + apply multi_spec_seq in H. admit.
+  + apply multi_spec_seq in H. destruct H.
+    - do 8 destruct H. destruct H0, H1. subst. apply IH in H1; [|prog_size_auto|tauto..]. destruct H1, H, H0; [reflexivity|]. subst.
+      eapply multi_ideal_preserves_nonempty_arrs in Harrs; [|eassumption]. apply IH in H2; [|prog_size_auto|tauto..].
+      destruct H2, H0. eexists. split; [|apply H2]. eapply multi_ideal_unused_overwrite with (X:="b") (n:=st "b") in H0; [|tauto].
+      rewrite t_update_shadow in H0. eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com, H|].
+      eapply multi_ideal_trans_nil_l; [constructor|assumption].
+    - do 2 destruct H. subst. apply IH in H0; [|prog_size_auto|tauto..]. destruct H0, H.
+      eexists. split; [|discriminate]. apply multi_ideal_add_snd_com. eassumption.
+  + invert H; [solve_refl|].
+    invert H0.
+    - destruct (beval st'0 be) eqn:Hbe.
+      * assert (Heq : beval st'0 (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) = label_of_bexp P be || negb b'0)
+          by now destruct (label_of_bexp P be); simpl; rewrite ?st_b, Hbe; destruct b'0. rewrite Heq in *.
+        destruct (label_of_bexp P be || negb b'0) eqn:Hlb_b.
+        ++ invert H1; [solve_refl|]. invert H. invert H12. invert H0; [solve_refl|].
+           invert H; [inversion H12|]. simpl in H1. rewrite Heq, t_update_same in H1. apply IH in H1; [|prog_size_auto|tauto..].
+           destruct H1, H. eexists. split; [|apply H0]. rewrite !app_nil_l. repeat econstructor; [apply label_of_exp_sound|now repeat rewrite_eq|tauto].
+        ++ invert H1; [solve_refl|]. invert H. invert H12. invert H0; [solve_refl|]. invert H; [inversion H12|]. simpl in H1.
+           rewrite Heq, t_update_same in H1. apply IH in H1; [|prog_size_auto|tauto..].
+           destruct H1, H. eexists. split; [|apply H0]. rewrite !app_nil_l. repeat econstructor; [apply label_of_exp_sound|now repeat rewrite_eq|tauto].
+      * assert (Heq : beval st'0 (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) = false)
+          by now destruct (label_of_bexp P be); simpl; rewrite Hbe, ?andb_false_r. rewrite Heq in *.
+        invert H1; [solve_refl|]. invert H. invert H12. invert H0; [solve_refl|]. invert H; [inversion H12|]. simpl in H1.
+        rewrite Heq, t_update_same in H1. apply IH in H1; [|prog_size_auto|tauto..]. destruct H1, H. eexists.
+        split; [|apply H0]. rewrite !app_nil_l. repeat econstructor; [apply label_of_exp_sound|now repeat rewrite_eq; rewrite andb_false_r|tauto].
+    - destruct (beval st'0 be) eqn:Hbe.
+      * assert (Heq : beval st'0 (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) = label_of_bexp P be || negb b)
+          by now destruct (label_of_bexp P be); simpl; rewrite ?st_b, Hbe; destruct b. rewrite Heq in *.
+        destruct (label_of_bexp P be || negb b) eqn:Hlb_b.
+        ++ invert H1; [solve_refl|]. invert H. invert H12. invert H0; [solve_refl|].
+           invert H; [inversion H12|]. simpl in H1. rewrite Heq in H1. apply IH in H1; [|prog_size_auto|tauto..].
+           destruct H1, H. eexists. split; [|apply H0]. rewrite !app_nil_l. rewrite t_update_eq in H.
+           apply multi_ideal_unused_update in H; [|tauto].
+           repeat econstructor; [apply label_of_exp_sound|now repeat rewrite_eq|tauto].
+        ++ invert H1; [solve_refl|]. invert H. invert H12. invert H0; [solve_refl|]. invert H; [inversion H12|]. simpl in H1.
+           rewrite Heq in H1. apply IH in H1; [|prog_size_auto|tauto..]. rewrite t_update_eq in H1.
+           destruct H1, H. apply multi_ideal_unused_update in H; [|tauto].
+           eexists. split; [|apply H0]. rewrite !app_nil_l. repeat econstructor; [apply label_of_exp_sound|now repeat rewrite_eq|tauto].
+      * assert (Heq : beval st'0 (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) = false)
+          by now destruct (label_of_bexp P be); simpl; rewrite Hbe, ?andb_false_r. rewrite Heq in *.
+        invert H1; [solve_refl|]. invert H. invert H12. invert H0; [solve_refl|]. invert H; [inversion H12|]. simpl in H1.
+        rewrite Heq in H1. apply IH in H1; [|prog_size_auto|tauto..]. destruct H1, H. eexists. rewrite t_update_eq in H.
+        apply multi_ideal_unused_update in H; [|tauto].
+        split; [|apply H0]. rewrite !app_nil_l. repeat econstructor; [apply label_of_exp_sound|now repeat rewrite_eq; rewrite andb_false_r|tauto].
   + admit.
-  + admit.
-  + admit.
-  + admit.
-  (*
-    invert H. { eexists. rewrite t_update_same. constructor. }
-    destruct (label_of_aexp P i) eqn:Hlbl.
-    - destruct (P x) eqn:HPx.
-      * invert H0. invert H12.
-        { invert H1; [admit|]. invert H; [inversion H12|]. invert H0; [admit|]. invert H. invert H1; [|inversion H].
-          rewrite t_update_shadow, t_update_permute; [|tauto]. rewrite t_update_same. exists Skip. rewrite !app_nil_l. repeat econstructor; [now rewrite Hlbl|tauto|].
-          simpl. rewrite HPx, t_update_neq; [|tauto]. rewrite st_b, t_update_eq, Hlbl. destruct b'; simpl; constructor. }
-        invert H1; [admit|]. invert H; [inversion H12|]. invert H0; [admit|]. invert H. invert H1; [|inversion H]. rewrite t_update_shadow, t_update_permute; [|tauto].
-        rewrite t_update_same. eexists. econstructor; [constructor; tauto|]. simpl. rewrite HPx, t_update_neq; [|tauto]. rewrite st_b, t_update_eq. simpl. constructor.
-      * invert H0.
-        { invert H1; [|inversion H]. repeat econstructor; [now rewrite Hlbl|tauto|]. rewrite t_update_permute; [|tauto]. rewrite t_update_same, HPx, andb_false_r. constructor. }
-        invert H1; [|inversion H]. rewrite t_update_permute; [|tauto]. rewrite t_update_same. repeat econstructor; [tauto..|]. rewrite HPx. constructor.
-    - invert H0.
-      { invert H1; [|inversion H]. rewrite t_update_permute; [|tauto]. rewrite t_update_same. repeat econstructor; [now rewrite Hlbl; simpl; destruct b'; rewrite st_b|tauto|].
-        simpl. rewrite st_b, Hlbl. destruct b'; simpl; constructor. }
-      invert H1; [|inversion H]. simpl in *. rewrite st_b in H14. specialize (Harrs a). simpl in *. lia.
-  + invert H. { eexists. rewrite t_update_same. constructor. }
-    destruct (label_of_aexp P i) eqn:Hlbl; invert H0; (invert H1; [|inversion H]); rewrite t_update_same; repeat econstructor; try tauto.
-    - now rewrite Hlbl.
-    - simpl. rewrite Hlbl, st_b. now destruct b'.
-    - simpl in H15. rewrite st_b in H15. specialize (Harrs a). simpl in H15. lia.
-    - simpl in H15. rewrite st_b in H15. specialize (Harrs a). simpl in H15. lia.
-  *)
+  + invert H; [solve_refl|]. invert H0.
+    - invert H1; [|inversion H]. eexists. split; [|split; [reflexivity|rewrite t_update_neq; tauto] ].
+      rewrite t_update_permute; [|tauto]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound| |assumption].
+      simpl. now destruct (label_of_aexp P i), (P x), b'; simpl; rewrite ?st_b.
+    - destruct (label_of_aexp P i && negb (P x)) eqn:Heq.
+      * invert H1; [|inversion H]. eexists. split; [|split; [reflexivity|rewrite t_update_neq; tauto] ].
+        rewrite t_update_permute; [|tauto]. rewrite t_update_same. apply andb_prop in Heq. destruct Heq.
+        apply negb_true_iff in H0. repeat econstructor; [|tauto..]. unfold public. rewrite <- H. apply label_of_exp_sound.
+      * simpl in H14. rewrite st_b in H14. simpl in H14. specialize (Harrs a). lia.
+  + invert H; [solve_refl|]. invert H0.
+    - invert H1; [|inversion H]. eexists. split; [|tauto]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound| |assumption].
+      now destruct (label_of_aexp P i), b'; simpl; rewrite ?st_b.
+    - destruct (label_of_aexp P i) eqn:Heq.
+      * invert H1; [|inversion H]. eexists. split; [|tauto]. rewrite t_update_same.
+        repeat econstructor; [|tauto..]. unfold public. rewrite <- Heq. apply label_of_exp_sound.
+      * simpl in H15. rewrite st_b in H15. simpl in H15. specialize (Harrs a). lia.
 Admitted.
 
 Lemma flex_slh_bcc : forall c ds P st ast (b:bool) c' st' ast' b' os,
@@ -371,7 +464,9 @@ Lemma flex_slh_bcc : forall c ds P st ast (b:bool) c' st' ast' b' os,
   st "b" = (if b then 1 else 0) ->
   <((flex_slh P c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
   exists c'', P |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
-Admitted.
+Proof.
+  intros. apply flex_slh_bcc_generalized in H2; [|tauto..]. do 2 destruct H2. eexists. apply H2.
+Qed.
 
 Conjecture gilles_lemma : forall P c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
   pub_equiv P st1 st2 ->
