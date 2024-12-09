@@ -96,7 +96,7 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
       <{{x <- a[[("b" = 1) ? 0 : i]] }}>
 *)
   | <{{a[i] <- e}}> =>
-    let i' := if label_of_aexp P i
+    let i' := if label_of_aexp P i && label_of_aexp P e
       then i (* Selective SLH -- no mask even if it's out of bounds! *)
       else <{{("b" = 1) ? 0 : i}}> (* Ultimate SLH *)
     in <{{a[i'] <- e}}> (* <- Doing nothing here in label_of_aexp P i = true case okay for Spectre v1,
@@ -200,85 +200,6 @@ Inductive well_typed (P PA : pub_vars) : label -> com -> Prop :=
       P & PA, pc |-- <{{ a[i] <- e }}>
 where "P '&' PA ',' pc '|--' c" := (well_typed P PA pc c).
 
-
-
-Definition c : com :=
-  <{{ if 0 = 0 then skip else "a"[1] <- "x";
-      "y" <- "a'"[[0]];
-      if "y" = 0 then skip else skip end end }}>.
-
-Definition P : pub_vars := ("x" !-> secret; _ !-> public).
-
-Definition PA : pub_vars := ("a" !-> secret; _ !-> public).
-
-Definition st1 : state := ("x" !-> 0; "y" !-> 0; "b" !-> 0; _ !-> 0).
-
-Definition st2 : state := ("x" !-> 1; "y" !-> 0; "b" !-> 0; _ !-> 0).
-
-Definition stt1 : state := ("x" !-> 0; "y" !-> 0; "b" !-> 1; _ !-> 0).
-
-Definition stt2 : state := ("x" !-> 1; "y" !-> 1; "b" !-> 1; _ !-> 0).
-
-Definition ast1 : astate := ("a" !-> [0]; "a'" !-> [0]; _ !-> [0]).
-
-Definition ast2 : astate := ("a" !-> [0]; "a'" !-> [0]; _ !-> [0]).
-
-Definition astt1 : astate := ("a" !-> [0]; "a'" !-> [0]; _ !-> [0]).
-
-Definition astt2 : astate := ("a" !-> [0]; "a'" !-> [1]; _ !-> [0]).
-
-Definition ds : dirs := [DForce]++[DStore "a'" 0]++[DStep]++[DStep].
-
-Definition os1 : obs := [OBranch true]++[OAWrite "a" 1]++[OARead "a'" 0]++[OBranch true].
-
-Definition os2 : obs := [OBranch true]++[OAWrite "a" 1]++[OARead "a'" 0]++[OBranch false].
-
-Lemma c_seq_secure : seq_same_obs c st1 st2 ast1 ast2.
-Proof.
-  unfold seq_same_obs, c. intros.
-  invert H; [left; apply prefix_nil|]. invert H1. simpl in H2. invert H2; [|inversion H].
-  invert H0; [right; apply prefix_nil|]. invert H. left. exists os5. now rewrite app_nil_r.
-Qed.
-
-Ltac simpl_map :=
-  repeat
-    lazymatch goal with
-    | |- context [(?X !-> _; _) ?X] => rewrite t_update_eq
-    | |- context [(_ !-> _) _] => rewrite t_apply_empty
-    | |- context [(?X !-> _; _) _] => rewrite t_update_neq; [|discriminate]
-    | |- context [(?X !-> _; ?X !-> _; _)] => rewrite t_update_shadow
-    | |- context [("y" !-> _; "x" !-> _; _)] => rewrite t_update_permute with (x1:="y") (x2:="x"); [|discriminate]
-    | |- context [("b" !-> _; ?X !-> _; _)] => rewrite t_update_permute with (x1:="b") (x2:=X); [|discriminate]
-    | |- context [("a'" !-> _; "a" !-> _; _)] => rewrite t_update_permute with (x1:="a'") (x2:="a"); [|discriminate]
-    end.
-
-Lemma c_spec_insecure : ~ spec_same_obs (flex_slh P c) st1 st2 ast1 ast2.
-Proof.
-  unfold c, spec_same_obs. intro.
-  specialize (H ds stt1 stt2 astt1 astt2 true true os1 os2 Skip Skip).
-  assert (os1 <> os2) by (simpl; discriminate).
-  unfold stt1, stt2, astt1, astt2, os1, os2, ds in H.
-  apply H0, H.
-  + econstructor; [repeat econstructor|]. eapply multi_spec_trans_nil_l; [repeat econstructor|].
-    eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|]. econstructor; [repeat econstructor|].
-    eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|]. econstructor; [repeat econstructor|].
-    eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|]. eapply multi_spec_trans_nil_r; [repeat econstructor|].
-    eapply multi_spec_trans_nil_r; [repeat econstructor|]. eapply multi_spec_trans_nil_r; [apply SpecSM_Seq_Skip|].
-    unfold st1, ast1. simpl. simpl_map. constructor.
-  + econstructor; [repeat econstructor|]. eapply multi_spec_trans_nil_l; [repeat econstructor|].
-    eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|]. econstructor; [repeat econstructor|].
-    eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|]. econstructor; [repeat econstructor|].
-    eapply multi_spec_trans_nil_l; [apply SpecSM_Seq_Skip|]. eapply multi_spec_trans_nil_r; [repeat econstructor|].
-    eapply multi_spec_trans_nil_r; [repeat econstructor|]. eapply multi_spec_trans_nil_r; [apply SpecSM_Seq_Skip|].
-    unfold st2, ast2. simpl. simpl_map. constructor.
-Qed.
-
-Goal (P & PA, public |-- c).
-Proof. unfold P, PA, c. repeat econstructor. Qed.
-
-Goal (~ relative_secure (flex_slh P) c st1 st2 ast1 ast2).
-Proof. intro H. apply c_spec_insecure. apply H. apply c_seq_secure. Qed.
-
 (** * Ideal small-step evaluation *)
 
 Reserved Notation
@@ -324,16 +245,18 @@ Inductive ideal_eval_small_step :
       i' < length (ast a') ->
       P |- <((x <- a[[ie]], st, ast, true))> -->i_[DLoad a' i']^^[OARead a i]
             <((skip, x !-> (nth i' (ast a') 0); st, ast, true))>
-  | ISM_Write : forall P a ie e st ast (b :bool) i n li,
+  | ISM_Write : forall P a ie e st ast (b :bool) i n li le,
       aeval st e = n ->
       P |-a- ie \in li ->
-      (if negb li && b then 0 else (aeval st ie)) = i ->
+      P |-a- e \in le ->
+      (if (negb li || negb le) && b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
       P |- <((a[ie] <- e, st, ast, b))> -->i_[DStep]^^[OAWrite a i]
             <((skip, st, a !-> upd i (ast a) n; ast, b))>
   | ISM_Write_U : forall P a ie e st ast i n a' i',
       aeval st e = n ->
       P |-a- ie \in public ->
+      P |-a- e \in public ->
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
@@ -419,8 +342,8 @@ Proof.
   + now invert H0.
   + now invert H2.
   + now invert H4.
-  + now invert H3.
   + now invert H4.
+  + now invert H5.
 Qed.
 
 Lemma multi_ideal_obs_length : forall P c st ast b ds ct stt astt bt os,
@@ -446,6 +369,42 @@ Proof.
   intros. remember true as b eqn:Eqb.
   induction H; subst; eauto. apply ideal_eval_small_step_spec_bit_monotonic in H; subst.
   auto.
+Qed.
+
+Lemma wt_relax : forall P PA c,
+  P & PA, secret |-- c ->
+  P & PA, public |-- c.
+Proof.
+  intros. remember secret as pc. revert Heqpc. induction H; intros; subst; try now constructor.
+  + econstructor; [eassumption|]. unfold can_flow, join, secret, public in *. simpl in H0. apply negb_true_iff in H0.
+    rewrite H0. simpl. now rewrite orb_true_r.
+  + constructor; tauto.
+  + unfold join, secret in *. simpl in *. econstructor; [eassumption|unfold join, public; destruct l; tauto..].
+  + econstructor; [eassumption|]. unfold join, public, secret in *. destruct l; tauto.
+  + econstructor; [eassumption|]. unfold can_flow, join, public, secret in *. simpl in H0.
+    apply negb_true_iff in H0. rewrite H0. simpl. now rewrite orb_true_r.
+  + econstructor; [eassumption..|]. unfold can_flow, join, public, secret in *. simpl in H1.
+    apply negb_true_iff in H1. rewrite H1. simpl. now rewrite orb_true_r.
+Qed.
+
+Lemma ideal_eval_small_step_preserves_wt : forall P PA c st ast b ct stt astt bt pc ds os,
+  P & PA, pc |-- c ->
+  P |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+  P & PA, pc |-- ct.
+Proof.
+  intros. induction H0; try now constructor.
+  + invert H. constructor; tauto.
+  + now invert H.
+  + invert H. eapply bexp_has_label_inj in H0; [|eassumption]. subst. destruct pc.
+    - unfold join in *. destruct l. { now destruct b, (beval st be). }
+      simpl in *. fold secret in *. fold public. apply wt_relax in H8, H9. now destruct b, (beval st be).
+    - unfold join in *. now destruct l, b, (beval st be).
+  + invert H. eapply bexp_has_label_inj in H0; [|eassumption]. subst. destruct pc.
+    - unfold join in *. destruct l. { now destruct b, (beval st be). }
+      simpl in *. fold secret in *. fold public. apply wt_relax in H8, H9. now destruct b, (beval st be).
+    - unfold join in *. now destruct l, b, (beval st be).
+  + invert H. econstructor; [eassumption| |constructor]. constructor; [tauto|]. econstructor; [eassumption|].
+    unfold join in *. now destruct pc, l.
 Qed.
 
 Lemma ideal_eval_small_step_preserves_pub_equiv : forall P PA c st1 st2 ast1 ast2 b ct stt1 stt2 astt1 astt2 bt pc ds os,
@@ -475,15 +434,18 @@ Proof.
   + invert H7. split; [|tauto]. intros x' Hx'. destruct (String.eqb x x') eqn:Heq.
     - apply String.eqb_eq in Heq. subst. rewrite H21 in Hx'. now unfold secret in Hx'.
     - apply String.eqb_neq in Heq. do 2 (rewrite t_update_neq; [|tauto]). now apply H4.
-  + invert H6. split; [tauto|]. intros a' Ha'. destruct (a =? a') eqn:Heq.
+  + invert H7. split; [tauto|]. intros a' Ha'. destruct (a =? a') eqn:Heq.
     - apply String.eqb_eq in Heq. subst. rewrite !t_update_eq.
-      specialize (H4 a' Ha'). invert H5. unfold can_flow, join in H10.
-      eapply aexp_has_label_inj in H16; [|eassumption]. eapply aexp_has_label_inj in H0; [|eassumption]. subst.
-      rewrite Ha' in H10. simpl in H10. rewrite orb_false_r in H10. apply andb_prop in H10. destruct H10. subst.
-      apply andb_prop in H0. destruct H0. subst. pose proof (noninterferent_aexp H3 H9). now rewrite H4, H.
-    - apply String.eqb_neq in Heq. do 2 (rewrite t_update_neq; [|tauto]). now apply H4.
-  + admit.
-Abort.
+      specialize (H5 a' Ha'). invert H6. unfold can_flow, join in H11.
+      eapply aexp_has_label_inj in H1; [|eassumption]. eapply aexp_has_label_inj in H0; [|eassumption]. subst.
+      rewrite Ha' in H11. simpl in H11. rewrite orb_false_r in H11. apply andb_prop in H11. destruct H11. subst.
+      apply andb_prop in H0. destruct H0. subst. pose proof (noninterferent_aexp H4 H10). now rewrite H5, H.
+    - apply String.eqb_neq in Heq. do 2 (rewrite t_update_neq; [|tauto]). now apply H5.
+  + invert H8. split; [tauto|]. intros a'' Ha''. destruct (a' =? a'') eqn:Heq.
+    - apply String.eqb_eq in Heq. subst. rewrite !t_update_eq.
+      pose proof (noninterferent_aexp H5 H1). specialize (H6 a'' Ha''). now rewrite H, H6.
+    - apply String.eqb_neq in Heq. do 2 (rewrite t_update_neq; [|tauto]). now apply H6.
+Qed.
 
 Definition ideal_same_obs P c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
@@ -532,8 +494,8 @@ Proof.
   + now repeat constructor.
   + split; [|trivial]. rewrite t_update_permute; [|tauto]. econstructor; [eassumption|now rewrite aeval_unused_update|tauto].
   + split; [|trivial]. rewrite t_update_permute; [|tauto]. econstructor; [now rewrite aeval_unused_update|tauto..].
-  + split; [|trivial]. econstructor. 2, 4:eassumption. all:now rewrite aeval_unused_update.
-  + split; [|trivial]. econstructor. 1, 3: now rewrite aeval_unused_update. all:tauto.
+  + split; [|trivial]. econstructor. 2, 3, 5:eassumption. all:now rewrite aeval_unused_update.
+  + split; [|trivial]. econstructor. 1, 4: now rewrite aeval_unused_update. all:tauto.
 Qed.
 
 Lemma multi_ideal_unused_overwrite : forall P c st ast b ct stt astt bt ds os X n,
@@ -617,7 +579,86 @@ Proof.
         rewrite Heq in H1. apply IH in H1; [|prog_size_auto|tauto..]. destruct H1, H. eexists. rewrite t_update_eq in H.
         apply multi_ideal_unused_update in H; [|tauto].
         split; [|apply H0]. rewrite !app_nil_l. repeat econstructor; [apply label_of_exp_sound|now repeat rewrite_eq; rewrite andb_false_r|tauto].
-  + admit.
+  + invert H; [solve_refl|]. invert H0. invert H12. invert H1; [solve_refl|]. invert H. invert H12.
+    - destruct (beval st'1 be && (label_of_bexp P be || (st'1 "b" =? 0)%nat)) eqn:Heq.
+      * apply andb_prop in Heq. destruct Heq. apply orb_prop in H1.
+        assert (Heq : beval st'1 (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) = true)
+          by now destruct H1 as [->|H1], (label_of_bexp P be); simpl; repeat rewrite_eq.
+        rewrite Heq in H0. apply multi_spec_seq_assoc in H0. do 2 destruct H0. apply multi_spec_seq in H0. destruct H0.
+        ++ do 8 destruct H0. destruct H3, H4. subst. invert H4. invert H0. invert H16. simpl in H3. rewrite Heq, t_update_same in H3.
+           invert H3. invert H0; [inversion H16|]. apply IH in H4; [|prog_size_auto|tauto..]. destruct H4, H0, H3 as (->&?); [reflexivity|].
+           pose proof (multi_ideal_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ Harrs H0).
+           remember (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) as be'.
+           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_slh P c) end; "b" := be' ? 1 : "b" }}> with (flex_slh P <{{ while be do c end }}>) in H5
+            by now simpl; rewrite Heqbe'.
+           apply IH in H5; [|prog_size_auto|simpl; tauto..]. do 2 destruct H5.
+           eapply multi_ideal_unused_overwrite with (X:="b") (n:=st'0 "b") in H5; [|simpl; tauto]. rewrite t_update_shadow in H5.
+           eexists. split; [|intro Hc'; now apply H6, H2]. econstructor; [constructor|]. econstructor; [econstructor|].
+           { apply label_of_exp_sound. } { subst. now destruct (label_of_bexp P be); simpl; rewrite ?st_b; destruct b'1. } { reflexivity. }
+           rewrite Heq. simpl. eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com, H0|].
+           eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|apply H5].
+        ++ do 2 destruct H0. subst. invert H3.
+           { eexists. split; [|intro Hc'; apply H2 in Hc'; discriminate]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound|].
+             now destruct (label_of_bexp P be), b'; simpl; rewrite ?st_b. }
+           invert H0. invert H15. invert H4.
+           { eexists. split; [|intro Hc'; apply H2 in Hc'; discriminate]. rewrite t_update_shadow, t_update_same. repeat econstructor; [apply label_of_exp_sound|].
+             now destruct (label_of_bexp P be), b'; simpl; rewrite ?st_b. }
+           invert H0; [inversion H15|]. simpl in H3. rewrite Heq, t_update_same in H3. apply IH in H3; [|prog_size_auto|tauto..].
+           destruct H3, H0. eexists. split; [|intro Hc'; apply H2 in Hc'; discriminate]. econstructor; [constructor|].
+           econstructor; [econstructor|].
+           { apply label_of_exp_sound. } { now destruct (label_of_bexp P be), b'1; simpl; rewrite ?st_b. } { reflexivity. }
+           rewrite Heq. simpl. apply multi_ideal_add_snd_com, H0.
+      * assert (Heq' : beval st'1 (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) = false)
+          by now rewrite <- Heq at 6; destruct (label_of_bexp P be); simpl; destruct (beval st'1 be), (st'1 "b").
+        rewrite Heq' in H0. invert H0.
+        { eexists. split; [|discriminate]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound|].
+          now destruct (label_of_bexp P be), b'; simpl; rewrite ?st_b. }
+        invert H; [inversion H12|]. invert H1.
+        { eexists. split; [|discriminate]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound|].
+          now destruct (label_of_bexp P be), b'; simpl; rewrite ?st_b. }
+        invert H. invert H0; [|inversion H]. eexists. split; [|split; [reflexivity|now simpl; rewrite Heq'] ].
+        rewrite t_update_shadow, t_update_same. econstructor; [constructor|]. econstructor; [econstructor|].
+        { apply label_of_exp_sound. } { now destruct (label_of_bexp P be), b'; simpl; rewrite ?st_b. } { rewrite Heq'. reflexivity. }
+        simpl. econstructor.
+    - destruct (beval st'1 be && (label_of_bexp P be || (st'1 "b" =? 0)%nat)) eqn:Heq.
+      * apply andb_prop in Heq. destruct Heq. apply orb_prop in H1.
+        assert (Heq : beval st'1 (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) = true)
+          by now destruct H1 as [->|H1], (label_of_bexp P be); simpl; repeat rewrite_eq.
+        rewrite Heq in H0. invert H0.
+        { eexists. split; [|discriminate]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound|].
+          now destruct (label_of_bexp P be), b'0; simpl; rewrite ?st_b. }
+        invert H2; [inversion H14|]. invert H3.
+        { eexists. split; [|discriminate]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound|].
+          now destruct (label_of_bexp P be), b'0; simpl; rewrite ?st_b. }
+        invert H0. invert H2; [|inversion H0]. eexists. rewrite t_update_shadow, t_update_same.
+        split; [|split; [reflexivity|now simpl; rewrite Heq] ]. rewrite Heq. repeat econstructor; [apply label_of_exp_sound|].
+        rewrite <- Heq. now destruct (label_of_bexp P be), b'0; simpl; rewrite ?st_b.
+      * assert (Heq' : beval st'1 (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) = false)
+          by now rewrite <- Heq at 6; destruct (label_of_bexp P be); simpl; destruct (beval st'1 be), (st'1 "b").
+        rewrite Heq' in H0. apply multi_spec_seq_assoc in H0. destruct H0, H. apply multi_spec_seq in H. destruct H.
+        ++ do 8 destruct H. destruct H1, H2. subst. invert H2. invert H. invert H14. invert H1. invert H; [inversion H14|].
+           simpl in H2. rewrite Heq' in H2. apply IH in H2; [|prog_size_auto|tauto..]. destruct H2, H, H1 as (->&?); [reflexivity|].
+           rewrite t_update_eq in H. apply multi_ideal_unused_update in H; [|simpl; tauto].
+           pose proof (multi_ideal_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ Harrs H).
+           remember (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) as be' in H3.
+           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_slh P c) end; "b" := be' ? 1 : "b" }}> with (flex_slh P <{{ while be do c end }}>) in H3
+            by now simpl; rewrite Heqbe'.
+           apply IH in H3; [|prog_size_auto|simpl; tauto..]. do 2 destruct H3.
+           eapply multi_ideal_unused_overwrite with (X:="b") (n:=st'1 "b") in H3; [|simpl; tauto]. rewrite t_update_shadow in H3.
+           eexists. split; [|intro Hc'; apply H4, H0, Hc']. econstructor; [constructor|]. econstructor; [econstructor|].
+           { apply label_of_exp_sound. } { now destruct (label_of_bexp P be), b'0; simpl; rewrite ?st_b. } { rewrite Heq'. reflexivity. }
+           eapply multi_ideal_combined_executions; [apply multi_ideal_add_snd_com, H|]. eapply multi_ideal_trans_nil_l; [apply ISM_Seq_Skip|apply H3].
+        ++ do 2 destruct H. subst. invert H1.
+           { eexists. split; [|intro Hc'; apply H0 in Hc'; discriminate]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound|].
+             now destruct (label_of_bexp P be), b'0; simpl; rewrite ?st_b. }
+           invert H. invert H13. invert H2.
+           { eexists. split; [|intro Hc'; apply H0 in Hc'; discriminate]. rewrite t_update_shadow, t_update_same. repeat econstructor; [apply label_of_exp_sound|].
+             now destruct (label_of_bexp P be), b'0; simpl; rewrite ?st_b. }
+           invert H; [inversion H13|]. simpl in H1. rewrite Heq' in H1. apply IH in H1; [|prog_size_auto|tauto..].
+           destruct H1, H. rewrite t_update_eq in H. apply multi_ideal_unused_update in H; [|tauto]. eexists.
+           split; [|intro Hc'; apply H0 in Hc'; discriminate]. econstructor; [constructor|]. econstructor; [econstructor|].
+           { apply label_of_exp_sound. } { now destruct (label_of_bexp P be), b'0; simpl; rewrite ?st_b. } { rewrite Heq'. reflexivity. }
+           simpl. apply multi_ideal_add_snd_com, H.
   + invert H; [solve_refl|]. invert H0.
     - invert H1; [|inversion H]. eexists. split; [|split; [reflexivity|rewrite t_update_neq; tauto] ].
       rewrite t_update_permute; [|tauto]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound| |assumption].
@@ -628,13 +669,15 @@ Proof.
         apply negb_true_iff in H0. repeat econstructor; [|tauto..]. unfold public. rewrite <- H. apply label_of_exp_sound.
       * simpl in H14. rewrite st_b in H14. simpl in H14. specialize (Harrs a). lia.
   + invert H; [solve_refl|]. invert H0.
-    - invert H1; [|inversion H]. eexists. split; [|tauto]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound| |assumption].
-      now destruct (label_of_aexp P i), b'; simpl; rewrite ?st_b.
-    - destruct (label_of_aexp P i) eqn:Heq.
+    - invert H1; [|inversion H]. eexists. split; [|tauto]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound..| |assumption].
+      now destruct (label_of_aexp P i), (label_of_aexp P e), b'; simpl; rewrite ?st_b.
+    - destruct (label_of_aexp P i && label_of_aexp P e) eqn:Heq.
       * invert H1; [|inversion H]. eexists. split; [|tauto]. rewrite t_update_same.
-        repeat econstructor; [|tauto..]. unfold public. rewrite <- Heq. apply label_of_exp_sound.
+        apply andb_prop in Heq. destruct Heq. fold public in H, H0.
+        repeat econstructor; [| |tauto..].
+        1: rewrite <- H. 2:rewrite <- H0. all:apply label_of_exp_sound.
       * simpl in H15. rewrite st_b in H15. simpl in H15. specialize (Harrs a). lia.
-Admitted.
+Qed.
 
 Lemma flex_slh_bcc : forall c ds P st ast (b:bool) c' st' ast' b' os,
   nonempty_arrs ast ->
@@ -667,9 +710,9 @@ Proof.
   + invert H2. eapply aexp_has_label_inj in H; [|eassumption]. subst.
     destruct li; [|tauto]. erewrite noninterferent_aexp; eauto.
   + invert H4. erewrite noninterferent_aexp; eauto.
-  + invert H3. eapply aexp_has_label_inj in H0; [|eassumption]. subst.
-    destruct li; [|tauto]. erewrite noninterferent_aexp; eauto.
-  + invert H4. erewrite noninterferent_aexp; eauto.
+  + invert H4. eapply aexp_has_label_inj in H0; [|eassumption]. eapply aexp_has_label_inj in H1; [|eassumption]. subst.
+    destruct li; [|tauto]. destruct le0; [|tauto]. erewrite noninterferent_aexp; eauto.
+  + invert H5. erewrite noninterferent_aexp; eauto.
 Qed.
 
 Lemma gilles_lemma : forall P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
@@ -694,9 +737,11 @@ Proof.
       subst. apply app_inv_head in H2. subst.
       pose proof (ideal_eval_small_step_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ H3). subst.
       pose proof (gilles_lemma_one_step _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hequiv H H3). destruct H1; subst.
+      eapply ideal_eval_small_step_preserves_pub_equiv in Hequiv'; [|eassumption..]. destruct Hequiv'.
       eapply gilles_lemma_one_step in H3; [|eassumption..]. destruct H3; subst.
+      eapply ideal_eval_small_step_preserves_wt in Hwt; [|eassumption].
       f_equal. eapply IHmulti_ideal; eauto.
-Abort.
+Qed.
 
 Conjecture ideal_eval_relative_secure : forall P c st1 st2 ast1 ast2,
   pub_equiv P st1 st2 ->
