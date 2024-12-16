@@ -3,7 +3,7 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
-From SECF Require Import Maps SpecCT UltimateSLH.
+From SECF Require Import Maps SpecCT UltimateSLH_optimized SelAddrSLH.
 From Coq Require Import Bool.Bool.
 From Coq Require Import Arith.Arith.
 From Coq Require Import Arith.EqNat.
@@ -12,55 +12,6 @@ From Coq Require Import Lia.
 From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
-
-Fixpoint vars_aexp (a:aexp) : list string :=
-  match a with
-  | ANum n => []
-  | AId x => [x]
-  | <{ a1 + a2 }>
-  | <{ a1 - a2 }>
-  | <{ a1 * a2 }> => vars_aexp a1 ++ vars_aexp a2
-  | <{ be ? a1 : a2 }> => vars_bexp be ++ vars_aexp a1 ++ vars_aexp a2
-  end
-with vars_bexp (a:bexp) : list string :=
-  match a with
-  | <{ true }> | <{ false }> => []
-  | <{ a1 = a2 }>
-  | <{ a1 <> a2 }>
-  | <{ a1 <= a2 }>
-  | <{ a1 > a2 }> => vars_aexp a1 ++ vars_aexp a2
-  | <{ ~b }> => vars_bexp b
-  | <{ b1 && b2 }> => vars_bexp b1 ++ vars_bexp b2
-  end.
-
-Fixpoint label_of_aexp (P:pub_vars) (a:aexp) : label :=
-  match a with
-  | ANum n => public
-  | AId x => P x
-  | <{ a1 + a2 }>
-  | <{ a1 - a2 }>
-  | <{ a1 * a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
-  | <{ be ? a1 : a2 }> => join (label_of_bexp P be) (join (label_of_aexp P a1) (label_of_aexp P a2))
-  end
-with label_of_bexp (P:pub_vars) (b:bexp) : label :=
-  match b with
-  | <{ true }> | <{ false }> => public
-  | <{ a1 = a2 }>
-  | <{ a1 <> a2 }>
-  | <{ a1 <= a2 }>
-  | <{ a1 > a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
-  | <{ ~b }> => label_of_bexp P b
-  | <{ b1 && b2 }> => join (label_of_bexp P b1) (label_of_bexp P b2)
-  end.
-
-Ltac rewrite_eq :=
-  match goal with
-  | H:_=_ |- _ => rewrite H; clear H
-  | H:forall _, _=_ |- _ => rewrite H; clear H
-  | _ => idtac
- end.
-
-Ltac invert H := inversion H; subst; clear H.
 
 Definition AllPub : pub_vars := (_!-> public).
 Definition AllSecret : pub_vars := (_!-> secret).
@@ -102,47 +53,6 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
     in <{{a[i'] <- e}}> (* <- Doing nothing here in label_of_aexp P i = true case okay for Spectre v1,
                               but would be problematic for return address or code pointer overwrites *)
   end)%string.
-
-Lemma label_of_exp_sound : forall P,
-  (forall a, P |-a- a \in label_of_aexp P a) /\
-  (forall b, P |-b- b \in label_of_bexp P b).
-Proof. intro P. apply aexp_bexp_mutind; intros; now constructor. Qed.
-
-Corollary label_of_aexp_sound : forall P a,
-  P |-a- a \in label_of_aexp P a.
-Proof. intros. apply label_of_exp_sound. Qed.
-
-Corollary label_of_bexp_sound : forall P b,
-  P |-b- b \in label_of_bexp P b.
-Proof. intros. apply label_of_exp_sound. Qed.
-
-Lemma label_of_exp_unique : forall P,
-  (forall a l, P |-a- a \in l -> l = label_of_aexp P a) /\
-  (forall b l, P |-b- b \in l -> l = label_of_bexp P b).
-Proof. intro P. apply aexp_bexp_has_label_mutind; intros; (repeat rewrite_eq); reflexivity. Qed.
-
-Corollary label_of_aexp_unique : forall P a l,
-  P |-a- a \in l ->
-  l = label_of_aexp P a.
-Proof. intro. apply label_of_exp_unique. Qed.
-
-Corollary label_of_bexp_unique : forall P b l,
-  P |-b- b \in l ->
-  l = label_of_bexp P b.
-Proof. intro. apply label_of_exp_unique. Qed.
-
-Corollary aexp_has_label_inj : forall P a l l',
-  P |-a- a \in l ->
-  P |-a- a \in l' ->
-  l = l'.
-Proof. intros. apply label_of_aexp_unique in H, H0. now rewrite_eq. Qed.
-
-Corollary bexp_has_label_inj : forall P b l l',
-  P |-b- b \in l ->
-  P |-b- b \in l' ->
-  l = l'.
-Proof. intros. apply label_of_bexp_unique in H, H0. now rewrite_eq. Qed.
-
 (* For CT programs this is the same as sel_slh *)
 
 Module RelatingSelSLH.
@@ -997,7 +907,7 @@ Proof.
   eapply gilles_lemma; eassumption.
 Qed.
 
-Lemma flex_slh_relative_secure :
+Theorem flex_slh_relative_secure :
   forall P PA c st1 st2 ast1 ast2,
     (* Selective SLH assumptions *)
     P & PA, public |-- c -> (* just that this is weaker (not ct_well_typed) *)
