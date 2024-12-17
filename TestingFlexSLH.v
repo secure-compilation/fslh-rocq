@@ -105,7 +105,7 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
     if label_of_aexp P i && apply P x then (* Selective SLH -- mask the value of public loads *)
       <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
     else
-      let i' = if label_of_aexp P i
+      let i' := if label_of_aexp P i
         then i (* Selective SLH -- mask the value of public loads *)
         else <{{("b" = 1) ? 0 : i}}> in (* Ultimate SLH -- mask private address of load *)
       <{{x <- a[[i']]}}>
