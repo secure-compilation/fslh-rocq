@@ -3,7 +3,7 @@
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
-From SECF Require Import Maps SpecCT UltimateSLH_optimized SelAddrSLH.
+From SECF Require Import Maps SpecCT UltimateSLH_optimized.
 From Coq Require Import Bool.Bool.
 From Coq Require Import Arith.Arith.
 From Coq Require Import Arith.EqNat.
@@ -12,6 +12,73 @@ From Coq Require Import Lia.
 From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
 (* TERSE: /HIDEFROMHTML *)
+
+Ltac rewrite_eq :=
+  match goal with
+  | H:_=_ |- _ => rewrite H; clear H
+  | H:forall _, _=_ |- _ => rewrite H; clear H
+  | _ => idtac
+ end.
+
+Fixpoint label_of_aexp (P:pub_vars) (a:aexp) : label :=
+  match a with
+  | ANum n => public
+  | AId x => P x
+  | <{ a1 + a2 }>
+  | <{ a1 - a2 }>
+  | <{ a1 * a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ be ? a1 : a2 }> => join (label_of_bexp P be) (join (label_of_aexp P a1) (label_of_aexp P a2))
+  end
+with label_of_bexp (P:pub_vars) (b:bexp) : label :=
+  match b with
+  | <{ true }> | <{ false }> => public
+  | <{ a1 = a2 }>
+  | <{ a1 <> a2 }>
+  | <{ a1 <= a2 }>
+  | <{ a1 > a2 }> => join (label_of_aexp P a1) (label_of_aexp P a2)
+  | <{ ~b }> => label_of_bexp P b
+  | <{ b1 && b2 }> => join (label_of_bexp P b1) (label_of_bexp P b2)
+  end.
+
+Lemma label_of_exp_sound : forall P,
+  (forall a, P |-a- a \in label_of_aexp P a) /\
+  (forall b, P |-b- b \in label_of_bexp P b).
+Proof. intro P. apply aexp_bexp_mutind; intros; now constructor. Qed.
+
+Corollary label_of_aexp_sound : forall P a,
+  P |-a- a \in label_of_aexp P a.
+Proof. intros. apply label_of_exp_sound. Qed.
+
+Corollary label_of_bexp_sound : forall P b,
+  P |-b- b \in label_of_bexp P b.
+Proof. intros. apply label_of_exp_sound. Qed.
+
+Lemma label_of_exp_unique : forall P,
+  (forall a l, P |-a- a \in l -> l = label_of_aexp P a) /\
+  (forall b l, P |-b- b \in l -> l = label_of_bexp P b).
+Proof. intro P. apply aexp_bexp_has_label_mutind; intros; (repeat rewrite_eq); reflexivity. Qed.
+
+Corollary label_of_aexp_unique : forall P a l,
+  P |-a- a \in l ->
+  l = label_of_aexp P a.
+Proof. intro. apply label_of_exp_unique. Qed.
+
+Corollary label_of_bexp_unique : forall P b l,
+  P |-b- b \in l ->
+  l = label_of_bexp P b.
+Proof. intro. apply label_of_exp_unique. Qed.
+
+Corollary aexp_has_label_inj : forall P a l l',
+  P |-a- a \in l ->
+  P |-a- a \in l' ->
+  l = l'.
+Proof. intros. apply label_of_aexp_unique in H, H0. now rewrite_eq. Qed.
+
+Corollary bexp_has_label_inj : forall P b l l',
+  P |-b- b \in l ->
+  P |-b- b \in l' ->
+  l = l'.
+Proof. intros. apply label_of_bexp_unique in H, H0. now rewrite_eq. Qed.
 
 Definition AllPub : pub_vars := (_!-> public).
 Definition AllSecret : pub_vars := (_!-> secret).
@@ -53,24 +120,6 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
     in <{{a[i'] <- e}}> (* <- Doing nothing here in label_of_aexp P i = true case okay for Spectre v1,
                               but would be problematic for return address or code pointer overwrites *)
   end)%string.
-(* For CT programs this is the same as sel_slh *)
-
-Module RelatingSelSLH.
-
-  Lemma sel_slh_is_flex_slh : forall P PA c,
-      ct_well_typed P PA c ->
-      sel_slh P c = flex_slh P c.
-  Proof.
-    intros P PA c H. induction H; simpl; repeat rewrite_eq; try reflexivity.
-    - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
-    - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
-    - apply label_of_aexp_unique in H. rewrite <- H. 
-  Abort.
-  (* reflexivity.
-    - apply label_of_aexp_unique in H. rewrite <- H. reflexivity.
-  Qed. *)
-
-End RelatingSelSLH.
 
 (* The following standard IFC type system that just tracks explicit and implicit
    flows seems good enough for what we need. Most importantly, it gives us
@@ -928,3 +977,115 @@ Proof.
   destruct H8 as (ct1&?). destruct H9 as (ct2&?).
   eapply ideal_eval_relative_secure; eassumption.
 Qed.
+
+Module RelatingSelSLH.
+
+  Fixpoint addr_sel_slh (P : pub_vars) (c : com) : com :=
+    (match c with
+    | <{{ skip }}> => <{{ skip }}>
+    | <{{ x := e }}> => <{{ x := e }}>
+    | <{{ c1; c2 }}> => <{{ addr_sel_slh P c1; addr_sel_slh P c2 }}>
+    | <{{ if b then c1 else c2 end }}> => <{{ if b then "b" := (b ? "b" : 1); addr_sel_slh P c1 else
+                                                        "b" := (b ? 1 : "b"); addr_sel_slh P c2 end }}>
+    | <{{ while b do c end }}> => <{{ while b do "b" := (b ? "b" : 1); addr_sel_slh P c end; "b" := b ? 1 : "b" }}>
+    | <{{ x <- a [[ i ]] }}> => let i' := if negb (P x) then i else <{ ("b" = 1) ? 0 : i }> in
+                                <{{ x <- a [[ i' ]] }}>
+    | <{{ a [ i ] <- e }}> => let i' := if label_of_aexp P e then i else <{ ("b" = 1) ? 0 : i }> in
+                              <{{ a [ i' ] <- e }}>
+  end)%string.
+
+  Lemma addr_sel_slh_is_flex_slh : forall P PA c,
+    P ;; PA |-ct- c ->
+    addr_sel_slh P c = flex_slh P c.
+  Proof.
+    intros P PA c H. induction H; simpl; repeat rewrite_eq; try reflexivity.
+    - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
+    - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
+    - apply label_of_aexp_unique in H. rewrite <- H. reflexivity.
+    - apply label_of_aexp_unique in H. rewrite <- H. reflexivity.
+  Qed.
+
+  Lemma ct_well_typed_well_typed : forall P PA c,
+    P ;; PA |-ct- c ->
+    P & PA, public |-- c.
+  Proof. intros. now induction H; econstructor; (try eassumption); unfold join, public in *. Qed.
+
+  Lemma addr_sel_slh_relative_secure :
+    forall P PA c st1 st2 ast1 ast2,
+      P ;; PA |-ct- c ->
+      pub_equiv P st1 st2 ->
+      pub_equiv PA ast1 ast2 ->
+      unused "b" c ->
+      st1 "b" = 0 ->
+      st2 "b" = 0 ->
+      nonempty_arrs ast1 ->
+      nonempty_arrs ast2 ->
+      relative_secure (addr_sel_slh P) c st1 st2 ast1 ast2.
+  Proof.
+    unfold relative_secure. intros. erewrite addr_sel_slh_is_flex_slh; [|eassumption].
+    apply ct_well_typed_well_typed in H. eapply flex_slh_relative_secure; eassumption.
+  Qed.
+
+  Lemma well_typed_ct_secure :
+    forall P PA c st1 st2 ast1 ast2,
+      P ;; PA |-ct- c ->
+      pub_equiv P st1 st2 ->
+      pub_equiv PA ast1 ast2 ->
+      seq_same_obs c st1 st2 ast1 ast2.
+  Admitted.
+
+  Theorem addr_sel_slh_spec_secure :
+    forall P PA c st1 st2 ast1 ast2,
+      P ;; PA |-ct- c ->
+      pub_equiv P st1 st2 ->
+      pub_equiv PA ast1 ast2 ->
+      unused "b" c ->
+      st1 "b" = 0 ->
+      st2 "b" = 0 ->
+      nonempty_arrs ast1 ->
+      nonempty_arrs ast2 ->
+      spec_same_obs (addr_sel_slh P c) st1 st2 ast1 ast2.
+  Proof. intros. eapply addr_sel_slh_relative_secure; [eassumption..|eapply well_typed_ct_secure; eassumption]. Qed.
+
+End RelatingSelSLH.
+
+Module RelatingUltimateSLH.
+
+  Lemma AllSecrets_no_vars :
+    (forall a, label_of_aexp AllSecret a = is_empty (vars_aexp a)) /\ (forall b, label_of_bexp AllSecret b = is_empty (vars_bexp b)).
+  Admitted.
+
+  Lemma ultimate_slh_is_flex_slh : forall c,
+    ultimate_slh c = flex_slh AllSecret c.
+  Admitted.
+
+  Lemma AllSecret_pub_equiv : forall {A : Type} (m1 m2 : total_map A),
+    pub_equiv AllSecret m1 m2.
+  Proof. unfold pub_equiv. intros. invert H. Qed.
+
+  Lemma AllSecret_wt : forall c,
+    AllSecret & AllSecret, secret |-- c.
+  Proof.
+    induction c; try now constructor.
+    + econstructor; [apply label_of_exp_sound|]. now unfold can_flow, join, AllSecret, secret.
+    + econstructor; [apply label_of_exp_sound|now unfold join, secret in *..].
+    + econstructor; [apply label_of_exp_sound|now unfold join, secret in *..].
+    + econstructor; [apply label_of_exp_sound|now unfold join, secret in *..].
+    + econstructor; [apply label_of_exp_sound..|now unfold join, secret in *].
+  Qed.
+
+  Theorem ultimate_slh_relative_secure :
+    forall c st1 st2 ast1 ast2,
+      unused "b" c ->
+      st1 "b" = 0 ->
+      st2 "b" = 0 ->
+      nonempty_arrs ast1 ->
+      nonempty_arrs ast2 ->
+      relative_secure ultimate_slh c st1 st2 ast1 ast2.
+  Proof.
+    unfold relative_secure. intros. rewrite ultimate_slh_is_flex_slh.
+    eapply flex_slh_relative_secure with (PA:=AllSecret); [|apply AllSecret_pub_equiv|apply AllSecret_pub_equiv|tauto..].
+    apply wt_relax, AllSecret_wt.
+  Qed.
+
+End RelatingUltimateSLH.
