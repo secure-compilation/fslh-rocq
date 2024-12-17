@@ -1032,6 +1032,7 @@ Module RelatingSelSLH.
       pub_equiv P st1 st2 ->
       pub_equiv PA ast1 ast2 ->
       seq_same_obs c st1 st2 ast1 ast2.
+  Proof.
   Admitted.
 
   Theorem addr_sel_slh_spec_secure :
@@ -1053,11 +1054,30 @@ Module RelatingUltimateSLH.
 
   Lemma AllSecrets_no_vars :
     (forall a, label_of_aexp AllSecret a = is_empty (vars_aexp a)) /\ (forall b, label_of_bexp AllSecret b = is_empty (vars_bexp b)).
-  Admitted.
+  Proof.
+    apply aexp_bexp_mutind; intros; simpl; unfold AllSecret, join, public, secret; rewrite ?is_empty_app; auto.
+    4:now rewrite <- H, <- H0, <- H1.
+    all:now rewrite <- H, <- H0.
+  Qed.
+
+  Corollary AllSecrets_aexp_no_vars :
+    forall a, label_of_aexp AllSecret a = is_empty (vars_aexp a).
+  Proof. now apply AllSecrets_no_vars. Qed.
+
+  Corollary AllSecrets_bexp_no_vars :
+    forall b, label_of_bexp AllSecret b = is_empty (vars_bexp b).
+  Proof. now apply AllSecrets_no_vars. Qed.
 
   Lemma ultimate_slh_is_flex_slh : forall c,
     ultimate_slh c = flex_slh AllSecret c.
-  Admitted.
+  Proof.
+    induction c; try reflexivity.
+    + simpl. now repeat rewrite_eq.
+    + simpl. repeat rewrite_eq. now rewrite AllSecrets_bexp_no_vars.
+    + simpl. rewrite_eq. now rewrite AllSecrets_bexp_no_vars.
+    + simpl. now rewrite AllSecrets_aexp_no_vars, andb_true_r.
+    + simpl. rewrite !AllSecrets_aexp_no_vars. (* Oops.. *)
+  Abort.
 
   Lemma AllSecret_pub_equiv : forall {A : Type} (m1 m2 : total_map A),
     pub_equiv AllSecret m1 m2.
@@ -1083,9 +1103,7 @@ Module RelatingUltimateSLH.
       nonempty_arrs ast2 ->
       relative_secure ultimate_slh c st1 st2 ast1 ast2.
   Proof.
-    unfold relative_secure. intros. rewrite ultimate_slh_is_flex_slh.
-    eapply flex_slh_relative_secure with (PA:=AllSecret); [|apply AllSecret_pub_equiv|apply AllSecret_pub_equiv|tauto..].
-    apply wt_relax, AllSecret_wt.
-  Qed.
+    unfold relative_secure. intros.
+  Abort.
 
 End RelatingUltimateSLH.

@@ -267,6 +267,27 @@ Proof.
   + left. repeat eexists; [constructor|eassumption].
 Qed.
 
+Lemma multi_seq_seq : forall c1 c2 cm st ast stm astm os,
+  <((c1; c2, st, ast))> -->*^os <((cm, stm, astm))> ->
+  (exists st' ast' os1 os2,
+  os = os1 ++ os2 /\
+  <((c1, st, ast))> -->*^os1 <((skip, st', ast'))> /\
+  <((c2, st', ast'))> -->*^os2 <((cm, stm, astm))>) \/
+  (exists c', cm = <{{ c'; c2 }}> /\
+   <((c1, st, ast))> -->*^os <((c', stm, astm))>).
+Proof.
+  intros. remember <{{ c1; c2 }}> as c. revert c1 c2 Heqc.
+  induction H; intros; subst.
+  { right. repeat eexists. constructor. }
+  invert H.
+  + edestruct IHmulti_seq; [reflexivity|..].
+    - do 5 destruct H. destruct H1. subst. clear IHmulti_seq.
+      left. rewrite !app_assoc. repeat eexists; [econstructor|]; eassumption.
+    - do 2 destruct H. subst. clear IHmulti_seq.
+      right. repeat eexists. econstructor; eassumption.
+  + left. repeat eexists; [constructor|eassumption].
+Qed.
+
 Lemma multi_spec_seq_assoc c1 c2 c3 st ast b c' st' ast' b' ds os :
   <(((c1; c2); c3, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
   exists c'', 
