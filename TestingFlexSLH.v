@@ -102,12 +102,19 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
       in <{{while be' do "b" := be' ? "b" : 1; flex_slh P c end;
              "b" := be' ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
-    if label_of_aexp P i
+    if label_of_aexp P i && apply P x then (* Selective SLH -- mask the value of public loads *)
+      <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
+    else
+      let i' = if label_of_aexp P i
+        then i (* Selective SLH -- mask the value of public loads *)
+        else <{{("b" = 1) ? 0 : i}}> in (* Ultimate SLH -- mask private address of load *)
+      <{{x <- a[[i']]}}>
+(* Previous equivalent version, but worse for the proofs:
     then (* Selective SLH -- mask the value of public loads *)
       if apply P x then <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
                    else <{{x <- a[[i]]}}>
     else (* Ultimate SLH -- mask private address of load *)
-      <{{x <- a[[("b" = 1) ? 0 : i]] }}>
+      <{{x <- a[[("b" = 1) ? 0 : i]] }}> *)
   | <{{a[i] <- e}}> =>
     let i' := if label_of_aexp P i
       then i (* Selective SLH -- no mask even if it's out of bounds! *)

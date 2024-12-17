@@ -105,14 +105,7 @@ Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
       then i
       else <{{("b" = 1) ? 0 : i}}> (* Ultimate SLH *)
     in <{{x <- a[[i']]}}>
-(* Simplified this (TODO: prove it's equivalent to sel_addr_slh, which needs to be defined):
-    if label_of_aexp P i
-    then (* Selective SLH -- mask the value of public loads *)
-      if P x then <{{x <- a[[i]]; x := ("b" = 1) ? 0 : x}}>
-                   else <{{x <- a[[i]]}}>
-    else (* Ultimate SLH -- mask private address of load *)
-      <{{x <- a[[("b" = 1) ? 0 : i]] }}>
-*)
+(* Simplified this (TODO: prove it's equivalent to sel_addr_slh, which needs to be defined): *)
   | <{{a[i] <- e}}> =>
     let i' := if label_of_aexp P i && label_of_aexp P e
       then i (* Selective SLH -- no mask even if it's out of bounds! *)
@@ -462,7 +455,7 @@ Proof.
   eapply IHmulti_ideal, ideal_eval_small_step_preserves_wt; eassumption.
 Qed.
 
-Lemma ideal_eval_small_step_deterministic : forall P PA c st1 st2 ast1 ast2 b ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 pc ds os,
+Lemma ideal_eval_small_step_noninterference : forall P PA c st1 st2 ast1 ast2 b ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 pc ds os,
   P & PA, pc |-- c ->
   pub_equiv P st1 st2 ->
   pub_equiv PA ast1 ast2 ->
@@ -470,9 +463,10 @@ Lemma ideal_eval_small_step_deterministic : forall P PA c st1 st2 ast1 ast2 b ct
   P |- <((c, st2, ast2, b))> -->i_ds^^os <((ct2, stt2, astt2, bt2))> ->
   ct1 = ct2 /\ bt1 = bt2 /\ pub_equiv P stt1 stt2 /\ pub_equiv PA astt1 astt2.
 Proof.
-  intros P PA c st1 st2 ast1 ast2 b ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 pc ds os. intros. revert ct2 st2 ast2 stt2 astt2 bt2 H0 H1 H H3. induction H2; simpl; intros.
+  intros P PA c st1 st2 ast1 ast2 b ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 pc ds os.
+  intros. revert ct2 st2 ast2 stt2 astt2 bt2 H0 H1 H H3. induction H2; simpl; intros.
   + invert H3. split; [reflexivity|]. split; [reflexivity|]. split; [|tauto]. intros x' Hx'. case (String.eqb x x') eqn:Heq.
-    - apply String.eqb_eq in Heq. subst. invert H2. unfold join, can_flow in H5. rewrite !t_update_eq.
+    - apply String.eqb_eq in Heq. subst. invert H2. unfold join, can_flow in H6. rewrite !t_update_eq.
       eapply noninterferent_aexp; [eassumption|]. destruct l; [now unfold public|]. rewrite Hx' in H6. now rewrite andb_false_r in H6.
     - apply String.eqb_neq in Heq. do 2 (rewrite t_update_neq; [|tauto]). now apply H0.
   + invert H3; [|inversion H2]. invert H. apply IHideal_eval_small_step in H16; [|tauto..]. destruct H16; subst. now auto.
@@ -819,7 +813,7 @@ Proof.
       subst. apply app_inv_head in H2. subst.
       pose proof (ideal_eval_small_step_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ H3). subst.
       pose proof (gilles_lemma_one_step _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hequiv H H3). destruct H1; subst.
-      eapply ideal_eval_small_step_deterministic in Hequiv'; [|eassumption..]. destruct Hequiv', H2, H4.
+      eapply ideal_eval_small_step_noninterference in Hequiv'; [|eassumption..]. destruct Hequiv', H2, H4.
       eapply gilles_lemma_one_step in H3; [|eassumption..]. destruct H3; subst.
       eapply ideal_eval_small_step_preserves_wt in Hwt; [|eassumption].
       f_equal. eapply IHmulti_ideal; eauto.
@@ -858,7 +852,7 @@ Proof.
   apply prefix_eq_length; [now symmetry|]. eapply H; eassumption.
 Qed.
 
-Lemma multi_ideal_stuck_deterministic :
+Lemma multi_ideal_stuck_noninterference :
   forall P PA c st1 st2 ast1 ast2 b ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 ct1' ct2' stt1' stt2' astt1' astt2' bt1' bt2' ds os d1 d2 o1 o2,
   P & PA, public |-- c ->
   pub_equiv P st1 st2 ->
@@ -882,7 +876,7 @@ Proof.
     apply ideal_eval_small_step_obs_length in H as Heq, H13 as Heq'.
     rewrite Heq' in Heq. apply prefix_eq_length in Heq; [subst|eapply app_eq_prefix, H8].
     apply app_inv_head in H7, H8. clear Heq'. subst.
-    eapply ideal_eval_small_step_deterministic in H13 as Heq; [|eassumption..].
+    eapply ideal_eval_small_step_noninterference in H13 as Heq; [|eassumption..].
     destruct Heq as (<-&<-&?&?). eapply ideal_eval_small_step_preserves_wt in H0; [|eassumption].
     eapply IHmulti_ideal; eassumption.
 Qed.
@@ -946,12 +940,12 @@ Proof.
   apply repeat_same_length in Heq as Heqn; [|discriminate]. subst.
   apply app_inv_head in Heq. invert Heq.
   eapply multi_ideal_no_spec_deterministic in H2 as Heq; [|eassumption..]. subst.
-  f_equal. eapply multi_ideal_stuck_deterministic in H4 as Heq; [|eassumption..].
+  f_equal. eapply multi_ideal_stuck_noninterference in H4 as Heq; [|eassumption..].
   eapply multi_ideal_preserves_wt in H; [|eassumption].
   destruct Heq as (->&_&?&?). eapply multi_ideal_preserves_seq_same_obs in H2; [|eassumption..].
   clear c st1 st2 ast1 ast2 n' H0 H1 H3 H4.
   eapply ideal_eval_small_step_force_obs in H2; [|eassumption..]. invert H2. f_equal.
-  eapply ideal_eval_small_step_deterministic in H as Heq; [|eassumption..].
+  eapply ideal_eval_small_step_noninterference in H as Heq; [|eassumption..].
   destruct Heq as (->&_&?&?). eapply ideal_eval_small_step_preserves_wt in H; [|eassumption].
   eapply gilles_lemma; eassumption.
 Qed.
@@ -1035,7 +1029,7 @@ Module RelatingSelSLH.
   Proof.
   Admitted.
 
-  Theorem addr_sel_slh_spec_secure :
+  Theorem addr_sel_slh_spec_ct_secure :
     forall P PA c st1 st2 ast1 ast2,
       P ;; PA |-ct- c ->
       pub_equiv P st1 st2 ->
