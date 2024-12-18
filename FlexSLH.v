@@ -1020,6 +1020,48 @@ Module RelatingSelSLH.
     apply ct_well_typed_well_typed in H. eapply flex_slh_relative_secure; eassumption.
   Qed.
 
+  Lemma well_typed_ct_secure_one_step : forall P PA c st1 st2 ast1 ast2 os1 os2 ct1 ct2 stt1 stt2 astt1 astt2,
+    P ;; PA |-ct- c ->
+    pub_equiv P st1 st2 ->
+    pub_equiv PA ast1 ast2 ->
+    <((c, st1, ast1))> -->^os1 <((ct1, stt1, astt1))> ->
+    <((c, st2, ast2))> -->^os2 <((ct2, stt2, astt2))> ->
+    ct1 = ct2 /\ pub_equiv P stt1 stt2 /\ pub_equiv PA astt1 astt2 /\ os1 = os2.
+  Proof.
+    intros. revert st2 ast2 os2 ct2 stt2 astt2 H H0 H1 H3. induction H2; intros.
+    + invert H0. invert H3. repeat econstructor; [|tauto]. destruct (P x) eqn:Heq; [|now apply pub_equiv_update_secret].
+      apply pub_equiv_update_public; [tauto..|]. unfold can_flow in H7. rewrite orb_false_r in H7. subst. eapply noninterferent_aexp; eassumption.
+    + invert H3; [|inversion H2]. invert H.
+      specialize (IHseq_eval_small_step _ _ _ _ _ _ H5 H0 H1 H12). destruct IHseq_eval_small_step.
+      subst. tauto.
+    + invert H3;[inversion H11|]. tauto.
+    + invert H. invert H3. now erewrite noninterferent_bexp; [|eassumption..].
+    + invert H. now invert H3.
+    + invert H1. invert H4. erewrite noninterferent_aexp; [|eassumption..]. repeat econstructor; [|tauto].
+      destruct (P x) eqn:Heq;[|now apply pub_equiv_update_secret].
+      apply pub_equiv_update_public; [tauto..|]. unfold can_flow in H9. rewrite orb_false_r in H9. now rewrite H3.
+    + invert H2. invert H5. erewrite noninterferent_aexp; [|eassumption..]. repeat econstructor; [tauto|].
+      destruct (PA a) eqn:Heq; [|now apply pub_equiv_update_secret]. unfold can_flow in H11. rewrite orb_false_r in H11. subst.
+      apply pub_equiv_update_public; [tauto..|]. erewrite @noninterferent_aexp with (s1:=st); [|eassumption..].
+      now rewrite H4.
+  Qed.
+
+  Lemma seq_eval_small_step_preserves_well_typed :
+    forall P PA c st ast ct stt astt os,
+    P ;; PA |-ct- c ->
+    <((c, st, ast))> -->^os <((ct, stt, astt))> ->
+    P ;; PA |-ct- ct.
+  Proof.
+    intros. revert st ast os ct stt astt H0. induction H; intros.
+    + now invert H0.
+    + invert H1. constructor.
+    + invert H1; [|tauto]. constructor; [|tauto]. eapply IHct_well_typed1; eassumption.
+    + invert H2. now destruct (beval stt b).
+    + invert H1. now repeat constructor.
+    + invert H1. constructor.
+    + invert H2. constructor.
+  Qed.
+
   Lemma well_typed_ct_secure :
     forall P PA c st1 st2 ast1 ast2,
       P ;; PA |-ct- c ->
@@ -1027,7 +1069,12 @@ Module RelatingSelSLH.
       pub_equiv PA ast1 ast2 ->
       seq_same_obs c st1 st2 ast1 ast2.
   Proof.
-  Admitted.
+    unfold seq_same_obs. intros. revert st2 ast2 os2 c2 stt2 astt2 H H0 H1 H3. induction H2; intros; [now left; apply prefix_nil|].
+    invert H4; [now right; apply prefix_nil|]. specialize (well_typed_ct_secure_one_step _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H0 H1 H3 H H5).
+    destruct 1 as (<-&HP&HPA&<-). eapply seq_eval_small_step_preserves_well_typed in H0; [|eassumption].
+    specialize (IHmulti_seq _ _ _ _ _ _ H0 HP HPA H6). unfold prefix.
+    destruct IHmulti_seq as [(?&<-)|(?&<-)]; [left|right]; rewrite app_assoc; repeat eexists.
+  Qed.
 
   Theorem addr_sel_slh_spec_ct_secure :
     forall P PA c st1 st2 ast1 ast2,
@@ -1062,6 +1109,8 @@ Module RelatingUltimateSLH.
     forall b, label_of_bexp AllSecret b = is_empty (vars_bexp b).
   Proof. now apply AllSecrets_no_vars. Qed.
 
+  (* Actually this version of flex_slh doesn't exactly correspond to ultimate_slh, even optimized *)
+
   Lemma ultimate_slh_is_flex_slh : forall c,
     ultimate_slh c = flex_slh AllSecret c.
   Proof.
@@ -1071,7 +1120,7 @@ Module RelatingUltimateSLH.
     + simpl. rewrite_eq. now rewrite AllSecrets_bexp_no_vars.
     + simpl. now rewrite AllSecrets_aexp_no_vars, andb_true_r.
     + simpl. rewrite !AllSecrets_aexp_no_vars. (* Oops.. *)
-  Abort.
+  Admitted.
 
   Lemma AllSecret_pub_equiv : forall {A : Type} (m1 m2 : total_map A),
     pub_equiv AllSecret m1 m2.
@@ -1097,7 +1146,8 @@ Module RelatingUltimateSLH.
       nonempty_arrs ast2 ->
       relative_secure ultimate_slh c st1 st2 ast1 ast2.
   Proof.
-    unfold relative_secure. intros.
+    unfold relative_secure. intros. rewrite ultimate_slh_is_flex_slh.
+    eapply flex_slh_relative_secure; [apply wt_relax, AllSecret_wt|apply AllSecret_pub_equiv|apply AllSecret_pub_equiv|tauto..].
   Abort.
 
 End RelatingUltimateSLH.
