@@ -83,31 +83,35 @@ Proof. intros. apply label_of_bexp_unique in H, H0. now rewrite_eq. Qed.
 Definition AllPub : pub_vars := (_!-> public).
 Definition AllSecret : pub_vars := (_!-> secret).
 
-Fixpoint flex_slh (P:pub_vars) (c:com) : com :=
+(* LD: Equality on this implementation of maps isn't decidable, but in practice it would be. *)
+Axiom pub_vars_eq_dec : forall P P' : pub_vars, (P = P') + (exists x, P x <> P' x).
+
+Definition all_secret P := if pub_vars_eq_dec P AllSecret then true else false.
+
+Fixpoint flex_slh (P PA :pub_vars) (c:com) : com :=
   (match c with
   | <{{skip}}> => <{{skip}}>
   | <{{x := e}}> => <{{x := e}}>
-  | <{{c1; c2}}> => <{{ flex_slh P c1; flex_slh P c2}}>
+  | <{{c1; c2}}> => <{{ flex_slh P PA c1; flex_slh P PA c2}}>
   | <{{if be then c1 else c2 end}}> =>
       let be' := if label_of_bexp P be
         then be                  (* Selective SLH -- tracking speculation, but not masking *)
         else <{{"b" = 0 && be}}> (* Ultimate SLH -- tracking speculation and also masking *)
-      in <{{if be' then "b" := be' ? "b" : 1; flex_slh P c1
-                   else "b" := be' ? 1 : "b"; flex_slh P c2 end}}>
+      in <{{if be' then "b" := be' ? "b" : 1; flex_slh P PA c1
+                   else "b" := be' ? 1 : "b"; flex_slh P PA c2 end}}>
   | <{{while be do c end}}> =>
       let be' := if label_of_bexp P be
         then be                  (* Selective SLH -- tracking speculation, but not masking *)
         else <{{"b" = 0 && be}}> (* Ultimate SLH -- tracking speculation and also masking *)
-      in <{{while be' do "b" := be' ? "b" : 1; flex_slh P c end;
+      in <{{while be' do "b" := be' ? "b" : 1; flex_slh P PA c end;
              "b" := be' ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
     let i' := if label_of_aexp P i && negb (P x)
       then i
       else <{{("b" = 1) ? 0 : i}}> (* Ultimate SLH *)
     in <{{x <- a[[i']]}}>
-(* Simplified this (TODO: prove it's equivalent to sel_addr_slh, which needs to be defined): *)
   | <{{a[i] <- e}}> =>
-    let i' := if label_of_aexp P i && label_of_aexp P e
+    let i' := if label_of_aexp P i && (label_of_aexp P e || all_secret PA)
       then i (* Selective SLH -- no mask even if it's out of bounds! *)
       else <{{("b" = 1) ? 0 : i}}> (* Ultimate SLH *)
     in <{{a[i'] <- e}}> (* <- Doing nothing here in label_of_aexp P i = true case okay for Spectre v1,
@@ -155,110 +159,110 @@ where "P '&' PA ',' pc '|--' c" := (well_typed P PA pc c).
 (** * Ideal small-step evaluation *)
 
 Reserved Notation
-  "P '|-' '<((' c , st , ast , b '))>' '-->i_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
+  "P & PA '|-' '<((' c , st , ast , b '))>' '-->i_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive ideal_eval_small_step :
-    pub_vars -> com -> state -> astate -> bool ->
+    pub_vars -> pub_vars -> com -> state -> astate -> bool ->
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
-  | ISM_Asgn  : forall P st ast b e n x,
+  | ISM_Asgn  : forall P PA st ast b e n x,
       aeval st e = n ->
-      P |- <((x := e, st, ast, b))> -->i_[]^^[] <((skip, x !-> n; st, ast, b))>
-  | ISM_Seq : forall P c1 st ast b ds os c1t stt astt bt c2,
-      P |- <((c1, st, ast, b))>  -->i_ds^^os <((c1t, stt, astt, bt))>  ->
-      P |- <(((c1;c2), st, ast, b))>  -->i_ds^^os <(((c1t;c2), stt, astt, bt))>
-  | ISM_Seq_Skip : forall P st ast b c2,
-      P |- <(((skip;c2), st, ast, b))>  -->i_[]^^[] <((c2, st, ast, b))>
-  | ISM_If : forall P be ct cf st ast b c' b' l,
+      P & PA |- <((x := e, st, ast, b))> -->i_[]^^[] <((skip, x !-> n; st, ast, b))>
+  | ISM_Seq : forall P PA c1 st ast b ds os c1t stt astt bt c2,
+      P & PA |- <((c1, st, ast, b))>  -->i_ds^^os <((c1t, stt, astt, bt))>  ->
+      P & PA |- <(((c1;c2), st, ast, b))>  -->i_ds^^os <(((c1t;c2), stt, astt, bt))>
+  | ISM_Seq_Skip : forall P PA st ast b c2,
+      P & PA |- <(((skip;c2), st, ast, b))>  -->i_[]^^[] <((c2, st, ast, b))>
+  | ISM_If : forall P PA be ct cf st ast b c' b' l,
       P |-b- be \in l ->
       b' = (l || negb b) && beval st be ->
       c' = (if b' then ct else cf) ->
-      P |- <((if be then ct else cf end, st, ast, b))> -->i_[DStep]^^[OBranch b'] <((c', st, ast, b))>
-  | ISM_If_F : forall P be ct cf st ast b c' b' l,
+      P & PA |- <((if be then ct else cf end, st, ast, b))> -->i_[DStep]^^[OBranch b'] <((c', st, ast, b))>
+  | ISM_If_F : forall P PA be ct cf st ast b c' b' l,
       P |-b- be \in l ->
       b' = (l || negb b) && beval st be ->
       c' = (if b' then cf else ct) ->
-      P |- <((if be then ct else cf end, st, ast, b))> -->i_[DForce]^^[OBranch b'] <((c', st, ast, true))>
-  | ISM_While : forall P be c st ast b,
-      P |- <((while be do c end, st, ast, b))> -->i_[]^^[]
+      P & PA |- <((if be then ct else cf end, st, ast, b))> -->i_[DForce]^^[OBranch b'] <((c', st, ast, true))>
+  | ISM_While : forall P PA be c st ast b,
+      P & PA |- <((while be do c end, st, ast, b))> -->i_[]^^[]
             <((if be then c; while be do c end else skip end, st, ast, b))>
-  | ISM_ARead : forall P x a ie st ast (b :bool) i li,
+  | ISM_ARead : forall P PA x a ie st ast (b :bool) i li,
       P |-a- ie \in li ->
       (if (negb li || (P x)) && b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
-      P |- <((x <- a[[ie]], st, ast, b))> -->i_[DStep]^^[OARead a i]
+      P & PA |- <((x <- a[[ie]], st, ast, b))> -->i_[DStep]^^[OARead a i]
             <((skip, x !-> (nth i (ast a) 0); st, ast, b))>
-  | ISM_ARead_U : forall P x a ie st ast i a' i',
+  | ISM_ARead_U : forall P PA x a ie st ast i a' i',
       aeval st ie = i ->
       P |-a- ie \in public ->
       P x = secret ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      P |- <((x <- a[[ie]], st, ast, true))> -->i_[DLoad a' i']^^[OARead a i]
+      P & PA |- <((x <- a[[ie]], st, ast, true))> -->i_[DLoad a' i']^^[OARead a i]
             <((skip, x !-> (nth i' (ast a') 0); st, ast, true))>
-  | ISM_Write : forall P a ie e st ast (b :bool) i n li le,
+  | ISM_Write : forall P PA a ie e st ast (b :bool) i n li le,
       aeval st e = n ->
       P |-a- ie \in li ->
       P |-a- e \in le ->
-      (if (negb li || negb le) && b then 0 else (aeval st ie)) = i ->
+      (if (negb li || negb (le || all_secret PA)) && b then 0 else (aeval st ie)) = i ->
       i < length (ast a) ->
-      P |- <((a[ie] <- e, st, ast, b))> -->i_[DStep]^^[OAWrite a i]
+      P & PA |- <((a[ie] <- e, st, ast, b))> -->i_[DStep]^^[OAWrite a i]
             <((skip, st, a !-> upd i (ast a) n; ast, b))>
-  | ISM_Write_U : forall P a ie e st ast i n a' i',
+  | ISM_Write_U : forall P PA a ie e st ast i n a' i',
       aeval st e = n ->
+      (PA = AllSecret \/ P |-a- e \in public) ->
       P |-a- ie \in public ->
-      P |-a- e \in public ->
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      P |- <((a[ie] <- e, st, ast, true))> -->i_[DStore a' i']^^[OAWrite a i]
+      P & PA |- <((a[ie] <- e, st, ast, true))> -->i_[DStore a' i']^^[OAWrite a i]
             <((skip, st, a' !-> upd i' (ast a') n; ast, true))>
 
-  where "P |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
-    (ideal_eval_small_step P c st ast b ct stt astt bt ds os).
+  where "P & PA |- <(( c , st , ast , b ))> -->i_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
+    (ideal_eval_small_step P PA c st ast b ct stt astt bt ds os).
 
 Reserved Notation
-  "P '|-' '<((' c , st , ast , b '))>' '-->i*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
+  "P & PA '|-' '<((' c , st , ast , b '))>' '-->i*_' ds '^^' os '<((' ct , stt , astt , bt '))>'"
   (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
-Inductive multi_ideal (P:pub_vars) (c:com) (st:state) (ast:astate) (b:bool) :
+Inductive multi_ideal (P:pub_vars) (PA:pub_vars) (c:com) (st:state) (ast:astate) (b:bool) :
     com -> state -> astate -> bool -> dirs -> obs -> Prop :=
-  | multi_ideal_refl : P |- <((c, st, ast, b))> -->i*_[]^^[] <((c, st, ast, b))>
+  | multi_ideal_refl : P & PA |- <((c, st, ast, b))> -->i*_[]^^[] <((c, st, ast, b))>
   | multi_ideal_trans (c':com) (st':state) (ast':astate) (b':bool)
                 (c'':com) (st'':state) (ast'':astate) (b'':bool)
                 (ds1 ds2 : dirs) (os1 os2 : obs) :
-      P |- <((c, st, ast, b))> -->i_ds1^^os1 <((c', st', ast', b'))> ->
-      P |- <((c', st', ast', b'))> -->i*_ds2^^os2 <((c'', st'', ast'', b''))> ->
-      P |- <((c, st, ast, b))> -->i*_(ds1++ds2)^^(os1++os2) <((c'', st'', ast'', b''))>
+      P & PA |- <((c, st, ast, b))> -->i_ds1^^os1 <((c', st', ast', b'))> ->
+      P & PA |- <((c', st', ast', b'))> -->i*_ds2^^os2 <((c'', st'', ast'', b''))> ->
+      P & PA |- <((c, st, ast, b))> -->i*_(ds1++ds2)^^(os1++os2) <((c'', st'', ast'', b''))>
 
-  where "P |- <(( c , st , ast , b ))> -->i*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
-    (multi_ideal P c st ast b ct stt astt bt ds os).
+  where "P & PA |- <(( c , st , ast , b ))> -->i*_ ds ^^ os  <(( ct ,  stt , astt , bt ))>" :=
+    (multi_ideal P PA c st ast b ct stt astt bt ds os).
 
-Lemma multi_ideal_trans_nil_l P c st ast b c' st' ast' b' ct stt astt bt ds os :
-  P |- <((c, st, ast, b))> -->i_[]^^[] <((c', st', ast', b'))> ->
-  P |- <((c', st', ast', b'))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
-  P |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
+Lemma multi_ideal_trans_nil_l P PA c st ast b c' st' ast' b' ct stt astt bt ds os :
+  P & PA |- <((c, st, ast, b))> -->i_[]^^[] <((c', st', ast', b'))> ->
+  P & PA |- <((c', st', ast', b'))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
 Proof.
   intros. rewrite <- app_nil_l. rewrite <- app_nil_l with (l:=ds). eapply multi_ideal_trans; eassumption.
 Qed.
 
-Lemma multi_ideal_trans_nil_r P c st ast b c' st' ast' b' ct stt astt bt ds os :
-  P |- <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
-  P |- <((c', st', ast', b'))> -->i*_[]^^[] <((ct, stt, astt, bt))> ->
-  P |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
+Lemma multi_ideal_trans_nil_r P PA c st ast b c' st' ast' b' ct stt astt bt ds os :
+  P & PA |- <((c, st, ast, b))> -->i_ds^^os <((c', st', ast', b'))> ->
+  P & PA |- <((c', st', ast', b'))> -->i*_[]^^[] <((ct, stt, astt, bt))> ->
+  P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))>.
 Proof.
   intros. rewrite <- app_nil_r. rewrite <- app_nil_r with (l:=ds). eapply multi_ideal_trans; eassumption.
 Qed.
 
 Lemma multi_ideal_combined_executions :
-  forall P c st ast b ds cm stm astm bm osm dsm ct stt astt bt ost,
-    P |- <((c, st, ast, b))> -->i*_ds^^osm <((cm, stm, astm, bm))> ->
-    P |- <((cm, stm, astm, bm))> -->i*_dsm^^ost <((ct, stt, astt, bt))> ->
-    P |- <((c, st, ast, b))> -->i*_(ds++dsm)^^(osm++ost) <((ct, stt, astt, bt))>.
+  forall P PA c st ast b ds cm stm astm bm osm dsm ct stt astt bt ost,
+    P & PA |- <((c, st, ast, b))> -->i*_ds^^osm <((cm, stm, astm, bm))> ->
+    P & PA |- <((cm, stm, astm, bm))> -->i*_dsm^^ost <((ct, stt, astt, bt))> ->
+    P & PA |- <((c, st, ast, b))> -->i*_(ds++dsm)^^(osm++ost) <((ct, stt, astt, bt))>.
 Proof.
-  intros P c st ast b ds cm stm astm bm osm dsm ct stt astt bt ost Hev1 Hev2.
+  intros P PA c st ast b ds cm stm astm bm osm dsm ct stt astt bt ost Hev1 Hev2.
   induction Hev1.
   - do 2 rewrite app_nil_l. apply Hev2.
   - do 2 rewrite <- app_assoc. eapply multi_ideal_trans.
@@ -266,29 +270,29 @@ Proof.
     + apply IHHev1. apply Hev2.
 Qed.
 
-Lemma multi_ideal_add_snd_com : forall P c st ast ct stt astt ds os c2 b bt,
-  P |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
-  P |- <((c;c2, st, ast, b))> -->i*_ds^^os <((ct;c2, stt, astt, bt))>.
+Lemma multi_ideal_add_snd_com : forall P PA c st ast ct stt astt ds os c2 b bt,
+  P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  P & PA |- <((c;c2, st, ast, b))> -->i*_ds^^os <((ct;c2, stt, astt, bt))>.
 Proof.
   intros. induction H; repeat econstructor; eauto.
 Qed.
 
-Lemma ideal_eval_small_step_obs_length : forall P c st ast b ds ct stt astt bt os,
-  P |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+Lemma ideal_eval_small_step_obs_length : forall P PA c st ast b ds ct stt astt bt os,
+  P & PA |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
   length ds = length os.
 Proof. intros. induction H; simpl; auto. Qed.
 
-Lemma ideal_eval_small_step_same_length : forall P c st1 st2 ast1 ast2 b1 b2 ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 ds1 ds2,
-  P |- <((c, st1, ast1, b1))> -->i_ds1^^os1 <((ct1, stt1, astt1, bt1))> ->
-  P |- <((c, st2, ast2, b2))> -->i_ds2^^os2 <((ct2, stt2, astt2, bt2))> ->
+Lemma ideal_eval_small_step_same_length : forall P PA c st1 st2 ast1 ast2 b1 b2 ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 ds1 ds2,
+  P & PA |- <((c, st1, ast1, b1))> -->i_ds1^^os1 <((ct1, stt1, astt1, bt1))> ->
+  P & PA |- <((c, st2, ast2, b2))> -->i_ds2^^os2 <((ct2, stt2, astt2, bt2))> ->
   length ds1 = length ds2.
 Proof.
-  intros P c st1 st2 ast1 ast2 b1 b2 ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 ds1 ds2. intros. revert st2 ast2 b2 ct2 stt2 astt2 bt2 H0.
+  intros P PA c st1 st2 ast1 ast2 b1 b2 ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 ds1 ds2. intros. revert st2 ast2 b2 ct2 stt2 astt2 bt2 H0.
   induction H; simpl; intros.
   + now invert H0.
   + invert H0; [|inversion H].
     eapply IHideal_eval_small_step; eassumption.
-  + invert H0; [inversion H12|reflexivity].
+  + invert H0; [inversion H13|reflexivity].
   + now invert H2.
   + now invert H2.
   + now invert H0.
@@ -298,24 +302,24 @@ Proof.
   + now invert H5.
 Qed.
 
-Lemma multi_ideal_obs_length : forall P c st ast b ds ct stt astt bt os,
-  P |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+Lemma multi_ideal_obs_length : forall P PA c st ast b ds ct stt astt bt os,
+  P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   length ds = length os.
 Proof. intros. induction H; [tauto|].
   do 2 rewrite app_length. apply ideal_eval_small_step_obs_length in H.
   auto.
 Qed.
 
-Lemma ideal_eval_small_step_spec_bit_monotonic : forall P c st ast ds ct stt astt bt os,
-  P |- <((c, st, ast, true))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+Lemma ideal_eval_small_step_spec_bit_monotonic : forall P PA c st ast ds ct stt astt bt os,
+  P & PA |- <((c, st, ast, true))> -->i_ds^^os <((ct, stt, astt, bt))> ->
   bt = true.
 Proof.
   intros. remember true as b eqn:Eqb.
   induction H; subst; eauto.
 Qed.
 
-Lemma multi_ideal_spec_bit_monotonic : forall P c st ast ds ct stt astt bt os,
-  P |- <((c, st, ast, true))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+Lemma multi_ideal_spec_bit_monotonic : forall P PA c st ast ds ct stt astt bt os,
+  P & PA |- <((c, st, ast, true))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   bt = true.
 Proof.
   intros. remember true as b eqn:Eqb.
@@ -323,8 +327,8 @@ Proof.
   auto.
 Qed.
 
-Lemma ideal_eval_small_step_spec_needs_force : forall P c st ast ct stt astt ds os,
-  P |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
+Lemma ideal_eval_small_step_spec_needs_force : forall P PA c st ast ct stt astt ds os,
+  P & PA |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, true))> ->
   ds = [DForce].
 Proof.
   intros. remember false as b. remember true as bt. revert Heqb Heqbt.
@@ -332,8 +336,8 @@ Proof.
   now apply IHideal_eval_small_step.
 Qed.
 
-Lemma multi_ideal_spec_needs_force : forall P c st ast ct stt astt ds os,
-  P |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
+Lemma multi_ideal_spec_needs_force : forall P PA c st ast ct stt astt ds os,
+  P & PA |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
   In DForce ds.
 Proof.
   intros. remember false as b. remember true as bt. revert Heqb Heqbt.
@@ -343,8 +347,8 @@ Proof.
   + right. now apply IHmulti_ideal.
 Qed.
 
-Lemma ideal_eval_small_step_no_spec : forall P c st ast ct stt astt ds os,
-  P |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, false))> ->
+Lemma ideal_eval_small_step_no_spec : forall P PA c st ast ct stt astt ds os,
+  P & PA |- <((c, st, ast, false))> -->i_ds^^os <((ct, stt, astt, false))> ->
   ds = [DStep] \/ ds = [].
 Proof.
   intros. remember false as b in H at 1. remember false as bt in H. revert Heqb Heqbt.
@@ -352,8 +356,8 @@ Proof.
   now apply IHideal_eval_small_step.
 Qed.
 
-Lemma multi_ideal_no_spec : forall P c st ast ct stt astt ds os,
-  P |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, false))> ->
+Lemma multi_ideal_no_spec : forall P PA c st ast ct stt astt ds os,
+  P & PA |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, false))> ->
   exists n, ds = repeat DStep n.
 Proof.
   intros. remember false as b in H at 1. remember false as bt in H. revert Heqb Heqbt.
@@ -364,9 +368,9 @@ Proof.
   exists (1 + n). now rewrite repeat_app.
 Qed.
 
-Lemma multi_ideal_spec_bit_deterministic : forall P c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
-  P |- <(( c, st1, ast1, b ))> -->i*_ ds ^^ os1 <(( c1, stt1, astt1, bt1 ))> ->
-  P |- <(( c, st2, ast2, b ))> -->i*_ ds ^^ os2 <(( c2, stt2, astt2, bt2 ))> ->
+Lemma multi_ideal_spec_bit_deterministic : forall P PA c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
+  P & PA |- <(( c, st1, ast1, b ))> -->i*_ ds ^^ os1 <(( c1, stt1, astt1, bt1 ))> ->
+  P & PA |- <(( c, st2, ast2, b ))> -->i*_ ds ^^ os2 <(( c2, stt2, astt2, bt2 ))> ->
   bt1 = bt2.
 Proof.
   intros. destruct b.
@@ -380,23 +384,23 @@ Proof.
     all:now apply repeat_spec in H1.
 Qed.
 
-Lemma ideal_eval_small_step_dirs_obs : forall P c st ast b ct stt astt bt ds os,
-  P |- <((c, st, ast, b))> -->i_ ds ^^ os <((ct, stt, astt, bt))> ->
+Lemma ideal_eval_small_step_dirs_obs : forall P PA c st ast b ct stt astt bt ds os,
+  P & PA |- <((c, st, ast, b))> -->i_ ds ^^ os <((ct, stt, astt, bt))> ->
   (ds = [] /\ os = []) \/ (exists d o, ds = [d] /\ os = [o]).
 Proof. intros. now induction H; eauto. Qed.
 
-Lemma ideal_eval_small_step_silent_step : forall P c st ast b ct stt astt bt,
-  P |- <((c, st, ast, b))> -->i_ [] ^^ [] <((ct, stt, astt, bt))> ->
+Lemma ideal_eval_small_step_silent_step : forall P PA c st ast b ct stt astt bt,
+  P & PA |- <((c, st, ast, b))> -->i_ [] ^^ [] <((ct, stt, astt, bt))> ->
   b = bt /\ ast = astt.
 Proof. intros. remember [] as ds in H at 1. revert Heqds. now induction H; intros; eauto. Qed.
 
-Lemma multi_ideal_factorize : forall P c st ast b ct stt astt bt d ds os,
-  P |- <((c, st, ast, b))> -->i*_ d :: ds ^^ os <((ct, stt, astt, bt))> ->
+Lemma multi_ideal_factorize : forall P PA c st ast b ct stt astt bt d ds os,
+  P & PA |- <((c, st, ast, b))> -->i*_ d :: ds ^^ os <((ct, stt, astt, bt))> ->
   exists c' st' ct' stt' astt' bt' o os',
   os = o :: os' /\
-  P |- <((c, st, ast, b))> -->i*_[]^^[] <((c', st', ast, b))> /\
-  P |- <((c', st', ast, b))> -->i_[d]^^[o] <((ct', stt', astt', bt'))> /\
-  P |- <((ct', stt', astt', bt'))> -->i*_ds^^os' <((ct, stt, astt, bt))>.
+  P & PA |- <((c, st, ast, b))> -->i*_[]^^[] <((c', st', ast, b))> /\
+  P & PA |- <((c', st', ast, b))> -->i_[d]^^[o] <((ct', stt', astt', bt'))> /\
+  P & PA |- <((ct', stt', astt', bt'))> -->i*_ds^^os' <((ct, stt, astt, bt))>.
 Proof.
   intros. remember (d :: ds) as ds'. revert d ds Heqds'. induction H; intros; try discriminate.
   apply ideal_eval_small_step_dirs_obs in H as Heq.
@@ -428,7 +432,7 @@ Qed.
 
 Lemma ideal_eval_small_step_preserves_wt : forall P PA c st ast b ct stt astt bt pc ds os,
   P & PA, pc |-- c ->
-  P |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+  P & PA |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
   P & PA, pc |-- ct.
 Proof.
   intros. induction H0; try now constructor.
@@ -448,7 +452,7 @@ Qed.
 
 Lemma multi_ideal_preserves_wt : forall P PA c st ast b ct stt astt bt pc ds os,
   P & PA, pc |-- c ->
-  P |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   P & PA, pc |-- ct.
 Proof.
   intros. induction H0; [tauto|].
@@ -459,8 +463,8 @@ Lemma ideal_eval_small_step_noninterference : forall P PA c st1 st2 ast1 ast2 b 
   P & PA, pc |-- c ->
   pub_equiv P st1 st2 ->
   pub_equiv PA ast1 ast2 ->
-  P |- <((c, st1, ast1, b))> -->i_ds^^os <((ct1, stt1, astt1, bt1))> ->
-  P |- <((c, st2, ast2, b))> -->i_ds^^os <((ct2, stt2, astt2, bt2))> ->
+  P & PA |- <((c, st1, ast1, b))> -->i_ds^^os <((ct1, stt1, astt1, bt1))> ->
+  P & PA |- <((c, st2, ast2, b))> -->i_ds^^os <((ct2, stt2, astt2, bt2))> ->
   ct1 = ct2 /\ bt1 = bt2 /\ pub_equiv P stt1 stt2 /\ pub_equiv PA astt1 astt2.
 Proof.
   intros P PA c st1 st2 ast1 ast2 b ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 pc ds os.
@@ -469,19 +473,19 @@ Proof.
     - apply String.eqb_eq in Heq. subst. invert H2. unfold join, can_flow in H6. rewrite !t_update_eq.
       eapply noninterferent_aexp; [eassumption|]. destruct l; [now unfold public|]. rewrite Hx' in H6. now rewrite andb_false_r in H6.
     - apply String.eqb_neq in Heq. do 2 (rewrite t_update_neq; [|tauto]). now apply H0.
-  + invert H3; [|inversion H2]. invert H. apply IHideal_eval_small_step in H16; [|tauto..]. destruct H16; subst. now auto.
-  + now invert H3; [inversion H15|].
+  + invert H3; [|inversion H2]. invert H. apply IHideal_eval_small_step in H17; [|tauto..]. destruct H17; subst. now auto.
+  + now invert H3; [inversion H16|].
   + now invert H5.
   + now invert H5.
   + now invert H3.
   + invert H5. do 2 split; [reflexivity|]. split; [|tauto]. eapply aexp_has_label_inj in H; [|eassumption]. subst.
-    invert H4. unfold can_flow, join in H8. eapply aexp_has_label_inj in H18; [|eassumption]. subst.
+    invert H4. unfold can_flow, join in H8. eapply aexp_has_label_inj in H19; [|eassumption]. subst.
     intros x' Hx'. destruct (String.eqb x x') eqn:Heq.
     - apply String.eqb_eq in Heq. subst. rewrite Hx', orb_false_r in H8. apply andb_prop in H8. destruct H8; subst.
       apply andb_prop in H0. destruct H0; subst. specialize (H3 a H0). now rewrite H3, !t_update_eq.
     - apply String.eqb_neq in Heq. do 2 (rewrite t_update_neq; [|tauto]). now apply H2.
   + invert H7. do 2 split; [reflexivity|]. split; [|tauto]. intros x' Hx'. destruct (String.eqb x x') eqn:Heq.
-    - apply String.eqb_eq in Heq. subst. rewrite H23 in Hx'. now unfold secret in Hx'.
+    - apply String.eqb_eq in Heq. subst. rewrite H24 in Hx'. now unfold secret in Hx'.
     - apply String.eqb_neq in Heq. do 2 (rewrite t_update_neq; [|tauto]). now apply H4.
   + invert H7. do 2 split; [reflexivity|]. split; [tauto|]. intros a' Ha'. destruct (a =? a') eqn:Heq.
     - apply String.eqb_eq in Heq. subst. rewrite !t_update_eq.
@@ -490,14 +494,15 @@ Proof.
       rewrite Ha' in H11. simpl in H11. rewrite orb_false_r in H11. apply andb_prop in H11. destruct H11. subst.
       apply andb_prop in H0. destruct H0. subst. pose proof (noninterferent_aexp H4 H10). now rewrite H5, H.
     - apply String.eqb_neq in Heq. do 2 (rewrite t_update_neq; [|tauto]). now apply H5.
-  + invert H8. do 2 split; [reflexivity|]. split; [tauto|]. intros a'' Ha''. destruct (a' =? a'') eqn:Heq.
-    - apply String.eqb_eq in Heq. subst. rewrite !t_update_eq.
-      pose proof (noninterferent_aexp H5 H1). specialize (H6 a'' Ha''). now rewrite H, H6.
-    - apply String.eqb_neq in Heq. do 2 (rewrite t_update_neq; [|tauto]). now apply H6.
+  + invert H8. do 2 split; [reflexivity|]. split; [tauto|]. destruct H0.
+    { rewrite H. now apply pub_equiv_update_secret. }
+    pose proof (noninterferent_aexp H5 H). rewrite H0. destruct (PA a') eqn:Heq.
+    { rewrite H6; [|tauto]. now apply pub_equiv_update_public. }
+    now apply pub_equiv_update_secret.
 Qed.
 
-Lemma ideal_eval_seq_eval : forall P c st ast ct stt astt bt n os,
-  P |- <((c, st, ast, false))> -->i_ repeat DStep n ^^ os <((ct, stt, astt, bt))> ->
+Lemma ideal_eval_seq_eval : forall P PA c st ast ct stt astt bt n os,
+  P & PA |- <((c, st, ast, false))> -->i_ repeat DStep n ^^ os <((ct, stt, astt, bt))> ->
   <((c, st, ast ))> -->^os <((ct, stt, astt))>.
 Proof.
   intros. remember false as b in H. remember (repeat DStep n) as ds in H. revert Heqb Heqds.
@@ -510,8 +515,8 @@ Proof.
   + rewrite ?andb_false_r in *. now constructor.
 Qed.
 
-Lemma multi_ideal_multi_seq : forall P c st ast ct stt astt bt n os,
-  P |- <((c, st, ast, false))> -->i*_ repeat DStep n ^^ os <((ct, stt, astt, bt))> ->
+Lemma multi_ideal_multi_seq : forall P PA c st ast ct stt astt bt n os,
+  P & PA |- <((c, st, ast, false))> -->i*_ repeat DStep n ^^ os <((ct, stt, astt, bt))> ->
   <((c, st, ast ))> -->*^os <((ct, stt, astt))>.
 Proof.
   intros. remember false as b in H. remember (repeat DStep n) as ds in H. revert n Heqb Heqds.
@@ -523,10 +528,10 @@ Proof.
   now eapply IHmulti_ideal; eauto.
 Qed.
 
-Definition ideal_same_obs P c st1 st2 ast1 ast2 : Prop :=
+Definition ideal_same_obs P PA c st1 st2 ast1 ast2 : Prop :=
   forall ds stt1 stt2 astt1 astt2 bt1 bt2 os1 os2 c1 c2,
-    P |- <((c, st1, ast1, false))> -->i*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
-    P |- <((c, st2, ast2, false))> -->i*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
+    P & PA |- <((c, st1, ast1, false))> -->i*_ds^^os1 <((c1, stt1, astt1, bt1))> ->
+    P & PA |- <((c, st2, ast2, false))> -->i*_ds^^os2 <((c2, stt2, astt2, bt2))> ->
     os1 = os2.
 
 Lemma t_update_nonempty_arrs : forall ast a i n,
@@ -538,28 +543,28 @@ Proof.
   + apply String.eqb_neq in Heq. rewrite t_update_neq; [|tauto]. now apply H.
 Qed.
 
-Lemma ideal_eval_preserves_nonempty_arrs : forall P c st ast b ct stt astt bt ds os,
+Lemma ideal_eval_preserves_nonempty_arrs : forall P PA c st ast b ct stt astt bt ds os,
   nonempty_arrs ast ->
-  P |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+  P & PA |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
   nonempty_arrs astt.
 Proof.
   intros.
   induction H0; [tauto..|now apply t_update_nonempty_arrs|now apply t_update_nonempty_arrs].
 Qed.
 
-Lemma multi_ideal_preserves_nonempty_arrs : forall P c st ast b ct stt astt bt ds os,
+Lemma multi_ideal_preserves_nonempty_arrs : forall P PA c st ast b ct stt astt bt ds os,
   nonempty_arrs ast ->
-  P |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
   nonempty_arrs astt.
 Proof.
   intros. induction H0; [tauto|].
   apply ideal_eval_preserves_nonempty_arrs in H0; tauto.
 Qed.
 
-Lemma ideal_unused_overwrite : forall P c st ast b ct stt astt bt ds os X n,
+Lemma ideal_unused_overwrite : forall P PA c st ast b ct stt astt bt ds os X n,
   unused X c ->
-  P |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
-  P |- <((c, X !-> n; st, ast, b))> -->i_ds^^os <((ct, X !-> n; stt, astt, bt))> /\ unused X ct.
+  P & PA |- <((c, st, ast, b))> -->i_ds^^os <((ct, stt, astt, bt))> ->
+  P & PA |- <((c, X !-> n; st, ast, b))> -->i_ds^^os <((ct, X !-> n; stt, astt, bt))> /\ unused X ct.
 Proof.
   intros. induction H0; simpl in *.
   + split; [|trivial]. rewrite t_update_permute; [|tauto]. constructor. now rewrite aeval_unused_update.
@@ -571,23 +576,23 @@ Proof.
   + split; [|trivial]. rewrite t_update_permute; [|tauto]. econstructor; [eassumption|now rewrite aeval_unused_update|tauto].
   + split; [|trivial]. rewrite t_update_permute; [|tauto]. econstructor; [now rewrite aeval_unused_update|tauto..].
   + split; [|trivial]. econstructor. 2, 3, 5:eassumption. all:now rewrite aeval_unused_update.
-  + split; [|trivial]. econstructor. 1, 4: now rewrite aeval_unused_update. all:tauto.
+  + split; [|trivial]. econstructor; try tauto. all: now rewrite aeval_unused_update.
 Qed.
 
-Lemma multi_ideal_unused_overwrite : forall P c st ast b ct stt astt bt ds os X n,
+Lemma multi_ideal_unused_overwrite : forall P PA c st ast b ct stt astt bt ds os X n,
   unused X c ->
-  P |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
-  P |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((ct, X !-> n; stt, astt, bt))>.
+  P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((ct, stt, astt, bt))> ->
+  P & PA |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((ct, X !-> n; stt, astt, bt))>.
 Proof.
   intros. induction H0; [constructor|].
   eapply ideal_unused_overwrite in H0; [|eassumption].
   destruct H0. now econstructor; eauto.
 Qed.
 
-Lemma multi_ideal_unused_update : forall P c st ast b ct stt astt bt ds os X n,
+Lemma multi_ideal_unused_update : forall P PA c st ast b ct stt astt bt ds os X n,
   unused X c ->
-  P |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((ct, X !-> n; stt, astt, bt))> ->
-  P |- <((c, st, ast, b))> -->i*_ds^^os <((ct, X !-> st X; stt, astt, bt))>.
+  P & PA |- <((c, X !-> n; st, ast, b))> -->i*_ds^^os <((ct, X !-> n; stt, astt, bt))> ->
+  P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((ct, X !-> st X; stt, astt, bt))>.
 Proof.
   intros. eapply multi_ideal_unused_overwrite with (n:=st X) in H0; [|eassumption].
   now rewrite !t_update_shadow, t_update_same in H0.
@@ -597,15 +602,15 @@ Ltac solve_refl :=
   now eexists; split; [|(try discriminate); (try now repeat econstructor)]; rewrite ?t_update_shadow, t_update_same;
   repeat econstructor; (repeat rewrite_eq); rewrite ?andb_false_r; (try now apply label_of_exp_sound).
 
-Lemma flex_slh_bcc_generalized : forall c ds P st ast (b:bool) c' st' ast' b' os,
+Lemma flex_slh_bcc_generalized : forall c ds P PA st ast (b:bool) c' st' ast' b' os,
   nonempty_arrs ast ->
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
-  <((flex_slh P c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-  exists c'', P |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))> /\
+  <((flex_slh P PA c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  exists c'', P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))> /\
     (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)).
 Proof.
-  intros c ds P. eapply prog_size_ind with (c:=c) (ds:=ds). clear.
+  intros c ds P PA. eapply prog_size_ind with (c:=c) (ds:=ds). clear.
   intros c ds IH. intros until os. intros Harrs Hunused st_b H.
   destruct c; simpl in *.
   + invert H; [solve_refl|]. invert H0.
@@ -663,9 +668,9 @@ Proof.
         rewrite Heq in H0. apply multi_spec_seq_assoc in H0. do 2 destruct H0. apply multi_spec_seq in H0. destruct H0.
         ++ do 8 destruct H0. destruct H3, H4. subst. invert H4. invert H0. invert H16. simpl in H3. rewrite Heq, t_update_same in H3.
            invert H3. invert H0; [inversion H16|]. apply IH in H4; [|prog_size_auto|tauto..]. destruct H4, H0, H3 as (->&?); [reflexivity|].
-           pose proof (multi_ideal_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ Harrs H0).
+           pose proof (multi_ideal_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ _ Harrs H0).
            remember (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) as be'.
-           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_slh P c) end; "b" := be' ? 1 : "b" }}> with (flex_slh P <{{ while be do c end }}>) in H5
+           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_slh P PA c) end; "b" := be' ? 1 : "b" }}> with (flex_slh P PA <{{ while be do c end }}>) in H5
             by now simpl; rewrite Heqbe'.
            apply IH in H5; [|prog_size_auto|simpl; tauto..]. do 2 destruct H5.
            eapply multi_ideal_unused_overwrite with (X:="b") (n:=st'0 "b") in H5; [|simpl; tauto]. rewrite t_update_shadow in H5.
@@ -715,9 +720,9 @@ Proof.
         ++ do 8 destruct H. destruct H1, H2. subst. invert H2. invert H. invert H14. invert H1. invert H; [inversion H14|].
            simpl in H2. rewrite Heq' in H2. apply IH in H2; [|prog_size_auto|tauto..]. destruct H2, H, H1 as (->&?); [reflexivity|].
            rewrite t_update_eq in H. apply multi_ideal_unused_update in H; [|simpl; tauto].
-           pose proof (multi_ideal_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ Harrs H).
+           pose proof (multi_ideal_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ _ Harrs H).
            remember (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) as be' in H3.
-           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_slh P c) end; "b" := be' ? 1 : "b" }}> with (flex_slh P <{{ while be do c end }}>) in H3
+           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_slh P PA c) end; "b" := be' ? 1 : "b" }}> with (flex_slh P PA <{{ while be do c end }}>) in H3
             by now simpl; rewrite Heqbe'.
            apply IH in H3; [|prog_size_auto|simpl; tauto..]. do 2 destruct H3.
            eapply multi_ideal_unused_overwrite with (X:="b") (n:=st'1 "b") in H3; [|simpl; tauto]. rewrite t_update_shadow in H3.
@@ -746,38 +751,39 @@ Proof.
       * simpl in H14. rewrite st_b in H14. simpl in H14. specialize (Harrs a). lia.
   + invert H; [solve_refl|]. invert H0.
     - invert H1; [|inversion H]. eexists. split; [|tauto]. rewrite t_update_same. repeat econstructor; [apply label_of_exp_sound..| |assumption].
-      now destruct (label_of_aexp P i), (label_of_aexp P e), b'; simpl; rewrite ?st_b.
-    - destruct (label_of_aexp P i && label_of_aexp P e) eqn:Heq.
+      now destruct (label_of_aexp P i), (label_of_aexp P e), (all_secret PA), b'; simpl; rewrite ?st_b.
+    - destruct (label_of_aexp P i && (label_of_aexp P e || all_secret PA)) eqn:Heq.
       * invert H1; [|inversion H]. eexists. split; [|tauto]. rewrite t_update_same.
-        apply andb_prop in Heq. destruct Heq. fold public in H, H0.
-        repeat econstructor; [| |tauto..].
-        1: rewrite <- H. 2:rewrite <- H0. all:apply label_of_exp_sound.
+        apply andb_prop in Heq. destruct Heq. apply orb_prop in H0. fold public in H.
+        do 2 econstructor; [tauto| |rewrite <- H; apply label_of_exp_sound|tauto..].
+        unfold all_secret in H0. destruct (pub_vars_eq_dec PA AllSecret) eqn:HPA; [now subst; left|right].
+        fold public in H0. destruct H0; [rewrite <- H0; apply label_of_exp_sound|discriminate].
       * simpl in H15. rewrite st_b in H15. simpl in H15. specialize (Harrs a). lia.
 Qed.
 
-Lemma flex_slh_bcc : forall c ds P st ast (b:bool) c' st' ast' b' os,
+Lemma flex_slh_bcc : forall c ds P PA st ast (b:bool) c' st' ast' b' os,
   nonempty_arrs ast ->
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
-  <((flex_slh P c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
-  exists c'', P |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
+  <((flex_slh P PA c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  exists c'', P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
 Proof.
   intros. apply flex_slh_bcc_generalized in H2; [|tauto..]. do 2 destruct H2. eexists. apply H2.
 Qed.
 
-Lemma gilles_lemma_one_step : forall P c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
+Lemma gilles_lemma_one_step : forall P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
   pub_equiv P st1 st2 ->
-  P |- <((c, st1, ast1, true))> -->i_ds^^os1 <((ct1, stt1, astt1, true))> ->
-  P |- <((c, st2, ast2, true))> -->i_ds^^os2 <((ct2, stt2, astt2, true))> ->
+  P & PA |- <((c, st1, ast1, true))> -->i_ds^^os1 <((ct1, stt1, astt1, true))> ->
+  P & PA |- <((c, st2, ast2, true))> -->i_ds^^os2 <((ct2, stt2, astt2, true))> ->
   os1 = os2 /\ ct1 = ct2.
 Proof.
-  intros P c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds. intros Hequiv H.
+  intros P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds. intros Hequiv H.
   remember true as b in H at 1. remember true as bt in H.
   revert st2 ast2 ct2 stt2 astt2 os2 Heqb Heqbt Hequiv. induction H; simpl; intros; subst.
   + now invert H0.
   + invert H0; [|inversion H].
-    apply IHideal_eval_small_step in H13; [|tauto..]. destruct H13. now subst.
-  + invert H; [inversion H12|tauto].
+    apply IHideal_eval_small_step in H14; [|tauto..]. destruct H14. now subst.
+  + invert H; [inversion H13|tauto].
   + invert H2. eapply bexp_has_label_inj in H; [|eassumption]. subst.
     destruct l; [|tauto]. erewrite noninterferent_bexp; eauto.
   + invert H2. eapply bexp_has_label_inj in H; [|eassumption]. subst.
@@ -787,7 +793,7 @@ Proof.
     destruct li; [|tauto]. erewrite noninterferent_aexp; eauto.
   + invert H4. erewrite noninterferent_aexp; eauto.
   + invert H4. eapply aexp_has_label_inj in H0; [|eassumption]. eapply aexp_has_label_inj in H1; [|eassumption]. subst.
-    destruct li; [|tauto]. destruct le0; [|tauto]. erewrite noninterferent_aexp; eauto.
+    destruct li; [|tauto]. destruct (le0 || all_secret PA); [|tauto]. erewrite noninterferent_aexp; eauto.
   + invert H5. erewrite noninterferent_aexp; eauto.
 Qed.
 
@@ -795,15 +801,15 @@ Lemma gilles_lemma : forall P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 ast
   P & PA, public |-- c ->
   pub_equiv P st1 st2 ->
   pub_equiv PA ast1 ast2 ->
-  P |- <((c, st1, ast1, true))> -->i*_ds^^os1 <((ct1, stt1, astt1, true))> ->
-  P |- <((c, st2, ast2, true))> -->i*_ds^^os2 <((ct2, stt2, astt2, true))> ->
+  P & PA |- <((c, st1, ast1, true))> -->i*_ds^^os1 <((ct1, stt1, astt1, true))> ->
+  P & PA |- <((c, st2, ast2, true))> -->i*_ds^^os2 <((ct2, stt2, astt2, true))> ->
   os1 = os2.
 Proof.
   intros P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds.
   intros Hwt Hequiv Hequiv' H. remember true as b in H at 1. remember true as bt in H.
   revert st2 ast2 ct2 stt2 astt2 os2 Heqb Heqbt Hwt Hequiv Hequiv'. induction H; intros; subst.
   + apply multi_ideal_obs_length in H. symmetry in H. simpl in H. now apply length_zero_iff_nil in H.
-  + pose proof (ideal_eval_small_step_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ H). subst.
+  + pose proof (ideal_eval_small_step_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ _ H). subst.
     invert H1.
     - symmetry in H5. apply app_eq_nil in H5. destruct H5; subst.
       apply multi_ideal_obs_length in H0. apply ideal_eval_small_step_obs_length in H.
@@ -811,22 +817,22 @@ Proof.
     - assert (ds0 = ds1).
       { apply app_eq_prefix in H2. apply prefix_eq_length; [|tauto]. eapply ideal_eval_small_step_same_length; eassumption. }
       subst. apply app_inv_head in H2. subst.
-      pose proof (ideal_eval_small_step_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ H3). subst.
-      pose proof (gilles_lemma_one_step _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hequiv H H3). destruct H1; subst.
+      pose proof (ideal_eval_small_step_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ _ H3). subst.
+      pose proof (gilles_lemma_one_step _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hequiv H H3). destruct H1; subst.
       eapply ideal_eval_small_step_noninterference in Hequiv'; [|eassumption..]. destruct Hequiv', H2, H4.
       eapply gilles_lemma_one_step in H3; [|eassumption..]. destruct H3; subst.
       eapply ideal_eval_small_step_preserves_wt in Hwt; [|eassumption].
       f_equal. eapply IHmulti_ideal; eauto.
 Qed.
 
-Lemma multi_ideal_misspeculate_split : forall P ds c st ast ct stt astt os,
-  P |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
+Lemma multi_ideal_misspeculate_split : forall P PA ds c st ast ct stt astt os,
+  P & PA |- <((c, st, ast, false))> -->i*_ds^^os <((ct, stt, astt, true))> ->
   exists n ds2 os1 o os2 c1 c2 st1 st2 ast1 ast2,
   ds = repeat DStep n ++ DForce :: ds2 /\
   os = os1 ++ o :: os2 /\
-  P |- <((c, st, ast, false))> -->i*_ repeat DStep n ^^os1 <((c1, st1, ast1, false))> /\
-  P |- <((c1, st1, ast1, false))> -->i_[DForce]^^[o] <((c2, st2, ast2, true))> /\
-  P |- <((c2, st2, ast2, true))> -->i*_ds2^^os2 <((ct, stt, astt, true))>.
+  P & PA |- <((c, st, ast, false))> -->i*_ repeat DStep n ^^os1 <((c1, st1, ast1, false))> /\
+  P & PA |- <((c1, st1, ast1, false))> -->i_[DForce]^^[o] <((c2, st2, ast2, true))> /\
+  P & PA |- <((c2, st2, ast2, true))> -->i*_ds2^^os2 <((ct, stt, astt, true))>.
 Proof.
   induction ds; intros; [now apply multi_ideal_spec_needs_force in H|].
   apply multi_ideal_factorize in H. do 9 destruct H. destruct H0, H1. subst.
@@ -840,10 +846,10 @@ Proof.
     rewrite !app_comm_cons. exists (1+x4), x7. now eauto 20.
 Qed.
 
-Lemma multi_ideal_no_spec_deterministic : forall P c st1 st2 ast1 ast2 ct1 ct2 stt1 stt2 astt1 astt2 ds os1 os2,
+Lemma multi_ideal_no_spec_deterministic : forall P PA c st1 st2 ast1 ast2 ct1 ct2 stt1 stt2 astt1 astt2 ds os1 os2,
   seq_same_obs c st1 st2 ast1 ast2 ->
-  P |- <((c, st1, ast1, false))> -->i*_ds^^os1 <((ct1, stt1, astt1, false))> ->
-  P |- <((c, st2, ast2, false))> -->i*_ds^^os2 <((ct2, stt2, astt2, false))> ->
+  P & PA |- <((c, st1, ast1, false))> -->i*_ds^^os1 <((ct1, stt1, astt1, false))> ->
+  P & PA |- <((c, st2, ast2, false))> -->i*_ds^^os2 <((ct2, stt2, astt2, false))> ->
   os1 = os2.
 Proof.
   intros. apply multi_ideal_no_spec in H0 as Heq.
@@ -857,10 +863,10 @@ Lemma multi_ideal_stuck_noninterference :
   P & PA, public |-- c ->
   pub_equiv P st1 st2 ->
   pub_equiv PA ast1 ast2 ->
-  P |- <((c, st1, ast1, b))> -->i*_ds^^os <((ct1, stt1, astt1, bt1))> ->
-  P |- <((ct1, stt1, astt1, bt1))> -->i_[d1]^^[o1] <((ct1', stt1', astt1', bt1'))> ->
-  P |- <((c, st2, ast2, b))> -->i*_ds^^os <((ct2, stt2, astt2, bt2))> ->
-  P |- <((ct2, stt2, astt2, bt2))> -->i_[d2]^^[o2] <((ct2', stt2', astt2', bt2'))> ->
+  P & PA |- <((c, st1, ast1, b))> -->i*_ds^^os <((ct1, stt1, astt1, bt1))> ->
+  P & PA |- <((ct1, stt1, astt1, bt1))> -->i_[d1]^^[o1] <((ct1', stt1', astt1', bt1'))> ->
+  P & PA |- <((c, st2, ast2, b))> -->i*_ds^^os <((ct2, stt2, astt2, bt2))> ->
+  P & PA |- <((ct2, stt2, astt2, bt2))> -->i_[d2]^^[o2] <((ct2', stt2', astt2', bt2'))> ->
   ct1 = ct2 /\ bt1 = bt2 /\ pub_equiv P stt1 stt2 /\ pub_equiv PA astt1 astt2.
 Proof.
   intros. revert st2 ast2 ct2 stt2 astt2 bt2 ct2' stt2' astt2' bt2' d2 o2 H4 H5 H H0 H1.
@@ -881,10 +887,10 @@ Proof.
     eapply IHmulti_ideal; eassumption.
 Qed.
 
-Lemma ideal_eval_small_step_force_obs : forall P c st1 st2 ast1 ast2 ct1 ct2 stt1 stt2 astt1 astt2 os1 os2,
+Lemma ideal_eval_small_step_force_obs : forall P PA c st1 st2 ast1 ast2 ct1 ct2 stt1 stt2 astt1 astt2 os1 os2,
   seq_same_obs c st1 st2 ast1 ast2 ->
-  P |- <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct1, stt1, astt1, true))> ->
-  P |- <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct2, stt2, astt2, true))> ->
+  P & PA |- <((c, st1, ast1, false))> -->i_[DForce]^^os1 <((ct1, stt1, astt1, true))> ->
+  P & PA |- <((c, st2, ast2, false))> -->i_[DForce]^^os2 <((ct2, stt2, astt2, true))> ->
   os1 = os2.
 Proof.
   intros. remember false as b in H0. remember true as bt in H0. remember [DForce] as ds in H0.
@@ -893,10 +899,10 @@ Proof.
   + invert H3. apply seq_same_obs_com_if in H2. now rewrite H2, !orb_true_r.
 Qed.
 
-Lemma multi_ideal_preserves_seq_same_obs : forall P c st1 st2 ast1 ast2 ct stt1 stt2 astt1 astt2 ds os1 os2,
+Lemma multi_ideal_preserves_seq_same_obs : forall P PA c st1 st2 ast1 ast2 ct stt1 stt2 astt1 astt2 ds os1 os2,
   seq_same_obs c st1 st2 ast1 ast2 ->
-  P |- <((c, st1, ast1, false))> -->i*_ds^^os1 <((ct, stt1, astt1, false))> ->
-  P |- <((c, st2, ast2, false))> -->i*_ds^^os2 <((ct, stt2, astt2, false))> ->
+  P & PA |- <((c, st1, ast1, false))> -->i*_ds^^os1 <((ct, stt1, astt1, false))> ->
+  P & PA |- <((c, st2, ast2, false))> -->i*_ds^^os2 <((ct, stt2, astt2, false))> ->
   seq_same_obs ct stt1 stt2 astt1 astt2.
 Proof.
   unfold seq_same_obs. intros.
@@ -929,7 +935,7 @@ Lemma ideal_eval_relative_secure : forall P PA c st1 st2 ast1 ast2,
   pub_equiv P st1 st2 ->
   pub_equiv PA ast1 ast2 ->
   seq_same_obs c st1 st2 ast1 ast2 ->
-  ideal_same_obs P c st1 st2 ast1 ast2.
+  ideal_same_obs P PA c st1 st2 ast1 ast2.
 Proof.
   unfold ideal_same_obs. intros.
   eapply multi_ideal_spec_bit_deterministic in H3 as Heq; [|apply H4]. subst.
@@ -963,7 +969,7 @@ Theorem flex_slh_relative_secure :
     (* Ultimate SLH assumptions  *)
     nonempty_arrs ast1 ->
     nonempty_arrs ast2 ->
-    relative_secure (flex_slh P) c st1 st2 ast1 ast2.
+    relative_secure (flex_slh P PA) c st1 st2 ast1 ast2.
 Proof.
   unfold relative_secure, spec_same_obs. intros.
   apply flex_slh_bcc in H8; [|tauto..].
@@ -974,23 +980,23 @@ Qed.
 
 Module RelatingSelSLH.
 
-  Fixpoint addr_sel_slh (P : pub_vars) (c : com) : com :=
+  Fixpoint addr_sel_slh (P PA : pub_vars) (c : com) : com :=
     (match c with
     | <{{ skip }}> => <{{ skip }}>
     | <{{ x := e }}> => <{{ x := e }}>
-    | <{{ c1; c2 }}> => <{{ addr_sel_slh P c1; addr_sel_slh P c2 }}>
-    | <{{ if b then c1 else c2 end }}> => <{{ if b then "b" := (b ? "b" : 1); addr_sel_slh P c1 else
-                                                        "b" := (b ? 1 : "b"); addr_sel_slh P c2 end }}>
-    | <{{ while b do c end }}> => <{{ while b do "b" := (b ? "b" : 1); addr_sel_slh P c end; "b" := b ? 1 : "b" }}>
+    | <{{ c1; c2 }}> => <{{ addr_sel_slh P PA c1; addr_sel_slh P PA c2 }}>
+    | <{{ if b then c1 else c2 end }}> => <{{ if b then "b" := (b ? "b" : 1); addr_sel_slh P PA c1 else
+                                                        "b" := (b ? 1 : "b"); addr_sel_slh P PA c2 end }}>
+    | <{{ while b do c end }}> => <{{ while b do "b" := (b ? "b" : 1); addr_sel_slh P PA c end; "b" := b ? 1 : "b" }}>
     | <{{ x <- a [[ i ]] }}> => let i' := if negb (P x) then i else <{ ("b" = 1) ? 0 : i }> in
                                 <{{ x <- a [[ i' ]] }}>
-    | <{{ a [ i ] <- e }}> => let i' := if label_of_aexp P e then i else <{ ("b" = 1) ? 0 : i }> in
+    | <{{ a [ i ] <- e }}> => let i' := if label_of_aexp P e || all_secret PA then i else <{ ("b" = 1) ? 0 : i }> in
                               <{{ a [ i' ] <- e }}>
   end)%string.
 
   Lemma addr_sel_slh_is_flex_slh : forall P PA c,
     P ;; PA |-ct- c ->
-    addr_sel_slh P c = flex_slh P c.
+    addr_sel_slh P PA c = flex_slh P PA c.
   Proof.
     intros P PA c H. induction H; simpl; repeat rewrite_eq; try reflexivity.
     - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
@@ -1014,7 +1020,7 @@ Module RelatingSelSLH.
       st2 "b" = 0 ->
       nonempty_arrs ast1 ->
       nonempty_arrs ast2 ->
-      relative_secure (addr_sel_slh P) c st1 st2 ast1 ast2.
+      relative_secure (addr_sel_slh P PA) c st1 st2 ast1 ast2.
   Proof.
     unfold relative_secure. intros. erewrite addr_sel_slh_is_flex_slh; [|eassumption].
     apply ct_well_typed_well_typed in H. eapply flex_slh_relative_secure; eassumption.
@@ -1086,7 +1092,7 @@ Module RelatingSelSLH.
       st2 "b" = 0 ->
       nonempty_arrs ast1 ->
       nonempty_arrs ast2 ->
-      spec_same_obs (addr_sel_slh P c) st1 st2 ast1 ast2.
+      spec_same_obs (addr_sel_slh P PA c) st1 st2 ast1 ast2.
   Proof. intros. eapply addr_sel_slh_relative_secure; [eassumption..|eapply well_typed_ct_secure; eassumption]. Qed.
 
 End RelatingSelSLH.
@@ -1112,15 +1118,16 @@ Module RelatingUltimateSLH.
   (* Actually this version of flex_slh doesn't exactly correspond to ultimate_slh, even optimized *)
 
   Lemma ultimate_slh_is_flex_slh : forall c,
-    ultimate_slh c = flex_slh AllSecret c.
+    ultimate_slh c = flex_slh AllSecret AllSecret c.
   Proof.
     induction c; try reflexivity.
     + simpl. now repeat rewrite_eq.
     + simpl. repeat rewrite_eq. now rewrite AllSecrets_bexp_no_vars.
     + simpl. rewrite_eq. now rewrite AllSecrets_bexp_no_vars.
     + simpl. now rewrite AllSecrets_aexp_no_vars, andb_true_r.
-    + simpl. rewrite !AllSecrets_aexp_no_vars. (* Oops.. *)
-  Admitted.
+    + simpl. unfold all_secret. destruct (pub_vars_eq_dec AllSecret AllSecret) as [_|(x&H)]; [|exfalso; now apply H].
+      now rewrite orb_true_r, andb_true_r, AllSecrets_aexp_no_vars.
+  Qed.
 
   Lemma AllSecret_pub_equiv : forall {A : Type} (m1 m2 : total_map A),
     pub_equiv AllSecret m1 m2.
@@ -1148,6 +1155,6 @@ Module RelatingUltimateSLH.
   Proof.
     unfold relative_secure. intros. rewrite ultimate_slh_is_flex_slh.
     eapply flex_slh_relative_secure; [apply wt_relax, AllSecret_wt|apply AllSecret_pub_equiv|apply AllSecret_pub_equiv|tauto..].
-  Abort.
+  Qed.
 
 End RelatingUltimateSLH.
