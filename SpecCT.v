@@ -1698,10 +1698,18 @@ Abort.
 Fixpoint com_size (c :com) :nat :=
   match c with
   | <{{ c1; c2 }}> => 1 + (com_size c1) + (com_size c2)
+  (* For conditionals the maximum of both branches is tighter, but a
+     looser bound based on blindly "counting all constructors"
+     (commented here) works just as well, and is easier to explain on
+     paper *)
   | <{{ if be then ct else cf end }}> => 1 + max (com_size ct) (com_size cf)
+  (* | <{{ if be then ct else cf end }}> => 1 + (com_size ct) + (com_size cf) *)
   | <{{ while be do cw end }}> => 1 + (com_size cw)
   | <{{ skip }}> => 1
-  | _  => 2
+  (* Size 2 for base cases is used in a previous version, 1 actually
+     works for all proofs *)
+  (* | _  => 2 *)
+  | _  => 1
   end.
 
 Definition prog_size (c :com) (ds :dirs) :nat := com_size c + length ds.
@@ -2685,10 +2693,14 @@ end.
 (*         k >> spec_eval_engine_aux ds' c2 *)
 
 Definition compute_fuel (c :com) (ds :dirs) :=
-  match ds with
-  | [] => com_size c
-  | _ => length ds * com_size c
-  end.
+  (* Reducing the fuel in the base cases of com_size does not break
+     any proofs, but some of the tests below need a bit more to finish
+     reducing (adding 2 is enough) *)
+  2 +
+    match ds with
+    | [] => com_size c
+    | _ => length ds * com_size c
+    end.
 
 Definition spec_eval_engine (c : com) (st : state) (ast : astate) (b : bool) (ds : dirs)
       : option (state * astate * bool * obs) :=
