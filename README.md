@@ -1,10 +1,10 @@
 # Requirements
 
-The development uses the Rocq proof assistant (formerly Coq)
+The development uses the Rocq proof assistant (formerly known as Coq)
 
 Installation instructions: https://coq.inria.fr/download
 
-Tested with version 8.20.0
+Tested with version 8.19.2 and 8.20.0
 
 # Building
 
@@ -34,6 +34,7 @@ Lemma 3 (Ideal semantics is relative-secure). File `FlexSLH.v`, Lemma `ideal_eva
 
 # Assumptions
 
-Use `Print Assumptions` to verify the above theorems are fully proved
+Use `Print Assumptions` to check that the above theorems are all fully proved
 
-https://coq.inria.fr/doc/V8.20.0/refman/proof-engine/vernacular-commands.html#requests-to-the-environment
+https://coq.inria.fr/doc/V8.20.0/refman/proof-engine/vernacular-commands.html#coq:cmd.Print-Assumptions
+
