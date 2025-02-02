@@ -4,7 +4,7 @@ The development uses the Rocq proof assistant (formerly known as Coq)
 
 Installation instructions: https://coq.inria.fr/download
 
-Tested with version 8.19.2 and 8.20.0
+Tested with versions 8.19.2, 8.20.0 and 8.20.1
 
 # Building
 
@@ -42,3 +42,4 @@ Use `Print Assumptions` to check that the above theorems are all fully proved
 
 https://coq.inria.fr/doc/V8.20.0/refman/proof-engine/vernacular-commands.html#coq:cmd.Print-Assumptions
 
+The proofs only assume functional extensionality and decidability of map lookups
