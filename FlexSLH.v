@@ -771,7 +771,7 @@ Proof.
   intros. apply flex_aslh_bcc_generalized in H2; [|tauto..]. do 2 destruct H2. eexists. apply H2.
 Qed.
 
-Lemma ideal_unwinding_lemma_one_step : forall P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
+Lemma ideal_misspeculated_unwinding_one_step : forall P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
   pub_equiv P st1 st2 ->
   P & PA |- <((c, st1, ast1, true))> -->i_ds^^os1 <((ct1, stt1, astt1, true))> ->
   P & PA |- <((c, st2, ast2, true))> -->i_ds^^os2 <((ct2, stt2, astt2, true))> ->
@@ -797,7 +797,7 @@ Proof.
   + invert H5. erewrite noninterferent_aexp; eauto.
 Qed.
 
-Lemma ideal_unwinding_lemma : forall P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
+Lemma ideal_misspeculated_unwinding : forall P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
   P & PA, public |-- c ->
   pub_equiv P st1 st2 ->
   pub_equiv PA ast1 ast2 ->
@@ -818,9 +818,9 @@ Proof.
       { apply app_eq_prefix in H2. apply prefix_eq_length; [|tauto]. eapply ideal_eval_small_step_same_length; eassumption. }
       subst. apply app_inv_head in H2. subst.
       pose proof (ideal_eval_small_step_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ _ H3). subst.
-      pose proof (ideal_unwinding_lemma_one_step _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hequiv H H3). destruct H1; subst.
+      pose proof (ideal_misspeculated_unwinding_one_step _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hequiv H H3). destruct H1; subst.
       eapply ideal_eval_small_step_noninterference in Hequiv'; [|eassumption..]. destruct Hequiv', H2, H4.
-      eapply ideal_unwinding_lemma_one_step in H3; [|eassumption..]. destruct H3; subst.
+      eapply ideal_misspeculated_unwinding_one_step in H3; [|eassumption..]. destruct H3; subst.
       eapply ideal_eval_small_step_preserves_wt in Hwt; [|eassumption].
       f_equal. eapply IHmulti_ideal; eauto.
 Qed.
@@ -953,7 +953,7 @@ Proof.
   eapply ideal_eval_small_step_force_obs in H2; [|eassumption..]. invert H2. f_equal.
   eapply ideal_eval_small_step_noninterference in H as Heq; [|eassumption..].
   destruct Heq as (->&_&?&?). eapply ideal_eval_small_step_preserves_wt in H; [|eassumption].
-  eapply ideal_unwinding_lemma; eassumption.
+  eapply ideal_misspeculated_unwinding; eassumption.
 Qed.
 
 Theorem flex_aslh_relative_secure :

@@ -32,7 +32,7 @@ Theorem 9 (SvSLH is CCT-secure). File `FlexVSLH.v`, Theorem `val_sel_slh_spec_ct
 
 Lemma 1 (Backwards compiler correctness). File `FlexSLH.v`, Lemma `flex_aslh_bcc_generalized`
 
-Lemma 2 (Ideal unwinding lemma). File `FlexSLH.v`, Lemma `ideal_unwinding_lemma`
+Lemma 2 (Ideal unwinding lemma). File `FlexSLH.v`, Lemma `ideal_misspeculated_unwinding`
 
 Lemma 3 (Ideal semantics is relative-secure). File `FlexSLH.v`, Lemma `ideal_eval_relative_secure`
 
