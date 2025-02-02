@@ -662,7 +662,7 @@ Proof.
   eapply H1 in H2. apply H2, prefix_or_heads in H3. now invert H3.
 Qed.
 
-Lemma gilles_lemma_one_step : forall P c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
+Lemma ideal_unwinding_lemma_one_step : forall P c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
   pub_equiv P st1 st2 ->
   P |- <((c, st1, ast1, true))> -->i_ds^^os1 <((ct1, stt1, astt1, true))> ->
   P |- <((c, st2, ast2, true))> -->i_ds^^os2 <((ct2, stt2, astt2, true))> ->
@@ -706,7 +706,7 @@ Proof.
   eapply H in H2; [|eassumption]. destruct H2; apply prefix_append_front in H2; tauto.
 Qed.
 
-Lemma gilles_lemma : forall P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 pc ds,
+Lemma ideal_unwinding_lemma : forall P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 pc ds,
   P & PA, pc |-- c ->
   pub_equiv P st1 st2 ->
   P |- <((c, st1, ast1, true))> -->i*_ds^^os1 <((ct1, stt1, astt1, true))> ->
@@ -725,7 +725,7 @@ Proof.
       { apply app_eq_prefix in H2. apply prefix_eq_length; [|tauto]. eapply ideal_eval_small_step_same_length; eassumption. }
       subst. apply app_inv_head in H2. subst.
       pose proof (ideal_eval_small_step_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ H3). subst.
-      pose proof (gilles_lemma_one_step _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hequiv H H3). destruct H1; subst.
+      pose proof (ideal_unwinding_lemma_one_step _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hequiv H H3). destruct H1; subst.
       eapply ideal_eval_small_step_noninterference in H3 as H'; [|now eauto..]. destruct H' as (_ & _ & Hequiv' & _).
       eapply ideal_eval_small_step_preserves_wt in Hwt; [|now eauto]. f_equal.
       now eapply IHmulti_ideal; eauto.
@@ -841,7 +841,7 @@ Proof.
   eapply ideal_eval_small_step_force_obs in H2; [|eassumption..]. invert H2. f_equal.
   eapply ideal_eval_small_step_noninterference in H as Heq; [|eassumption..].
   destruct Heq as (->&_&?&?). eapply ideal_eval_small_step_preserves_wt in H; [|eassumption].
-  eapply gilles_lemma; eassumption.
+  eapply ideal_unwinding_lemma; eassumption.
 Qed.
 
 Theorem flex_vslh_relative_secure :
