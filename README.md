@@ -12,7 +12,7 @@ Run `make` to build the development
 
 # Key results
 
-Theorem 1 (SaSLH is CCT-secure). File `FlexSLH.v`, Theorem `addr_sel_slh_spec_ct_secure`
+Theorem 1 (SaSLH is SCT-secure). File `FlexSLH.v`, Theorem `addr_sel_slh_spec_ct_secure`
 
 Theorem 2 (USLH is relative-secure). File `FlexSLH.v`, Theorem `ultimate_slh_relative_secure`
 
@@ -22,13 +22,13 @@ Theorem 4 (Connection between FaSLH and SaSLH). File `FlexSLH.v`, Lemma `addr_se
 
 Theorem 5 (Connection between FaSLH and USLH). File `FlexSLH.v`, Lemma `ultimate_slh_is_flex_aslh`
 
-Theorem 6 (Connection between FvSLH and SvSLH). File `FlexVSLH.v`, Lemma `val_sel_slh_is_flex_vslh`
+Theorem 6 (FvSLH is relative-secure). File `FlexVSLH.v`, Theorem `flex_vslh_relative_secure`
 
-Theorem 7 (Connection between FvSLH and USLH). File `FlexVSLH.v`, Lemma `ultimate_slh_is_flex_vslh`
+Theorem 7 (SvSLH is SCT-secure). File `FlexVSLH.v`, Theorem `val_sel_slh_spec_ct_secure`
 
-Theorem 8 (FvSLH is relative-secure). File `FlexVSLH.v`, Theorem `flex_vslh_relative_secure`
+Theorem 8 (Connection between FvSLH and SvSLH). File `FlexVSLH.v`, Lemma `val_sel_slh_is_flex_vslh`
 
-Theorem 9 (SvSLH is CCT-secure). File `FlexVSLH.v`, Theorem `val_sel_slh_spec_ct_secure`
+Theorem 9 (Connection between FvSLH and USLH). File `FlexVSLH.v`, Lemma `ultimate_slh_is_flex_vslh`
 
 Lemma 1 (Backwards compiler correctness). File `FlexSLH.v`, Lemma `flex_aslh_bcc_generalized`
 
