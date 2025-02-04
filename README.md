@@ -6,6 +6,8 @@ Installation instructions: https://coq.inria.fr/download
 
 Tested with versions 8.19.2, 8.20.0 and 8.20.1
 
+The included Maps library is part of Software Foundations and is not anonymized: https://softwarefoundations.cis.upenn.edu/
+
 # Building
 
 Run `make` to build the development
