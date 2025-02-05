@@ -1,5 +1,7 @@
 # Requirements
 
+## General
+
 The development uses the Rocq proof assistant (formerly known as Coq)
 
 Installation instructions: https://coq.inria.fr/download
@@ -7,6 +9,12 @@ Installation instructions: https://coq.inria.fr/download
 Tested with versions 8.19.2, 8.20.0 and 8.20.1
 
 The included Maps library is part of Software Foundations and is not anonymized: https://softwarefoundations.cis.upenn.edu/
+
+## Testing
+
+The test files `Testing*.v` additionally depend on the QuickChick library: https://github.com/QuickChick/QuickChick
+
+Tested with version 2.0.5
 
 # Building
 
