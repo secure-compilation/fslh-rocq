@@ -1074,7 +1074,7 @@ Lemma ideal_eval_obs_length : forall c st ast b ds stt astt bt os,
   length ds = length os.
 Proof.
   intros c st ast b ds stt astt bt os Hev. induction Hev; simpl; auto.
-  do 2 rewrite length_app. auto.
+  do 2 rewrite app_length. auto.
 Qed.
 
 Lemma ideal_eval_small_step_obs_length : forall c st ast b ds ct stt astt bt os,
@@ -1089,7 +1089,7 @@ Lemma multi_ideal_obs_length : forall c st ast b ds ct stt astt bt os,
   length ds = length os.
 Proof.
   intros c st ast b ds ct stt astt bt os Hev. induction Hev; simpl; auto.
-  do 2 rewrite length_app. apply ideal_eval_small_step_obs_length in H.
+  do 2 rewrite app_length. apply ideal_eval_small_step_obs_length in H.
   auto.
 Qed.
 
@@ -1374,7 +1374,7 @@ Proof.
   intros. induction H.
   - apply multi_ideal_refl.
   - apply seq_to_ideal in H.
-    rewrite length_app, repeat_app.
+    rewrite app_length, repeat_app.
     eapply multi_ideal_trans; eauto.
 Qed.
 
