@@ -478,7 +478,7 @@ Qed.
 (** * Relative Security of Ultimate Speculative Load Hardening *)
 
 (* HIDE *)
-(* Some intuition about Gilles lemma 1 from the USLH paper,
+(* Some intuition about Lemma 1 from the USLH paper (unwinding for ideal misspeculated executions),
    but now we plan to prove it directly, like determinism (see below) *)
 
 Fixpoint observations (c:com) (ds:dirs) : option (obs * dirs) :=
@@ -532,7 +532,7 @@ Lemma observations_fixed : forall c st ast ds stt astt os,
 Proof.
 Admitted.
 
-Lemma gilles_lemma_follows : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
+Lemma ideal_misspeculated_unwinding_follows : forall c st1 st2 ast1 ast2 ds stt1 stt2 astt1 astt2 os1 os2,
   unused "b" c ->
   st1 "b" = 1 ->
   st2 "b" = 1 ->
@@ -1603,7 +1603,7 @@ Proof.
   now destruct H; subst.
 Qed.
 
-(** * Gilles Lemma *)
+(** * Unwinding Lemma for Ideal Misspeculated Executions *)
 
 Lemma ideal_prefix_dirs :
   forall c st1 st2 ast1 ast2 b ds1 ds2 stt1 stt2 astt1 astt2 bt os1 os2,
@@ -1648,7 +1648,7 @@ Proof.
     apply IHHev1 in H9; auto.
 Qed.
 
-Lemma gilles_lemma : forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt os1 os2,
+Lemma ideal_misspeculated_unwinding : forall c st1 st2 ast1 ast2 b ds stt1 stt2 astt1 astt2 bt os1 os2,
   |-i <(st1, ast1, b, ds)> =[ c ]=> <(stt1, astt1, bt, os1)> ->
   |-i <(st2, ast2, b, ds)> =[ c ]=> <(stt2, astt2, bt, os2)> ->
   b = true ->
@@ -1936,7 +1936,7 @@ Proof.
     assert (L: cm2 = cm2').
     { eapply ideal_small_step_com_deterministic in Hone2; eauto. } subst.
     eapply ideal_one_step_obs in Hone2; eauto.
-    eapply gilles_lemma in Hbig1; eauto. congruence.
+    eapply ideal_misspeculated_unwinding in Hbig1; eauto. congruence.
   - (* without mis-speculation *)
     (* LATER: this case is similar to the start of the more interesting case
               above; we can likely share more (e.g. use the same obs_length lemma) *)

@@ -1206,9 +1206,9 @@ Proof.
   now destruct H; subst.
 Qed.
 
-(** * Gilles Lemma *)
+(** * Unwinding Lemma for Ideal Misspeculated Executions *)
 
-Lemma gilles_lemma_one_step : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
+Lemma ideal_misspeculated_unwinding_one_step : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
   <((c, st1, ast1, true))> -->i_ds^^os1 <((c1, stt1, astt1, true))> ->
   <((c, st2, ast2, true))> -->i_ds^^os2 <((c2, stt2, astt2, true))> ->
   os1 = os2 /\ c1 = c2.
@@ -1223,7 +1223,7 @@ Proof.
   + now invert H2.
 Qed.
 
-Lemma gilles_lemma : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
+Lemma ideal_misspeculated_unwinding : forall c ds st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2,
   <((c, st1, ast1, true))> -->i*_ds^^os1 <((c1, stt1, astt1, true))> ->
   <((c, st2, ast2, true))> -->i*_ds^^os2 <((c2, stt2, astt2, true))> ->
   os1 = os2.
@@ -1244,7 +1244,7 @@ Proof.
         do 2 (erewrite ideal_eval_small_step_obs_length; [|eassumption]).
         eapply ideal_small_step_obs_length; eassumption. } subst.
       apply app_inv_head in H2. subst.
-      assert(HH:os3 = os1 /\ c'0 = c') by (eapply gilles_lemma_one_step; eassumption).
+      assert(HH:os3 = os1 /\ c'0 = c') by (eapply ideal_misspeculated_unwinding_one_step; eassumption).
       destruct HH; subst. f_equal.
       eapply IHmulti_ideal; eauto.
 Qed.
@@ -1413,7 +1413,7 @@ Proof.
     assert (L: cm2 = cm2').
     { eapply ideal_small_step_com_deterministic in Hone2; eauto. } subst.
     eapply ideal_one_step_force_obs in Hone2; eauto.
-    eapply gilles_lemma in Hbig1; eauto. congruence.
+    eapply ideal_misspeculated_unwinding in Hbig1; eauto. congruence.
   - (* without mis-speculation *)
     (* LATER: this case is similar to the start of the more interesting case
               above; we can likely share more (e.g. use the same obs_length lemma) *)

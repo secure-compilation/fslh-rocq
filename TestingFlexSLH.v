@@ -857,9 +857,9 @@ QuickChick (
   forAll (sized (gen_wt_com P PA)) (fun c =>
   check_relative_security P PA c (flex_slh P c))))).
 
-(* Also testing Gilles' lemma here, not for ideal semantics, but for the translation *)
+(* Also testing Unwinding Lemma for Ideal Misspeculated Executions here, not for ideal semantics, but for the translation *)
 
-Definition check_gilles_lemma hardened s1 s2 : Checker :=
+Definition check_ideal_misspeculated_unwinding hardened s1 s2 : Checker :=
   let s1 := ("b" !-> 1; s1) in
   let s2 := ("b" !-> 1; s2) in
   forAll gen_astate (fun a1 =>
@@ -871,7 +871,7 @@ Definition check_gilles_lemma hardened s1 s2 : Checker :=
        | None => checker tt (* discard *)
        end))).
 
-(* Gilles' lemma as stated in UltimateSLH.v fails for flex_slh! -- SHOULD FAIL!
+(* Unwinding lemma as stated in UltimateSLH.v fails for flex_slh! -- SHOULD FAIL!
    Didn't expect it, but it makes sense in retrospect:
    for flex_slh public variables should *never* contain secrets,
    and our type-system ensures that *)
@@ -882,9 +882,9 @@ QuickChick (
   forAll (sized (gen_wt_com P PA)) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  check_gilles_lemma (flex_slh P c) s1 s2)))))).
+  check_ideal_misspeculated_unwinding (flex_slh P c) s1 s2)))))).
 
-(* A variant of Gilles' lemma works for flex_slh,
+(* A variant of the unwinding lemma works for flex_slh,
    but we need to only generate equivalent initial states *)
 
 QuickChick (
@@ -893,7 +893,7 @@ QuickChick (
   forAll (sized (gen_wt_com P PA)) (fun c =>
   forAll gen_state (fun s1 =>
   forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
-  check_gilles_lemma (flex_slh P c) s1 s2)))))).
+  check_ideal_misspeculated_unwinding (flex_slh P c) s1 s2)))))).
 
 (* Directly testing also the top-level statement for our naive Ultimate SLH,
    even if it is KIND OF(!) just a special case of flex_slh AllSecret. *)
@@ -948,7 +948,7 @@ QuickChick (
   forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  check_gilles_lemma (naive_ultimate_slh c) s1 s2)))).
+  check_ideal_misspeculated_unwinding (naive_ultimate_slh c) s1 s2)))).
 
 (* Finally, we check a very weak AllSecret instantiation of speculative
    noninterference, which only gives us something about the final flag. *)
@@ -1037,7 +1037,7 @@ QuickChick (
   forAll (sized gen_com) (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  check_gilles_lemma (opt_ultimate_slh c) s1 s2)))).
+  check_ideal_misspeculated_unwinding (opt_ultimate_slh c) s1 s2)))).
 
 (** Now testing Standard SLH and Sel SLH *)
 
@@ -1064,12 +1064,12 @@ QuickChick (
   forAll (gen_ct_well_typed P PA) (fun c =>
   check_relative_security P PA c (sel_slh P c))))).
 
-(* Also testing Gilles' lemma -- WRONG FOR ARBITRARY PROGRAMS! SHOULD FAIL! *)
+(* Also testing unwinding lemma -- WRONG FOR ARBITRARY PROGRAMS! SHOULD FAIL! *)
 QuickChick (
   forAllShrink (sized gen_com) shrink (fun c =>
   forAllShrink gen_state shrink (fun s1 =>
   forAllShrink gen_state shrink (fun s2 =>
-  check_gilles_lemma (slh c) s1 s2)))).
+  check_ideal_misspeculated_unwinding (slh c) s1 s2)))).
 
 (* This works for constant-time programs on equivalent initial states though *)
 
@@ -1079,7 +1079,7 @@ QuickChick (
   forAll (gen_ct_well_typed P PA) (fun c => (* <- extra assumption *)
   forAll gen_state (fun s1 =>
   forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
-  check_gilles_lemma (slh c) s1 s2)))))).
+  check_ideal_misspeculated_unwinding (slh c) s1 s2)))))).
 
 (* For constant-time programs we can use sel_slh though *)
 QuickChick (
@@ -1088,7 +1088,7 @@ QuickChick (
   forAll (gen_ct_well_typed P PA) (fun c => (* <- extra assumption *)
   forAll gen_state (fun s1 =>
   forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
-  check_gilles_lemma (sel_slh P c) s1 s2)))))).
+  check_ideal_misspeculated_unwinding (sel_slh P c) s1 s2)))))).
 
 (* Finally, we can also check speculative noninterference for constant-time
    programs, but then for sel_slh we already proved a stronger version, which
@@ -1161,12 +1161,12 @@ QuickChick (
   forAllShrink (sized gen_com) shrink (fun c =>
   check_relative_security AllSecret AllSecret c (exorcised_slh c))).
 
-(* Also testing Gilles' lemma -- SHOULD FAIL! *)
+(* Also testing unwinding lemma -- SHOULD FAIL! *)
 QuickChick (
   forAllShrink (sized gen_com) shrink (fun c =>
   forAll gen_state (fun s1 =>
   forAll gen_state (fun s2 =>
-  check_gilles_lemma (exorcised_slh c) s1 s2)))).
+  check_ideal_misspeculated_unwinding (exorcised_slh c) s1 s2)))).
 
 (** * Flow-sensitive IFC tracking for flex_slh *)
 
@@ -1501,4 +1501,4 @@ QuickChick (forAll (sized gen_com) (fun c =>
   let '(_,_,ac) := static_tracking P PA public c in
   forAll gen_state (fun s1 =>
   forAll (gen_pub_equiv P s1) (fun s2 => (* <- extra assumption *)
-  check_gilles_lemma (flex_slh_acom ac) s1 s2)))))).
+  check_ideal_misspeculated_unwinding (flex_slh_acom ac) s1 s2)))))).
