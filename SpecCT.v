@@ -1751,11 +1751,11 @@ Qed.
 
 Ltac prog_size_auto :=
   try ( apply prog_size_monotonic; left; split; simpl;
-        [| repeat rewrite app_length]; lia );
+        [| repeat rewrite length_app]; lia );
   try ( apply prog_size_monotonic; right; split; simpl;
-        [| repeat rewrite app_length]; lia);
+        [| repeat rewrite length_app]; lia);
   try ( apply prog_size_monotonic; left; split; simpl;
-        [auto | repeat rewrite app_length; lia] ).
+        [auto | repeat rewrite length_app; lia] ).
 
 (** To properly apply [prog_size_ind], we need to state [sel_slh_flag]
     as a proposition of type [com -> dirs -> Prop]. Therefore we define the
@@ -2102,7 +2102,7 @@ Proof.
   - (* Spec_ARead; public *)
     destruct (P x) eqn:Heq; try discriminate H.
     injection H; intros; subst; clear H.
-    inversion H1; clear H1; subst. repeat rewrite <- app_nil_end in *.
+    inversion H1; clear H1; subst. rewrite <- app_nil_r in *.
     inversion H0; clear H0; subst; simpl in *.
     * (* Ideal_ARead *)
       rewrite t_update_neq; [| tauto]. rewrite Hstb.
