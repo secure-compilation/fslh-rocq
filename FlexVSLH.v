@@ -1,6 +1,5 @@
-(** * FlexSLH: Selective Ultimate SLH *)
+(** * FlexVSLH: Flexible Value SLH *)
 
-(* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
 From SECF Require Import Maps SpecCT FlexSLH UltimateSLH_optimized.
@@ -11,7 +10,8 @@ From Coq Require Import Arith.PeanoNat. Import Nat.
 From Coq Require Import Lia.
 From Coq Require Import List. Import ListNotations.
 Set Default Goal Selector "!".
-(* TERSE: /HIDEFROMHTML *)
+
+(* Combining Selective Value SLH and Ultimate SLH *)
 
 Fixpoint flex_vslh (P :pub_vars) (c:com) : com :=
   (match c with

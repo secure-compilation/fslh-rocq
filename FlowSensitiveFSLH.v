@@ -1,6 +1,5 @@
-(** * FSflexSLH: Flow Sensitive FlexSLH *)
+(** * Flow-Sensitive, Flexible Value SLH *)
 
-(* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
 From SECF Require Import Maps SpecCT UltimateSLH_optimized FlexSLH FlexVSLH.
@@ -496,7 +495,7 @@ Qed.
 
 (* LD: This kind of theorem would be nice to have...
        The one step version isn't strong enough as it is stated though *)
-Theorem fs_flex_fls_correct : forall P PA c c' st ast st' ast' os,
+Theorem fs_flex_vslh_correct : forall P PA c c' st ast st' ast' os,
   st "b" = 0 ->
   unused "b" c ->
   <(( c, st, ast ))> -->*^ os <((c', st', ast'))> ->
@@ -505,7 +504,14 @@ Theorem fs_flex_fls_correct : forall P PA c c' st ast st' ast' os,
 Proof.
 Admitted.
 
-(* Add a way to know that ac comes is created from P PA for which the states are equivalent *)
+(* LD: Add a way to know that ac comes is created from P PA for which the states are equivalent *)
+(* CH: You could add something like this (and potentially use c instead of `erase ac`
+       in the premise, although your theorems will probably anyway say it's all the same):
+  static_tracking c P PA public = (ac, P', PA') ->
+  pub_equiv P st st' ->
+  pub_equiv PA ast ast' -> *)
+It will probably be very similar to the main theorem statement below?
+       In particular, can't you use fs_flex_vslh in the conclusion instead of erased in the premise? *)
 Theorem ideal_eval_relative_secure : forall ac st st' ast ast',
   nonempty_arrs ast ->
   nonempty_arrs ast' ->
@@ -515,6 +521,7 @@ Proof.
 Admitted.
 
 (* LD: Does not rely on pub_equiv right now, probably something wrong in the other statements *)
+(* CH: I agree that these pub_equiv conditions seem also needed above *)
 Theorem fs_flex_vslh_relative_secure : forall P PA c st ast st' ast',
   unused "b" c ->
   st "b" = 0 ->
@@ -535,9 +542,9 @@ Proof.
   eapply ideal_eval_relative_secure; [apply H4|apply H5|eassumption..].
 Qed.
 
-
-
-
+(* CH: My advice would be to also look at the 2 other conjectures I tested
+   at the very end of TestingFlexSLH.v and turn that into noninterference and
+   ideal_misspeculated_unwinding lemmas in the proofs. *)
 
 
 
