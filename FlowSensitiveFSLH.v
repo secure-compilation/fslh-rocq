@@ -119,7 +119,7 @@ Fixpoint static_tracking (c:com) (P:pub_vars) (PA:pub_arrs) (pc:label)
   : (acom*pub_vars*pub_arrs) :=
   match c with
   | <{ skip }> => (<[skip]>, P, PA)
-  | <{ X := ae }> => (<[X := ae]>, X !-> (join pc (label_of_aexp P ae)); P, PA)
+  | <{ x := ae }> => (<[x := ae]>, x !-> (join pc (label_of_aexp P ae)); P, PA)
   | <{ c1; c2 }> => let '(ac1, P1, PA1) := static_tracking c1 P PA pc in
                     let '(ac2, P2, PA2) := static_tracking c2 P1 PA1 pc in
                      (<[ ac1; ac2 ]>, P2, PA2)
@@ -581,6 +581,67 @@ Proof.
   + invert H6. invert H3. repeat econstructor; [tauto|discriminate].
 Qed.
 
+Fixpoint ideal_step_taints ac P PA pc : pub_vars * pub_arrs * label :=
+  match ac with
+  | <[ skip ]> => (P,PA,pc)
+  | <[ x := e ]> => (x !-> (join pc (label_of_aexp P e)); P, PA, pc)
+  | <[ skip; c2 ]> => (P,PA,pc)
+  | <[ c1; c2 ]> => ideal_step_taints c1 P PA pc
+  | <[ if be@_lbe then c1 else c2 end ]> => (* the _lbe is the same as lbe, right? *)
+      let lbe := label_of_bexp P be in
+      (P, PA, join pc lbe)
+  | <[ while be@_lbe do c end ]> => (P,PA,pc)
+  | <[ x@@_lx <- a[[i@li]] ]> => (* the _lx is the same as lx, right? *)
+      let li := label_of_aexp P i in
+      let lx := join pc (join li (PA a)) in
+      (x !-> lx; P, PA, pc)
+  | <[ a[i@_li] <- e ]> => (* the _li is the same as li, right? *)
+      let li := label_of_aexp P i in
+      let la := join (PA a) (join pc (join li (label_of_aexp P e))) in
+      (P, a !-> la; PA, pc)
+  end.
+
+Definition less_precise_vars (P1 P2:pub_vars) : Prop :=
+  forall x, can_flow (P2 x) (P1 x) = true.
+
+Fixpoint less_precise_acom (ac1 ac2 : acom) : Prop :=
+  match ac1, ac2 with
+  | <[ c11; c12 ]>, <[ c21;c22 ]> => less_precise_acom c11 c21 /\
+                                     less_precise_acom c12 c22
+  | <[ if be1@lbe1 then c11 else c12 end ]>,
+    <[ if be2@lbe2 then c21 else c22 end ]> => be1 = be2 /\ can_flow lbe2 lbe1 = true /\
+                                               less_precise_acom c11 c21 /\
+                                               less_precise_acom c12 c22
+  | <[ while be1@lbe1 do c1 end ]>,
+    <[ while be2@lbe2 do c2 end ]> => be1 = be2 /\ can_flow lbe2 lbe1 = true /\
+                                      less_precise_acom c1 c2
+  | <[ x1@@lx1 <- a1[[i1@li1]] ]>,
+    <[ x2@@lx2 <- a2[[i2@li2]] ]> => x1 = x2 /\ a1 = a2 /\ i1 = i2 /\
+                                     can_flow lx2 lx1 = true /\ can_flow li2 li1 = true
+  | <[ a1[i1@li1] <- e1 ]>,
+    <[ a2[i2@li2] <- e2 ]> => a1 = a2 /\ i1 = i2 /\ e1 = e2 /\ can_flow li2 li1 = true
+  | _, _ => ac1 = ac2
+  end.
+
+Definition less_precise (x1 x2 : acom * pub_vars * pub_arrs) : Prop :=
+  let '(ac1,P1,PA1) := x1 in
+  let '(ac2,P2,PA2) := x2 in
+  less_precise_acom ac1 ac2 /\ less_precise_vars P1 P2 /\ less_precise_vars PA1 PA2.
+
+Lemma pub_equiv_less_precise : forall (P P':pub_vars) {A:Type} (x1 x2:total_map A),
+  pub_equiv P x1 x2 ->
+  less_precise_vars P P' ->
+  pub_equiv P' x1 x2.
+Admitted.
+
+Lemma ideal_eval_static_tracking_step :
+  forall ac ds c P PA P' PA' pc st ast b act stt astt bt os,
+  static_tracking c P PA pc = (ac, P', PA') ->
+  <[[ ac, st, ast, b ]]> -->i_ds^^os <[[ act, stt, astt, bt ]]> ->
+  let '(P1, PA1, pc1) := ideal_step_taints ac P PA pc in
+  less_precise (static_tracking (erase act) P1 PA1 pc1) (act, P', PA').
+Admitted.
+
 Lemma ideal_eval_noninterferent_wish :
   forall ac ds c P PA P' PA' pc st1 ast1 st2 ast2 b act1 act2 stt1 stt2 astt1 astt2 bt1 bt2 os,
   static_tracking c P PA pc = (ac, P', PA') ->
@@ -588,8 +649,9 @@ Lemma ideal_eval_noninterferent_wish :
   (b = false -> pub_equiv PA ast1 ast2) ->
   <[[ ac, st1, ast1, b ]]> -->i_ds^^os <[[ act1, stt1, astt1, bt1 ]]> ->
   <[[ ac, st2, ast2, b ]]> -->i_ds^^os <[[ act2, stt2, astt2, bt2 ]]> ->
-  exists P1 PA1 pc1,
-  act1 = act2 /\ bt1 = bt2 /\ pub_equiv P1 stt1 stt2 /\ (bt1 = false -> pub_equiv PA1 astt1 astt2) /\ static_tracking (erase act1) P1 PA1 pc1 = (act1, P', PA').
+  act1 = act2 /\ bt1 = bt2 /\   
+  let '(P1, PA1, pc1) := ideal_step_taints ac P PA pc in
+  pub_equiv P1 stt1 stt2 /\ (bt1 = false -> pub_equiv PA1 astt1 astt2).
 Admitted.
 
 Definition acom_unused X ac := unused X (erase ac).
