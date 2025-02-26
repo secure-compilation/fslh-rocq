@@ -506,6 +506,24 @@ Proof.
     repeat eexists; [|eassumption..]. now constructor.
 Qed.
 
+Lemma multi_ideal_preserves_seq_same_obs : forall c st1 st2 ast1 ast2 ct stt1 stt2 astt1 astt2 ds os1 os2,
+  seq_same_obs (erase c) st1 st2 ast1 ast2 ->
+  <[[c, st1, ast1, false]]> -->i*_ds^^os1 <[[ct, stt1, astt1, false]]> ->
+  <[[c, st2, ast2, false]]> -->i*_ds^^os2 <[[ct, stt2, astt2, false]]> ->
+  seq_same_obs (erase ct) stt1 stt2 astt1 astt2.
+Proof.
+  unfold seq_same_obs. intros.
+  apply multi_ideal_obs_length in H0 as Heq, H1 as Heq'.
+  rewrite Heq' in Heq. clear Heq'.
+  apply multi_ideal_no_spec in H0 as Heq'.
+  destruct Heq' as (n&->).
+  apply multi_ideal_multi_seq in H0, H1.
+  eapply H in H0 as Hpref; [|eassumption]. apply prefix_eq_length in Heq; [|tauto].
+  subst. clear Hpref. eapply multi_seq_combined_executions in H2; [|eassumption].
+  eapply multi_seq_combined_executions in H3; [|eassumption].
+  eapply H in H2; [|eassumption]. destruct H2; apply prefix_append_front in H2; tauto.
+Qed.
+
 Lemma pub_equiv_join : forall {A} P P' (st st' : total_map A),
   pub_equiv P st st' ->
   pub_equiv (join_pub_vars P P') st st'.
@@ -987,6 +1005,18 @@ Proof.
     apply ideal_eval_small_step_no_spec in H1 as Heq. destruct Heq; [|discriminate]. invert H.
     eapply multi_ideal_trans in H1; [|eassumption]. eapply multi_ideal_combined_executions in H1; [|eassumption].
     rewrite !app_comm_cons. exists (1+x4), x7. now eauto 20.
+Qed.
+
+Lemma ideal_eval_small_step_force_obs : forall c st1 st2 ast1 ast2 ct1 ct2 stt1 stt2 astt1 astt2 os1 os2,
+  seq_same_obs (erase c) st1 st2 ast1 ast2 ->
+  <[[c, st1, ast1, false]]> -->i_[DForce]^^os1 <[[ct1, stt1, astt1, true]]> ->
+  <[[c, st2, ast2, false]]> -->i_[DForce]^^os2 <[[ct2, stt2, astt2, true]]> ->
+  os1 = os2.
+Proof.
+  intros. remember false as b in H0. remember true as bt in H0. remember [DForce] as ds in H0.
+  revert st2 ast2 os2 ct2 stt2 astt2 Heqb Heqbt Heqds H H1. induction H0; intros; subst; try discriminate.
+  + invert H1. apply seq_same_obs_com_seq in H. eapply IHideal_eval_small_step; [tauto..|eassumption|eassumption].
+  + invert H2. apply seq_same_obs_com_if in H1. now rewrite H1, !orb_true_r.
 Qed.
 
 (* LD: Add a way to know that ac comes is created from P PA for which the states are equivalent *)
