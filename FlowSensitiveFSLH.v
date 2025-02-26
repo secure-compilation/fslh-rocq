@@ -1044,7 +1044,10 @@ Proof.
   destruct H6 as (n2&ds2&os2'&o2&os2''&c2&c2'&st2&st2'&ast2&ast2'&?&->&?&?&?).
   apply repeat_same_length in H6 as H'; [|discriminate]. subst. apply app_inv_head in H6. invert H6.
   eapply multi_ideal_no_spec_deterministic in H9 as Heq; [|eassumption..]. subst. f_equal.
-  assert (c1 = c2) by admit. assert (o1 = o2) by admit. assert (c1' = c2') by admit. subst. f_equal.
+  apply multi_ideal_multi_seq in H5, H9. assert (c1 = c2) by admit. subst.
+  eapply multi_seq_preserves_seq_same_obs in H9 as Hobs; [|apply H5|eassumption|reflexivity].
+  eapply ideal_eval_small_step_force_obs in H10 as H'; [|eassumption..]. invert H'.
+  assert (c1' = c2') by admit. subst. f_equal.
   eapply ideal_misspeculated_unwinding; [admit|admit|eassumption..].
 Admitted.
 
