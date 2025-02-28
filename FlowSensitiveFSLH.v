@@ -203,63 +203,81 @@ Definition fs_flex_vslh P PA c :=
 
 (** * Ideal small-step evaluation *)
 
+Fixpoint com_depth c :=
+  match c with
+  | <{ skip }> => 0
+  | <{ c1; c2 }> => 1 + com_depth c1 + com_depth c2
+  | _ => 1
+  end.
+
 Reserved Notation
-  "'<[[' c , st , ast , b ']]>' '-->i_' ds '^^' os '<[[' ct , stt , astt , bt ']]>'"
-  (at level 40, c custom acom at level 99, ct custom acom at level 99,
+  "'<[[' c , st , ast , b , P , PA , pcs ']]>' '-->i_' ds '^^' os '<[[' ct , stt , astt , bt , Pt , PAt , pcst ']]>'"
+  (at level 40, c custom com at level 99, ct custom com at level 99,
    st constr, ast constr, stt constr, astt constr at next level).
 
 Inductive ideal_eval_small_step :
-    acom -> state -> astate -> bool ->
-    acom -> state -> astate -> bool -> dirs -> obs -> Prop :=
-  | ISM_Asgn : forall X ae n st ast b,
+    pub_vars -> pub_arrs -> list label -> com -> state -> astate -> bool ->
+    pub_vars -> pub_arrs -> list label -> com -> state -> astate -> bool -> dirs -> obs -> Prop :=
+  | ISM_Asgn : forall X ae n st ast b P PA pc lae,
       aeval st ae = n ->
-      <[[X := ae, st, ast, b]]> -->i_[]^^[] <[[skip, X !-> n; st, ast, b]]>
-  | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt c2,
-      <[[c1, st, ast, b]]>  -->i_ds^^os <[[c1t, stt, astt, bt]]>  ->
-      <[[(c1;c2), st, ast, b]]>  -->i_ds^^os <[[(c1t;c2), stt, astt, bt]]>
-  | ISM_Seq_Skip : forall st ast b c2,
-      <[[(skip;c2), st, ast, b]]>  -->i_[]^^[] <[[c2, st, ast, b]]>
-  | ISM_If : forall be ct cf st ast b c' b' lbe,
+      lae = label_of_aexp P ae ->
+      <[[X := ae, st, ast, b, P, PA, [pc] ]]> -->i_[]^^[] <[[skip, X !-> n; st, ast, b, (X !-> join pc lae; P), PA, [] ]]>
+  | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt c2 P PA Pt PAt pcs pcs' pcst pc,
+      <[[c1, st, ast, b, P, PA, pcs]]>  -->i_ds^^os <[[c1t, stt, astt, bt, Pt, PAt, pcst]]>  ->
+      <[[(c1;c2), st, ast, b, P, PA, pc :: pcs ++ pcs']]>  -->i_ds^^os <[[(c1t;c2), stt, astt, bt, Pt, PAt, pc :: pcst ++ pcs']]>
+  | ISM_Seq_Skip : forall st ast b c2 P PA pcs,
+      <[[(skip;c2), st, ast, b, P, PA, pcs]]>  -->i_[]^^[] <[[c2, st, ast, b, P, PA, tail pcs]]>
+  | ISM_If : forall be ct cf st ast b c' b' lbe P PA pc,
+      lbe = label_of_bexp P be ->
       b' = (lbe || negb b) && beval st be ->
       c' = (if b' then ct else cf) ->
-      <[[if be@lbe then ct else cf end, st, ast, b]]> -->i_[DStep]^^[OBranch b'] <[[c', st, ast, b]]>
-  | ISM_If_F : forall be ct cf st ast b c' b' lbe,
+      <[[if be then ct else cf end, st, ast, b, P, PA, [pc]]]> -->i_[DStep]^^[OBranch b'] <[[c', st, ast, b, P, PA, repeat (com_depth c') (join lbe pc)]]>
+  | ISM_If_F : forall be ct cf st ast b c' b' lbe P PA pc,
+      lbe = label_of_bexp P be ->
       b' = (lbe || negb b) && beval st be ->
       c' = (if b' then cf else ct) ->
-      <[[if be@lbe then ct else cf end, st, ast, b]]> -->i_[DForce]^^[OBranch b'] <[[c', st, ast, true]]>
-  | ISM_While : forall be c st ast b lbe c',
-      c' = <[ if be@lbe then c; while be@lbe do c end else skip end ]> ->
-      <[[while be@lbe do c end, st, ast, b]]> -->i_[]^^[] <[[c', st, ast, b]]>
-  | ISM_ARead : forall X a ie st ast (b :bool) i li lX v,
+      <[[if be then ct else cf end, st, ast, b, P, PA, [pc]]]> -->i_[DForce]^^[OBranch b'] <[[c', st, ast, true, P, PA, repeat (com_depth c') (join lbe pc)]]>
+  | ISM_While : forall be c st ast b lbe c' P PA pcs,
+      c' = <[ if be then c; while be do c end else skip end ]> ->
+      <[[while be do c end, st, ast, b, P, PA, pcs]]> -->i_[]^^[] <[[c', st, ast, b, P, PA, pcs]]>
+  | ISM_ARead : forall X a ie st ast (b :bool) i li lX v P PA pc,
+      li = label_of_aexp P ie ->
+      lX = join pc (join li (PA a)) ->
       (if (negb li) && b then 0 else (aeval st ie)) = i ->
       (if lX && li && b then 0 else nth i (ast a) 0) = v ->
       i < length (ast a) ->
-      <[[X@@lX <- a[[ie@li]], st, ast, b]]> -->i_[DStep]^^[OARead a i]
-            <[[skip, X !-> v; st, ast, b]]>
-  | ISM_ARead_U : forall X a ie st ast i a' i' v (lX:label),
+      <[[X <- a[[ie]], st, ast, b, P, PA, [pc]]]> -->i_[DStep]^^[OARead a i]
+            <[[skip, X !-> v; st, ast, b, X !-> lX; P, PA, []]]>
+  | ISM_ARead_U : forall X a ie st ast i a' i' v (lX:label) P PA pc,
+      label_of_aexp P ie = public ->
+      lX = join pc (join li (PA a)) ->
       aeval st ie = i ->
       v = (if lX then 0 else nth i' (ast a') 0) ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      <[[X@@lX <- a[[ie@public]], st, ast, true]]> -->i_[DLoad a' i']^^[OARead a i]
-            <[[skip, X !-> v; st, ast, true]]>
-  | ISM_Write : forall a ie e st ast (b :bool) i n li i',
+      <[[X <- a[[ie]], st, ast, true, P, PA, [pc]]]> -->i_[DLoad a' i']^^[OARead a i]
+            <[[skip, X !-> v; st, ast, true, X !-> lX; P, PA, []]]>
+  | ISM_Write : forall a ie e st ast (b :bool) i n li i' la P PA pc,
+      li = label_of_aexp P ie ->
+      la = join (PA a) (join pc (join li (label_of_aexp P e))) ->
       aeval st e = n ->
       aeval st ie = i ->
       (if b && negb li then 0 else i) = i' ->
       i' < length (ast a) ->
-      <[[a[ie@li] <- e, st, ast, b]]> -->i_[DStep]^^[OAWrite a i']
-            <[[skip, st, a !-> upd i' (ast a) n; ast, b]]>
-  | ISM_Write_U : forall a ie e st ast i n a' i',
+      <[[a[ie] <- e, st, ast, b, P, PA, [pc]]]> -->i_[DStep]^^[OAWrite a i']
+            <[[skip, st, a !-> upd i' (ast a) n; ast, b, P, a !-> la; PA, []]]>
+  | ISM_Write_U : forall a ie e st ast i n a' i' la P PA pc,
+      label_of_aexp P ie = public ->
+      la = join (PA a) (join pc (join li (label_of_aexp P e))) ->
       aeval st e = n ->
       aeval st ie = i ->
       i >= length (ast a) ->
       i' < length (ast a') ->
-      <[[a[ie@public] <- e, st, ast, true]]> -->i_[DStore a' i']^^[OAWrite a i]
-            <[[skip, st, a' !-> upd i' (ast a') n; ast, true]]>
+      <[[a[ie] <- e, st, ast, true, P, PA, [pc]]]> -->i_[DStore a' i']^^[OAWrite a i]
+            <[[skip, st, a' !-> upd i' (ast a') n; ast, true, P, a !-> la; PA, []]]>
 
-  where "<[[ c , st , ast , b ]]> -->i_ ds ^^ os  <[[ ct ,  stt , astt , bt ]]>" :=
-    (ideal_eval_small_step c st ast b ct stt astt bt ds os).
+  where "<[[ c , st , ast , b, P, PA, pcs ]]> -->i_ ds ^^ os  <[[ ct ,  stt , astt , bt, Pt, PAt, pcst ]]>" :=
+    (ideal_eval_small_step P PA pcs c st ast b Pt PAt pcst ct stt astt bt ds os).
 
 Reserved Notation
   "'<[[' c , st , ast , b ']]>' '-->i*_' ds '^^' os '<[[' ct , stt , astt , bt ']]>'"
@@ -533,6 +551,7 @@ Lemma join_pub_vars_sym : forall P P',
   join_pub_vars P P' = join_pub_vars P' P.
 Proof. intros. apply FunctionalExtensionality.functional_extensionality. intro x. apply andb_comm. Qed.
 
+(*
 Lemma ideal_eval_noninterferent :
   forall ac ds c P PA P' PA' pc st1 ast1 st2 ast2 b act1 act2 stt1 stt2 astt1 astt2 bt1 bt2 os,
   static_tracking c P PA pc = (ac, P', PA') ->
@@ -580,6 +599,7 @@ Proof.
     - apply String.eqb_neq in Heq. rewrite !t_update_neq in *; [|tauto..]. now apply H5.
   + invert H6. invert H3. repeat econstructor; [tauto|discriminate].
 Qed.
+*)
 
 Fixpoint ideal_step_taints ac P PA pc : pub_vars * pub_arrs * label :=
   match ac with
@@ -628,28 +648,122 @@ Definition less_precise (x1 x2 : acom * pub_vars * pub_arrs) : Prop :=
   let '(ac2,P2,PA2) := x2 in
   less_precise_acom ac1 ac2 /\ less_precise_vars P1 P2 /\ less_precise_vars PA1 PA2.
 
-Lemma pub_equiv_less_precise : forall (P P':pub_vars) {A:Type} (x1 x2:total_map A),
-  pub_equiv P x1 x2 ->
+Lemma less_precise_label_of_exp : forall P P',
   less_precise_vars P P' ->
-  pub_equiv P' x1 x2.
+  (forall a, can_flow (label_of_aexp P' a) (label_of_aexp P a) = true) /\ (forall b, can_flow (label_of_bexp P' b) (label_of_bexp P b) = true).
 Admitted.
+
+Lemma less_precise_label_of_aexp : forall P P' a,
+  less_precise_vars P P' ->
+  can_flow (label_of_aexp P a) (label_of_aexp P' a) = true.
+Admitted.
+
+Lemma less_precise_label_of_bexp : forall P P' b,
+  less_precise_vars P P' ->
+  can_flow (label_of_bexp P b) (label_of_bexp P' b) = true.
+Admitted.
+
+Lemma pub_equiv_less_precise_vars : forall (P P':pub_vars) {A:Type} (st1 st2 : total_map A),
+  pub_equiv P st1 st2 ->
+  less_precise_vars P' P ->
+  pub_equiv P' st1 st2.
+Proof.
+  intros. intros x Hx. apply H. specialize (H0 x). rewrite Hx in H0. unfold can_flow in H0. now rewrite orb_false_r in H0.
+Qed.
+
+Lemma less_precise_acom_refl : forall ac,
+  less_precise_acom ac ac.
+Proof.
+  induction ac; simpl; try tauto.
+  + destruct lbe; tauto.
+  + destruct lbe; tauto.
+  + destruct lx, li; tauto.
+  + destruct li; tauto.
+Qed.
+
+Lemma less_precise_vars_refl : forall P,
+  less_precise_vars P P.
+Proof. intros P x. now destruct (P x). Qed.
+
+Lemma less_precise_vars_join : forall P P',
+  less_precise_vars (join_pub_vars P P') P.
+Proof. intros P P' x. unfold join_pub_vars. destruct (P x); tauto. Qed.
+
+Lemma less_precise_refl : forall ac P PA,
+  less_precise (ac, P, PA) (ac, P, PA).
+Proof. intros. split; [apply less_precise_acom_refl|]. split; apply less_precise_vars_refl. Qed.
+
+Lemma less_precise_static_tracking : forall c ac1 ac2 P1 P2 PA1 PA2 pc1 pc2 p1 p2,
+  less_precise (ac1, P1, PA1) (ac2, P2, PA2) ->
+  static_tracking c P1 PA1 pc1 = p1 ->
+  static_tracking c P2 PA2 pc2 = p2 ->
+  can_flow pc1 pc2 = true ->
+  less_precise p1 p2.
+Proof.
+  induction c; simpl; intros; subst; simpl.
+  + tauto.
+  + split; [tauto|]. split; [|tauto]. destruct H, H0.
+    intro X. destruct (String.eqb x X) eqn:Heq.
+    - apply String.eqb_eq in Heq. subst. rewrite !t_update_eq. apply less_precise_label_of_aexp  with (a:=e) in H0.
+      unfold can_flow, join in *. destruct pc1; [|now rewrite orb_true_r].
+      {
+Admitted.
+
+Lemma ideal_step_taints_pc : forall ac P PA pc P' PA' pc',
+  ideal_step_taints ac P PA pc = (P', PA', pc') ->
+  can_flow pc pc' = true.
+Proof.
+  induction ac; simpl; intros; try (now invert H; try destruct pc; try destruct pc').
+  + assert (ac1 = <[skip]> \/ match ac1 with <[skip]> => (P, PA, pc) | _ => ideal_step_taints ac1 P PA pc end = ideal_step_taints ac1 P PA pc) by now (destruct ac1; [left|right..]).
+    destruct H0; [subst|rewrite H0 in H]; invert H; [now destruct pc'|eapply IHac1, H2].
+Qed.
 
 Lemma ideal_eval_static_tracking_step :
   forall ac ds c P PA P' PA' pc st ast b act stt astt bt os,
   static_tracking c P PA pc = (ac, P', PA') ->
   <[[ ac, st, ast, b ]]> -->i_ds^^os <[[ act, stt, astt, bt ]]> ->
   let '(P1, PA1, pc1) := ideal_step_taints ac P PA pc in
-  less_precise (static_tracking (erase act) P1 PA1 pc1) (act, P', PA').
+  less_precise (act, P', PA') (static_tracking (erase act) P1 PA1 pc1).
+Proof.
+  intros. apply erase_static_tracking in H as H'. subst.
+  revert P PA pc P' PA' H. induction H0; simpl; intros.
+  + invert H0. split; [tauto|]. split; apply less_precise_vars_refl.
+  + destruct (static_tracking (erase c1) P PA pc) as ((ac1&P1)&PA1) eqn:Heq1.
+    destruct (static_tracking (erase c2) P1 PA1 pc) as ((ac2&P2)&PA2) eqn:Heq2.
+    invert H. apply IHideal_eval_small_step in Heq1.
+    destruct (ideal_step_taints c1 P PA pc) as ((P2&PA2)&pc1) eqn:Heq1'.
+    replace (match c1 with <[ skip ]> => (P, PA, pc) | _ => (P2, PA2, pc1) end) with (P2, PA2, pc1) by (destruct c1; [now invert H0|reflexivity..]).
+    destruct (static_tracking (erase c1t) P2 PA2 pc1) as ((act&Pt)&PAt) eqn:Heqt.
+    destruct (static_tracking (erase c2) Pt PAt pc1) as ((ac2t&P2t)&PA2t) eqn:Heq2t.
+    apply ideal_step_taints_pc in Heq1'.
+    eapply less_precise_static_tracking in Heq1 as H'; [|eassumption..].
+    destruct H', Heq1. simpl. tauto.
+  + destruct (static_tracking (erase c2) P PA pc) as ((ac2&P2)&PA2) eqn:Heq. invert H. apply less_precise_refl.
+  + destruct (static_tracking (erase ct) P PA (join pc (label_of_bexp P be))) as ((ac1&P1)&PA1) eqn:Heq1.
+    destruct (static_tracking (erase cf) P PA (join pc (label_of_bexp P be))) as ((ac2&P2)&PA2) eqn:Heq2.
+    invert H1. destruct ((label_of_bexp P be || negb b) && beval st be).
+    - rewrite Heq1. split; [apply less_precise_acom_refl|]. split; apply less_precise_vars_join.
+    - rewrite Heq2. split; [apply less_precise_acom_refl|]. split; rewrite join_pub_vars_sym; apply less_precise_vars_join.
+  + destruct (static_tracking (erase ct) P PA (join pc (label_of_bexp P be))) as ((ac1&P1)&PA1) eqn:Heq1.
+    destruct (static_tracking (erase cf) P PA (join pc (label_of_bexp P be))) as ((ac2&P2)&PA2) eqn:Heq2.
+    invert H1. destruct ((label_of_bexp P be || negb b) && beval st be).
+    - rewrite Heq2. split; [apply less_precise_acom_refl|]. split; rewrite join_pub_vars_sym; apply less_precise_vars_join.
+    - rewrite Heq1. split; [apply less_precise_acom_refl|]. split; apply less_precise_vars_join.
+  + admit.
+  + invert H2. split; [tauto|]. split; apply less_precise_vars_refl.
+  + invert H3. split; [tauto|]. split; apply less_precise_vars_refl.
+  + invert H3. split; [tauto|]. split; apply less_precise_vars_refl.
+  + invert H3. split; [tauto|]. split; apply less_precise_vars_refl.
 Admitted.
 
-Lemma ideal_eval_noninterferent_wish :
+Lemma ideal_eval_noninterferent :
   forall ac ds c P PA P' PA' pc st1 ast1 st2 ast2 b act1 act2 stt1 stt2 astt1 astt2 bt1 bt2 os,
   static_tracking c P PA pc = (ac, P', PA') ->
   pub_equiv P st1 st2 ->
   (b = false -> pub_equiv PA ast1 ast2) ->
   <[[ ac, st1, ast1, b ]]> -->i_ds^^os <[[ act1, stt1, astt1, bt1 ]]> ->
   <[[ ac, st2, ast2, b ]]> -->i_ds^^os <[[ act2, stt2, astt2, bt2 ]]> ->
-  act1 = act2 /\ bt1 = bt2 /\   
+  act1 = act2 /\ bt1 = bt2 /\
   let '(P1, PA1, pc1) := ideal_step_taints ac P PA pc in
   pub_equiv P1 stt1 stt2 /\ (bt1 = false -> pub_equiv PA1 astt1 astt2).
 Admitted.
