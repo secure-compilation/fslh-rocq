@@ -227,11 +227,11 @@ Inductive ideal_eval_small_step :
   | ISM_If : forall be ct cf st ast b c' b' lbe,
       b' = (lbe || negb b) && beval st be ->
       c' = (if b' then ct else cf) ->
-      <[[if be@lbe then ct else cf end, st, ast, b]]> -->i_[DStep]^^[OBranch b'] <[[c', st, ast, b]]>
+      <[[if be@lbe then ct else cf end, st, ast, b]]> -->i_[DStep]^^[OBranch b'] <[[branch c', st, ast, b]]>
   | ISM_If_F : forall be ct cf st ast b c' b' lbe,
       b' = (lbe || negb b) && beval st be ->
       c' = (if b' then cf else ct) ->
-      <[[if be@lbe then ct else cf end, st, ast, b]]> -->i_[DForce]^^[OBranch b'] <[[c', st, ast, true]]>
+      <[[if be@lbe then ct else cf end, st, ast, b]]> -->i_[DForce]^^[OBranch b'] <[[branch c', st, ast, true]]>
   | ISM_While : forall be c st ast b lbe c',
       c' = <[ if be@lbe then c; while be@lbe do c end else skip end ]> ->
       <[[while be@lbe do c end, st, ast, b]]> -->i_[]^^[] <[[c', st, ast, b]]>
@@ -262,6 +262,11 @@ Inductive ideal_eval_small_step :
       i' < length (ast a') ->
       <[[a[ie@public] <- e, st, ast, true]]> -->i_[DStore a' i']^^[OAWrite a i]
             <[[skip, st, a' !-> upd i' (ast a') n; ast, true]]>
+  | ISM_Branch : forall c1 st ast b ds os c1t stt astt bt,
+      <[[c1, st, ast, b]]>  -->i_ds^^os <[[c1t, stt, astt, bt]]>  ->
+      <[[branch c1, st, ast, b]]>  -->i_ds^^os <[[branch c1t, stt, astt, bt]]>
+  | ISM_Seq_Branch_Skip : forall st ast b c2,
+      <[[(branch skip;c2), st, ast, b]]>  -->i_[]^^[] <[[c2, st, ast, b]]>
 
   where "<[[ c , st , ast , b ]]> -->i_ ds ^^ os  <[[ ct ,  stt , astt , bt ]]>" :=
     (ideal_eval_small_step c st ast b ct stt astt bt ds os).
