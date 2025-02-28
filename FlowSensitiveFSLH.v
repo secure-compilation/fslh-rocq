@@ -23,7 +23,8 @@ Inductive acom : Type :=
   | AIf (be : bexp) (lbe : label) (c1 c2 : acom)
   | AWhile (be : bexp) (lbe : label) (c : acom)
   | AARead (x : string) (lx : label) (a : string) (i : aexp)  (li : label)
-  | AAWrite (a : string) (i : aexp) (li : label) (e : aexp).
+  | AAWrite (a : string) (i : aexp) (li : label) (e : aexp)
+  | ABranch (c:acom).
 
 Declare Custom Entry acom.
 
@@ -60,6 +61,8 @@ Notation "a '[' i '@' li  ']'  '<-' e"  :=
      (in custom acom at level 0, a constr at level 0,
       i custom acom at level 0, e custom acom at level 85,
          no associativity) : com_scope.
+Notation "'branch' c"  :=
+  (ABranch c) (in custom acom at level 0) : com_scope.
 
 Fixpoint erase (ac:acom) : com :=
   match ac with
@@ -71,6 +74,7 @@ Fixpoint erase (ac:acom) : com :=
   | <[ while be @ lbe do ac1 end ]> => <{ while be do erase ac1 end }>
   | <[ X@@lx <- a[[i@li]] ]> => <{ X <- a[[i]] }>
   | <[ a[i@li] <- e ]> => <{ a[i] <- e }>
+  | <[ branch ac1 ]> => <{ erase ac1 }>
   end.
 
 Definition join_pub_vars (P1 P2: pub_vars) : pub_vars :=
@@ -195,6 +199,7 @@ Fixpoint flex_vslh_acom ac :=
       if lx && li then <{ X <- a[[i]]; X := ("b" = 1) ? 0 : X }> else <{ X <- a[[i']] }>
   | <[ a[i@li] <- e ]> => let i' := if li then i else <{ ("b" = 1) ? 0 : i }> in
       <{ a[i'] <- e }>
+  | <[ branch ac1 ]> => <{ flex_vslh_acom ac1 }> (* unreachable anyway *)
   end.
 
 Definition fs_flex_vslh P PA c :=
@@ -581,24 +586,74 @@ Proof.
   + invert H6. invert H3. repeat econstructor; [tauto|discriminate].
 Qed.
 
-Fixpoint ideal_step_taints ac P PA pc : pub_vars * pub_arrs * label :=
+(* if true@secret then x:=0 end, pub, [] -> *)
+(* x:=0, secret, [pub] -> *)
+(* skip, secret, [pub] -> *)
+
+(* (if true@secret then x:=0 end);c1, pub, [] -> *)
+(* x:=0;c1, secret, [pub] -> *)
+(* skip;c1, secret, [pub] -> *)
+(* c1, pub, [] *)
+
+(* (if true@secret then x:=0;y:=1 end);c1, pub, [] -> *)
+(* (x:=0;y:=1);c1, secret, [pub] -> *)
+(* (skip;y:=1);c1, secret, [pub] ->  <-- we pop wrongly *)
+(* y:=1;c1, pub, [] -> *)
+(* skip;c1, pub, [] stuck *)
+
+(* Catalin, but need new branch annotated command and in this version this takes extra steps: *)
+(* - similar to: From Dynamic to Static and Back *)
+(*   https://link.springer.com/chapter/10.1007/978-3-642-11486-1_30 *)
+(* if true@secret then x:=0;y:=1 end);c1 -> *)
+(* (x:=0;y:=1;branch pub);c1 *)
+
+(* Leon, but need funny counting and need to know which branch we take -> need directions and observations: *)
+(* if true@secret then x:=0;y:=1 end);c1, pub, [] -> *)
+(* (x:=0;y:=1);c1, secret, [secret,pub] -> *)
+(* (skip;y:=1);c1, secret, [secret,pub] -> *)
+(* y:=1;c1, secret, [pub] -> *)
+(* skip;c1, secret, [pub] -> *)
+(* c1, pub, [] *)
+
+(* Catalin V2, but need new branch annotated command, and in this version step_taints and ideal semantics merged: *)
+(* if true@secret then x:=0;y:=1 end);c1, pub -> *)
+(* (branch pub (x:=0;y:=1));c1, secret -> *)
+(* (branch pub (skip;y:=1));c1, secret -> *)
+(* (branch pub (y:=1));c1, secret -> *)
+(* (branch pub skip);c1, secret -> *)
+(* c1, pub *)
+
+(* Together V3, but need new branch annotated command, yet step_taints and ideal semantics not merged: *)
+(* if true@secret then x:=0;y:=1 end);c1, pub, [] -> *)
+(* (branch (x:=0;y:=1));c1, secret, [pub] -> *)
+(* (branch (skip;y:=1));c1, secret, [pub] -> *)
+(* (branch (y:=1));c1, secret, [pub] -> *)
+(* (branch skip);c1, secret, [pub] -> *)
+(* c1, pub, [] *)
+
+Fixpoint ideal_step_taints ac P PA pc (pcs : list label) : pub_vars * pub_arrs * label * list label :=
   match ac with
-  | <[ skip ]> => (P,PA,pc)
-  | <[ x := e ]> => (x !-> (join pc (label_of_aexp P e)); P, PA, pc)
-  | <[ skip; c2 ]> => (P,PA,pc)
-  | <[ c1; c2 ]> => ideal_step_taints c1 P PA pc
+  | <[ skip ]> => (P, PA, pc ,pcs)
+  | <[ x := e ]> => (x !-> (join pc (label_of_aexp P e)); P, PA, pc, pcs)
+  | <[ c1; c2 ]> => ideal_step_taints c1 P PA pc pcs
   | <[ if be@_lbe then c1 else c2 end ]> => (* the _lbe is the same as lbe, right? *)
       let lbe := label_of_bexp P be in
-      (P, PA, join pc lbe)
-  | <[ while be@_lbe do c end ]> => (P,PA,pc)
+      (P, PA, join pc lbe, pc::pcs)
+  | <[ while be@_lbe do c end ]> => (P, PA, pc, pcs)
   | <[ x@@_lx <- a[[i@li]] ]> => (* the _lx is the same as lx, right? *)
       let li := label_of_aexp P i in
       let lx := join pc (join li (PA a)) in
-      (x !-> lx; P, PA, pc)
+      (x !-> lx; P, PA, pc, pcs)
   | <[ a[i@_li] <- e ]> => (* the _li is the same as li, right? *)
       let li := label_of_aexp P i in
       let la := join (PA a) (join pc (join li (label_of_aexp P e))) in
-      (P, a !-> la; PA, pc)
+      (P, a !-> la; PA, pc, pcs)
+  | <[ branch skip ]> => 
+      match pcs with
+      | pc'::pcs' => (P, PA, pc', pcs')
+      | [] => (P, PA, pc ,pcs) (* unreachable when ran in sync with ideal_eval_small_step *)
+      end
+  | <[ branch c1 ]> => ideal_step_taints c1 P PA pc pcs
   end.
 
 Definition less_precise_vars (P1 P2:pub_vars) : Prop :=
