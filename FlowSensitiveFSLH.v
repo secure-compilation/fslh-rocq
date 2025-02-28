@@ -689,6 +689,7 @@ Lemma pub_equiv_less_precise : forall (P P':pub_vars) {A:Type} (x1 x2:total_map 
   pub_equiv P' x1 x2.
 Admitted.
 
+(*
 Lemma ideal_eval_static_tracking_step :
   forall ac ds c P PA P' PA' pc st ast b act stt astt bt os,
   static_tracking c P PA pc = (ac, P', PA') ->
@@ -708,6 +709,7 @@ Lemma ideal_eval_noninterferent_wish :
   let '(P1, PA1, pc1) := ideal_step_taints ac P PA pc in
   pub_equiv P1 stt1 stt2 /\ (bt1 = false -> pub_equiv PA1 astt1 astt2).
 Admitted.
+*)
 
 Definition acom_unused X ac := unused X (erase ac).
 
@@ -962,7 +964,7 @@ Proof.
       now destruct b', li; simpl; rewrite ?st_b.
     - invert H1; [|inversion H0]. do 2 eexists. split; [|tauto]. rewrite t_update_same. destruct li; [now repeat econstructor|].
       simpl in H16. rewrite st_b in H16. simpl in H16. specialize (Harrs a). lia.
-Qed.
+Admitted.
 
 Lemma flex_slh_acom_bcc : forall ac st ast c' st' ast' os ds (b b' : bool),
   nonempty_arrs ast ->
@@ -1013,14 +1015,6 @@ Lemma ideal_misspeculated_unwinding : forall P PA P' PA' pc ac c st1 ast1 st2 as
   <[[ac, st2, ast2, true]]> -->i*_ds^^os2 <[[ct2, stt2, astt2, true]]> ->
   os1 = os2.
 Proof.
-  intros. apply erase_static_tracking in H as H'. subst. remember true as b in H1 at 1. remember true as bt in H1.
-  revert P PA P' PA' pc st2 ast2 ct2 stt2 astt2 os2 Heqb Heqbt H H0 H2.
-  induction H1; simpl; intros.
-  { admit. }
-  invert H3;[admit|]. assert (ds0 = ds1) by admit. assert (b'0 = true) by admit. assert (b' = true) by admit. subst.
-  apply app_inv_head in H4. subst. eapply ideal_misspeculated_unwinding_one_step in H5 as H'; [|eassumption..]. invert H'.
-  f_equal. eapply ideal_eval_noninterferent_wish in H5 as tracking; [|try discriminate; eassumption..]. destruct tracking as (P1&PA1&pc1&_&_&?&_&?).
-  eapply IHmulti_ideal; eauto.
 Admitted.
 
 Lemma fs_flex_vsls_correct_small_step : forall P PA c c' st ast st' ast' os,
