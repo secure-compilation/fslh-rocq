@@ -245,6 +245,12 @@ Inductive terminal : acom -> Prop :=
   | Terminal_Skip : terminal <[ skip ]>
   | Terminal_Branch : forall l c, terminal c -> terminal <[ branch l c ]>.
 
+Definition pc_of_acom pc c :=
+  match c with
+  | <[ branch pc' _ ]> => pc'
+  | _ => pc
+  end.
+
 Reserved Notation
   "'<[[' c , st , ast , b , pc , P , PA ']]>' '-->i_' ds '^^' os '<[[' ct , stt , astt , bt , pct , Pt , PAt ']]>'"
   (at level 40, c custom acom at level 99, ct custom acom at level 99,
@@ -259,9 +265,10 @@ Inductive ideal_eval_small_step :
   | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt c2 pc P PA pc' P' PA',
       <[[c1, st, ast, b, pc, P, PA]]>  -->i_ds^^os <[[c1t, stt, astt, bt, pc', P', PA']]>  ->
       <[[(c1;c2), st, ast, b, pc, P, PA]]>  -->i_ds^^os <[[(c1t;c2), stt, astt, bt, pc', P', PA']]>
+  (** LD: Fixed? *)
   | ISM_Seq_Skip : forall st ast b c1 c2 pc P PA,
       terminal c1 ->
-      <[[(c1;c2), st, ast, b, pc, P, PA]]>  -->i_[]^^[] <[[c2, st, ast, b, pc, P, PA]]>
+      <[[(c1;c2), st, ast, b, pc, P, PA]]>  -->i_[]^^[] <[[c2, st, ast, b, pc_of_acom pc c1, P, PA]]>
   | ISM_If : forall be ct cf st ast b c' b' lbe pc P PA,
       b' = (lbe || negb b) && beval st be ->
       c' = (if b' then ct else cf) ->
@@ -368,6 +375,7 @@ Proof.
   intros. induction H; repeat econstructor; eauto.
 Qed.
 
+(** LD: Statement has to be rephrased *)
 Lemma multi_ideal_seq : forall ac1 ac2 acm st ast b stm astm bm ds os pc P PA pcm Pm PAm,
   <[[ac1; ac2, st, ast, b, pc, P, PA]]> -->i*_ds^^os <[[acm, stm, astm, bm, pcm, Pm, PAm]]> ->
   (exists st' ast' pc' P' PA' act b' ds1 ds2 os1 os2,
@@ -386,8 +394,8 @@ Proof.
       left. rewrite !app_assoc. repeat eexists; [|econstructor|]; eassumption.
     - do 2 destruct H. subst. clear IHmulti_ideal.
       right. repeat eexists. econstructor; eassumption.
-  + left. repeat eexists; [|constructor|eassumption]. tauto.
-Qed.
+  + left. repeat eexists; [eassumption|constructor|]. admit.
+Admitted.
 
 Lemma ideal_eval_small_step_spec_needs_force : forall c st ast ct stt astt ds os pc P PA pct Pt PAt,
   <[[c, st, ast, false, pc, P, PA]]> -->i_ds^^os <[[ct, stt, astt, true, pct, Pt, PAt]]> ->
@@ -545,10 +553,11 @@ Lemma ideal_eval_small_step_dirs_obs : forall c st ast b ct stt astt bt ds os pc
   (ds = [] /\ os = []) \/ (exists d o, ds = [d] /\ os = [o]).
 Proof. intros. now induction H; eauto. Qed.
 
+(* LD: pct and pc are not always equal if we leave a branch. *)
 Lemma ideal_eval_small_step_silent_step : forall c st ast b ct stt astt bt pc P PA pct Pt PAt,
   <[[c, st, ast, b, pc, P, PA]]> -->i_ [] ^^ [] <[[ct, stt, astt, bt, pct, Pt, PAt]]> ->
   b = bt /\ ast = astt /\ pc = pct /\ PA = PAt.
-Proof. intros. remember [] as ds in H at 1. revert Heqds. now induction H; intros; eauto. Qed.
+Proof. intros. remember [] as ds in H at 1. revert Heqds. induction H; try now intros; eauto. admit. Admitted.
 
 Lemma multi_ideal_factorize : forall c st ast b ct stt astt bt d ds os pc P PA pct Pt PAt,
   <[[c, st, ast, b, pc, P, PA]]> -->i*_ (d :: ds) ^^ os <[[ct, stt, astt, bt, pct, Pt, PAt]]> ->
@@ -715,6 +724,7 @@ Proof. intros P x. now destruct (P x). Qed.
 Lemma less_precise_acom_refl : forall ac, less_precise_acom ac ac.
 Proof. induction ac; repeat econstructor; try destruct lbe; try destruct li; try destruct lx; tauto. Qed.
 
+(* LD: Maybe could just be removed *)
 Inductive same_shape : acom -> acom -> Prop :=
   | Same_skip : same_shape <[skip]> <[skip]>
   | Same_asgn : forall x e, same_shape <[x:=e]> <[x:=e]>
@@ -786,7 +796,15 @@ Proof.
     { invert H4. invert Heq1. eapply same_shape_static_tracking_acom in H5.
       rewrite H5 in Heq2. rewrite Heq2. split; [apply less_precise_acom_refl|]. split; apply less_precise_vars_refl. }
     invert H4. simpl in Heq1. destruct (static_tracking_acom c1 P PA pc) as ((ac&P')&PA') eqn:Heq.
-    invert Heq1. eapply IHterminal; eassumption.
+    invert Heq1. admit.
+  + admit.
+  + admit.
+  + admit.
+  + admit.
+  + admit.
+  + admit.
+  + admit.
+  + admit.
 Admitted.
 
 Lemma ideal_eval_noninterferent :
@@ -1090,7 +1108,6 @@ Proof.
     invert H1.
 Qed.
 
-
 (* LD: This has to be rephrased *)
 Lemma ideal_misspeculated_unwinding_one_step : forall P PA P' PA' pc ac c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds
     pct1 pct2 Pt1 Pt2 PAt1 PAt2,
@@ -1254,14 +1271,6 @@ Proof.
   + invert H1. eapply IHideal_eval_small_step; eauto.
 Qed.
 
-(* LD: Add a way to know that ac comes is created from P PA for which the states are equivalent *)
-(* CH: You could add something like this (and potentially use c instead of `erase ac`
-       in the premise, although your theorems will probably anyway say it's all the same):
-  static_tracking c P PA public = (ac, P', PA') ->
-  pub_equiv P st st' ->
-  pub_equiv PA ast ast' ->
-It will probably be very similar to the main theorem statement below?
-       In particular, can't you use fs_flex_vslh in the conclusion instead of erased in the premise? *)
 Theorem ideal_eval_relative_secure : forall ac c st st' ast ast' P PA P' PA',
   static_tracking c P PA public = (ac, P', PA') ->
   pub_equiv P st st' ->
@@ -1281,10 +1290,9 @@ Proof.
   eapply multi_ideal_no_spec_deterministic in H9 as Heq; [|eassumption..]. subst. f_equal.
   apply multi_ideal_multi_seq in H5, H9. assert (c1 = c2) by admit. subst.
   eapply multi_seq_preserves_seq_same_obs in H9 as Hobs; [|apply H5|eassumption|reflexivity].
+  admit.
 Admitted.
 
-(* LD: Does not rely on pub_equiv right now, probably something wrong in the other statements *)
-(* CH: I agree that these pub_equiv conditions seem also needed above *)
 Theorem fs_flex_vslh_relative_secure : forall P PA c st ast st' ast',
   unused "b" c ->
   st "b" = 0 ->
@@ -1303,8 +1311,4 @@ Proof.
   destruct H7 as (st1''&ac1'&?&?&?&?), H8 as (st2''&ac2'&?&?&?&?).
   eapply ideal_eval_relative_secure; eassumption.
 Qed.
-
-(* CH: My advice would be to also look at the 2 other conjectures I tested
-   at the very end of TestingFlexSLH.v and turn that into noninterference and
-   ideal_misspeculated_unwinding lemmas in the proofs. *)
 
