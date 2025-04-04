@@ -147,41 +147,42 @@ Fixpoint static_tracking (c:com) (P:pub_vars) (PA:pub_arrs) (pc:label)
   | <{ a[i] <- e }> =>
       let li := label_of_aexp P i in
       let la := join (PA a) (join pc (join li (label_of_aexp P e))) in
-      (* It seems likely that the arrays will all become private quite quickly *)
       (<[ a[i@li] <- e ]>, P, a !-> la; PA)
   end.
 
-Fixpoint static_tracking_acom ac P PA pc :=
+Fixpoint well_labeled_acom ac P PA pc : option (pub_vars*pub_arrs) :=
   match ac with
-  | <[ skip ]> => (<[skip]>, P, PA)
-  | <[ x := ae ]> => (<[x := ae]>, x !-> (join pc (label_of_aexp P ae)); P, PA)
-  | <[ c1; c2 ]> => let '(ac1, P1, PA1) := static_tracking_acom c1 P PA pc in
-                    let '(ac2, P2, PA2) := static_tracking_acom c2 P1 PA1 pc in
-                     (<[ ac1; ac2 ]>, P2, PA2)
-  | <[ if be@_ then c1 else c2 end ]> =>
-      let lbe := label_of_bexp P be in
-      let '(ac1, P1, PA1) := static_tracking_acom c1 P PA (join pc lbe) in
-      let '(ac2, P2, PA2) := static_tracking_acom c2 P PA (join pc lbe) in
-      (<[ if be@lbe then ac1 else ac2 end ]>, join_pub_vars P1 P2, join_pub_vars PA1 PA2)
-  | <[ while be@_ do c1 end ]> =>
-      let vars := assigned_vars (erase c1) in
-      let arrs := assigned_arrs (erase c1) in
-      let pvars := filter P vars in
-      let parrs := filter PA arrs in
-      let max_iters := length vars + length arrs in
-      let '(P', PA', lbe, ac1) := static_tracking_while (static_tracking_acom c1) P PA pc max_iters be vars arrs pvars parrs in
-      (<[ while be@lbe do ac1 end ]>, P', PA')
-  | <[ X@@_ <- a[[i@_]] ]> =>
-      let li := label_of_aexp P i in
-      let lx := join pc (join li (PA a)) in
-      (<[ X@@lx <- a[[i@li]] ]>, X !-> lx; P, PA)
-  | <[ a[i@_] <- e ]> =>
-      let li := label_of_aexp P i in
-      let la := join (PA a) (join pc (join li (label_of_aexp P e))) in
-      (* It seems likely that the arrays will all become private quite quickly *)
-      (<[ a[i@li] <- e ]>, P, a !-> la; PA)
-  | <[ branch l c ]> => let '(ac, P, PA) := static_tracking_acom c P PA pc in
-                      (<[ branch l ac ]>, P, PA)
+  | <[ skip ]> => Some (P, PA)
+  | <[ x := ae ]> => Some (x !-> (join pc (label_of_aexp P ae)); P, PA)
+  | <[ c1; c2 ]> => match well_labeled_acom c1 P PA pc with
+                    | Some (P1, PA1) => well_labeled_acom c2 P1 PA1 pc
+                    | None => None
+                    end
+  | <[ if be@lbe then c1 else c2 end ]> =>
+      if can_flow (label_of_bexp P be) lbe then
+        match well_labeled_acom c1 P PA (join pc lbe), well_labeled_acom c2 P PA (join pc lbe) with
+          | Some (P1, PA1), Some (P2, PA2) => Some (join_pub_vars P1 P2, join_pub_vars PA1 PA2)
+          | _, _ => None
+          end
+      else None
+  | <[ while be@_ do c1 end ]> => None
+      (* let vars := assigned_vars (erase c1) in *)
+      (* let arrs := assigned_arrs (erase c1) in *)
+      (* let pvars := filter P vars in *)
+      (* let parrs := filter PA arrs in *)
+      (* let max_iters := length vars + length arrs in *)
+      (* let '(P', PA', lbe, ac1) := static_tracking_while (well_labeled_acom c1) P PA pc max_iters be vars arrs pvars parrs in *)
+      (* (<[ while be@lbe do ac1 end ]>, P', PA') *)
+  | <[ X@@lx <- a[[i@li]] ]> =>
+      if can_flow (label_of_aexp P i) li && can_flow (join pc (join li (PA a))) lx then
+        Some (X !-> lx; P, PA)
+      else None
+  | <[ a[i@li] <- e ]> =>
+      if can_flow (label_of_aexp P i) li then
+        let la := join (PA a) (join pc (join li (label_of_aexp P e))) in
+        Some (P, a !-> la; PA)
+      else None
+  | <[ branch l c ]> => well_labeled_acom c P PA pc
   end.
 
 Lemma static_tracking_while_invariant : forall ac P' PA' pc' f P PA pc i be vars arrs pvars parrs (R : acom -> Prop),
