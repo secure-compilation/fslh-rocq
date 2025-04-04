@@ -182,8 +182,25 @@ Fixpoint well_labeled_acom ac P PA pc : option (pub_vars*pub_arrs) :=
         let la := join (PA a) (join pc (join li (label_of_aexp P e))) in
         Some (P, a !-> la; PA)
       else None
+    (* We're not too sure about this case -- do we need special case for branch ...; c2? *)
   | <[ branch l c ]> => well_labeled_acom c P PA pc
   end.
+
+(* Fixpoint well_labeled_acom2 ac P PA pc : bool := *)
+(*   match ac with *)
+(*   | <[ skip ]> | <[ _ := _ ]> => true *)
+(*   | <[ c1;@(P',PA') c2 ]> => well_labeled_acom2 c1 P PA pc && well_labeled_acom2 c2 P' PA' pc *)
+(*   | <[ if be@lbe then c1 else c2 end ]> => *)
+(*       can_flow (label_of_bexp P be) lbe && well_labeled_acom2 c1 P PA (join pc lbe) && well_labeled_acom2 c2 P PA (join pc lbe) *)
+(*   | <[ while be@lbe do c1 @(P',PA') end ]> => *)
+(*       less_precise (P',PA') (P,PA) && well_labeled_acom2 c1 P' PA' pc *)
+(*   | <[ X@@lx <- a[[i@li]] ]> => *)
+(*       can_flow (label_of_aexp P i) li && can_flow (join pc (join li (PA a))) lx *)
+(*   | <[ a[i@li] <- e ]> => *)
+(*       can_flow (label_of_aexp P i) li *)
+(*     (* We're not too sure about this case -- do we need special case for branch ...; c2? *) *)
+(*   | <[ branch l c ]> => well_labeled_acom2 c P PA pc *)
+(*   end. *)
 
 Lemma static_tracking_while_invariant : forall ac P' PA' pc' f P PA pc i be vars arrs pvars parrs (R : acom -> Prop),
   (forall ac' P PA P1 PA1 pc, f P PA pc = (ac', P1, PA1) -> R ac') ->
