@@ -1495,20 +1495,6 @@ Proof.
     repeat eexists; try eassumption.
 Qed.
 
-Lemma ideal_eval_small_step_force_obs : forall c st1 st2 ast1 ast2 ct1 ct2 stt1 stt2 astt1 astt2 os1 os2
-    pc P PA pct1 pct2 Pt1 Pt2 PAt1 PAt2,
-  seq_same_obs (erase c) st1 st2 ast1 ast2 ->
-  <[[c, st1, ast1, false, pc, P, PA]]> -->i_[DForce]^^os1 <[[ct1, stt1, astt1, true, pct1, Pt1, PAt1]]> ->
-  <[[c, st2, ast2, false, pc, P, PA]]> -->i_[DForce]^^os2 <[[ct2, stt2, astt2, true, pct2, Pt2, PAt2]]> ->
-  os1 = os2.
-Proof.
-  intros. remember false as b in H0. remember true as bt in H0. remember [DForce] as ds in H0.
-  revert st2 ast2 os2 ct2 stt2 astt2 Heqb Heqbt Heqds H H1. induction H0; intros; subst; try discriminate.
-  + invert H1. apply seq_same_obs_com_seq in H. eapply IHideal_eval_small_step; [tauto..|eassumption|eassumption].
-  + invert H2. apply seq_same_obs_com_if in H1. now rewrite H1, !orb_true_r.
-  + invert H1. eapply IHideal_eval_small_step; eauto.
-Qed.
-
 Theorem ideal_eval_relative_secure : forall ac c st st' ast ast' P PA P' PA',
   static_tracking c P PA public = (ac, P', PA') ->
   pub_equiv P st st' ->
