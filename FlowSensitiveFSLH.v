@@ -571,12 +571,41 @@ Lemma ideal_eval_small_step_dirs_obs : forall c st ast b ct stt astt bt ds os pc
   (ds = [] /\ os = []) \/ (exists d o, ds = [d] /\ os = [o]).
 Proof. intros. now induction H; eauto. Qed.
 
+Lemma ideal_eval_small_step_force_obs : forall c st1 st2 ast1 ast2 stt1 stt2 astt1 astt2 os1 os2 c1 c2
+  pc1 pc2 P1 P2 PA1 PA2 pct1 pct2 Pt1 Pt2 PAt1 PAt2,
+  seq_same_obs (erase c) st1 st2 ast1 ast2 ->
+  <[[ c, st1, ast1, false, pc1, P1, PA1 ]]> -->i_[DForce] ^^ os1 <[[ c1, stt1, astt1, true, pct1, Pt1, PAt1 ]]> ->
+  <[[ c, st2, ast2, false, pc2, P2, PA2 ]]> -->i_[DForce] ^^ os2 <[[ c2, stt2, astt2, true, pct2, Pt2, PAt2 ]]> ->
+  os1 = os2.
+Proof.
+   intros. remember false as b in H0. remember true as bt in H0. remember [DForce] as ds in H0.
+   revert st2 ast2 stt2 astt2 os2 c2 c2 P2 PA2 pct2 Pt2 PAt2 Heqb Heqbt Heqds H H1.
+   induction H0; intros; subst; try discriminate.
+   - invert H1. apply seq_same_obs_com_seq in H.
+     eapply IHideal_eval_small_step; [tauto..|eassumption|eassumption].
+   - invert H2. now apply seq_same_obs_com_if in H1 as <-.
+   - invert H1. eapply IHideal_eval_small_step; [tauto..|eassumption|eassumption] .
+Qed.
+
 (* LD: pct and pc are not always equal if we leave a branch. *)
 (* JB: removed this equality in the conclusion, as it was not necessary in the only place this lemma is used. *)
 Lemma ideal_eval_small_step_silent_step : forall c st ast b ct stt astt bt pc P PA pct Pt PAt,
   <[[c, st, ast, b, pc, P, PA]]> -->i_ [] ^^ [] <[[ct, stt, astt, bt, pct, Pt, PAt]]> ->
   b = bt /\ ast = astt /\ PA = PAt.
 Proof. intros. remember [] as ds in H at 1. revert Heqds. induction H; try now intros; eauto. Qed.
+
+Lemma ideal_eval_small_step_silent_step_same_prog : forall c st1 st2 ast1 ast2 b ct1 ct2 stt1 stt2 astt1 astt2 bt pc pct1 pct2 P Pt1 Pt2 PA PAt1 PAt2, 
+  <[[c, st1, ast1, b, pc, P, PA]]> -->i_ [] ^^ [] <[[ct1, stt1, astt1, bt, pct1, Pt1, PAt1]]> ->
+  <[[c, st2, ast2, b, pc, P, PA]]> -->i_ [] ^^ [] <[[ct2, stt2, astt2, bt, pct2, Pt2, PAt2]]> ->
+  ct1 = ct2.
+Proof.
+  induction c; intros; invert H; invert H0; try tauto.
+  - erewrite IHc1 with (ct1 := c1t). 2, 3: eassumption. reflexivity.
+  - now eapply ideal_terminal_no_step in H18.
+  - now eapply ideal_terminal_no_step in H18.
+  - erewrite IHc with (ct1 := c1t). 2, 3: eassumption. reflexivity.
+Qed.
+
 
 Lemma multi_ideal_silent : forall c st ast b ct stt astt bt pc P PA pct Pt PAt,
   <[[c, st, ast, b, pc, P, PA]]> -->i*_ [] ^^ [] <[[ct, stt, astt, bt, pct, Pt, PAt]]> ->
@@ -649,50 +678,56 @@ Proof.
 Qed.
 
 Lemma seq_same_obs_multi_ideal_factorize : 
-  forall c st1 st2 ast1 ast2 b ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 d ds os1 os2 pc P PA pct1 pct2 Pt1 Pt2 PAt1 PAt2,
+  forall c st1 st2 ast1 ast2 ct1 ct2 stt1 stt2 astt1 astt2 bt1 bt2 d ds os1 os2 pc P PA pct1 pct2 Pt1 Pt2 PAt1 PAt2,
   seq_same_obs (erase c) st1 st2 ast1 ast2 -> 
-  <[[ c, st1, ast1, b, pc, P, PA ]]> -->i*_ d::ds ^^ os1 <[[ ct1, stt1, astt1, bt1, pct1, Pt1, PAt1 ]]> ->
-  <[[ c, st2, ast2, b, pc, P, PA ]]> -->i*_ d::ds ^^ os2 <[[ ct2, stt2, astt2, bt2, pct2, Pt2, PAt2 ]]> ->
+  <[[ c, st1, ast1, false, pc, P, PA ]]> -->i*_ d::ds ^^ os1 <[[ ct1, stt1, astt1, bt1, pct1, Pt1, PAt1 ]]> ->
+  <[[ c, st2, ast2, false, pc, P, PA ]]> -->i*_ d::ds ^^ os2 <[[ ct2, stt2, astt2, bt2, pct2, Pt2, PAt2 ]]> ->
   exists o1 o2 os1' os2' c' c'' st1' st2' st1'' st2'' b'' ast1'' ast2'' pc' pc'' P' P'' PA'',
   os1 = o1 :: os1' /\
   os2 = o2 :: os2' /\
-  <[[ c, st1, ast1, b, pc, P, PA]]> -->i*_[]^^[] <[[ c', st1', ast1, b, pc', P', PA]]> /\
-  <[[ c', st1', ast1, b, pc', P', PA]]> -->i_[d]^^[o1] <[[ c'', st1'', ast1'', b'', pc'', P'', PA'']]> /\
+  <[[ c, st1, ast1, false, pc, P, PA]]> -->i*_[]^^[] <[[ c', st1', ast1, false, pc', P', PA]]> /\
+  <[[ c', st1', ast1, false, pc', P', PA]]> -->i_[d]^^[o1] <[[ c'', st1'', ast1'', b'', pc'', P'', PA'']]> /\
   <[[ c'', st1'', ast1'', b'', pc'', P'', PA'']]> -->i*_ds ^^ os1' <[[ ct1, stt1, astt1, bt1, pct1, Pt1, PAt1]]> /\
-  <[[ c, st2, ast2, b, pc, P, PA]]> -->i*_[]^^[] <[[ c', st2', ast2, b, pc', P', PA]]> /\
-  <[[ c', st2', ast2, b, pc', P', PA]]> -->i_[d]^^[o2] <[[ c'', st2'', ast2'', b'', pc'', P'', PA'']]> /\
+  <[[ c, st2, ast2, false, pc, P, PA]]> -->i*_[]^^[] <[[ c', st2', ast2, false, pc', P', PA]]> /\
+  <[[ c', st2', ast2, false, pc', P', PA]]> -->i_[d]^^[o2] <[[ c'', st2'', ast2'', b'', pc'', P'', PA'']]> /\
   <[[ c'', st2'', ast2'', b'', pc'', P'', PA'']]> -->i*_ds ^^ os2' <[[ ct2, stt2, astt2, bt2, pct2, Pt2, PAt2]]>.
 Proof.
-  intros. remember (d :: ds) as ds'. revert d ds Heqds' st2 ast2 ct2 stt2 astt2 bt2 os2 pct2 Pt2 PAt2 H H1.
+  intros. remember (d :: ds) as ds'. remember false as b in H0, H1. revert Heqb d ds Heqds' st2 ast2 ct2 stt2 astt2 bt2 os2 pct2 Pt2 PAt2 H H1.
   induction H0; intros; try discriminate.
   inversion H2. { rewrite <- H11 in Heqds'. discriminate. }
   subst.
   apply ideal_eval_small_step_dirs_obs in H as Heq1, H4 as Heq2. destruct Heq1, Heq2.
   - destruct H5, H6; subst. simpl in *. subst.
-    specialize (IHmulti_ideal d ds Logic.eq_refl).
+    apply ideal_eval_small_step_silent_step in H as Heq. destruct Heq as (<-&->&->).
+    specialize (IHmulti_ideal Logic.eq_refl d ds Logic.eq_refl).
     assert (seq_same_obs (erase c') st' st'0 ast' ast'0).
-    { admit. (* JB: should not be too difficult, as this execution step produces no observations *) }
+    {
+      apply ideal_eval_small_step_silent_step in H4 as Heq. destruct Heq as (<-&->&->).
+      eapply ideal_eval_small_step_silent_step_same_prog in H as Heq. 2: exact H4. subst.
+      eapply multi_ideal_preserves_seq_same_obs. 1: eassumption.
+      - eapply multi_ideal_trans. 2: econstructor. eassumption.
+      - eapply multi_ideal_trans. 1: eassumption. econstructor.
+    }
     pose proof (ideal_eval_small_step_deterministic_labels H1 H H4) as (<- & <- & <- & <- & <-).
     eapply IHmulti_ideal in H3. 2: eassumption.
     destruct H3 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&->&->&?&?&?&?&?&?).
-    apply ideal_eval_small_step_silent_step in H as Heq. destruct Heq as (->&->&->).
+    (*apply ideal_eval_small_step_silent_step in H as Heq. destruct Heq as (->&->&->).*)
     eapply multi_ideal_trans in H, H4. 2, 3: eassumption.
     eapply multi_ideal_silent in H4 as Heq. destruct Heq as (_&<-&_).
     repeat eexists; try eassumption.
   - destruct H5 as (->&->). destruct H6 as (?&?&->&->). simpl in *. subst.
     exfalso.
     clear - H H4.
-    induction c; try (invert H; invert H4).
-    + admit.
-    + now eapply ideal_terminal_no_step in H18.
-    + admit. (*JB: needs more general induction. Should be own lemma*)
-  - admit. (*JB: same as above.*)
+    eapply ideal_eval_small_step_same_length in H; [|eassumption..]. simpl in H. congruence.
+  - destruct H6 as (->&->). destruct H5 as (?&?&->&->). simpl in *. subst.
+    exfalso. clear - H H4.
+    eapply ideal_eval_small_step_same_length in H; [|eassumption..]. simpl in H. congruence.
   - destruct H5 as (?&?&->&->), H6 as (?&?&->&->). simpl in Heqds'. invert Heqds'. simpl in *. invert H3.
-    pose proof (multi_ideal_refl c st2 ast2 b pc P PA).
-    pose proof (multi_ideal_refl c st ast b pc P PA).
+    pose proof (multi_ideal_refl c st2 ast2 false pc P PA).
+    pose proof (multi_ideal_refl c st ast false pc P PA).
     pose proof (ideal_eval_small_step_deterministic_labels H1 H H4) as (<-&<-&<-&<-&<-).
     repeat eexists; try eassumption.
-Admitted.
+Qed.
 
 
 Lemma pub_equiv_join : forall {A} P P' (st st' : total_map A),
@@ -844,86 +879,86 @@ Inductive same_shape : acom -> acom -> Prop :=
                same_shape c c' ->
                same_shape <[branch l c]> <[branch l c']>.
 
-Lemma static_tracking_acom_same_shape : forall c c' P PA Pt PAt pc,
-  static_tracking_acom c P PA pc = (c', Pt, PAt) ->
-  same_shape c c'.
-Proof.
-  induction c; simpl; intros; try now (invert H; constructor).
-  + destruct (static_tracking_acom c1 P PA pc) as ((?&P')&PA') eqn:Heq.
-    destruct (static_tracking_acom c2 P' PA' pc) as ((?&?)&?) eqn:Heq'.
-    apply IHc1 in Heq. apply IHc2 in Heq'.
-    invert H. now constructor.
-  + destruct (static_tracking_acom c1 P PA (join pc (label_of_bexp P be))) as ((?&?)&?) eqn:Heq.
-    destruct (static_tracking_acom c2 P PA (join pc (label_of_bexp P be))) as ((?&?)&?) eqn:Heq'.
-    apply IHc1 in Heq. apply IHc2 in Heq'.
-    invert H. now constructor.
-  + destruct (static_tracking_while (static_tracking_acom c) P PA pc
-        (length (assigned_vars (erase c)) + length (assigned_arrs (erase c))) be (assigned_vars (erase c))
-        (assigned_arrs (erase c)) (filter P (assigned_vars (erase c))) (filter PA (assigned_arrs (erase c)))) as (((?&?)&?)&?) eqn:Heq.
-    eapply static_tracking_while_invariant in Heq; [|apply IHc]. invert H.
-    now constructor.
-  + destruct (static_tracking_acom c P PA pc) as ((?&?)&?) eqn:Heq.
-    apply IHc in Heq. invert H. now constructor.
-Qed.
+(*Lemma static_tracking_acom_same_shape : forall c c' P PA Pt PAt pc,*)
+  (*static_tracking_acom c P PA pc = (c', Pt, PAt) ->*)
+  (*same_shape c c'.*)
+(*Proof.*)
+  (*induction c; simpl; intros; try now (invert H; constructor).*)
+  (*+ destruct (static_tracking_acom c1 P PA pc) as ((?&P')&PA') eqn:Heq.*)
+    (*destruct (static_tracking_acom c2 P' PA' pc) as ((?&?)&?) eqn:Heq'.*)
+    (*apply IHc1 in Heq. apply IHc2 in Heq'.*)
+    (*invert H. now constructor.*)
+  (*+ destruct (static_tracking_acom c1 P PA (join pc (label_of_bexp P be))) as ((?&?)&?) eqn:Heq.*)
+    (*destruct (static_tracking_acom c2 P PA (join pc (label_of_bexp P be))) as ((?&?)&?) eqn:Heq'.*)
+    (*apply IHc1 in Heq. apply IHc2 in Heq'.*)
+    (*invert H. now constructor.*)
+  (*+ destruct (static_tracking_while (static_tracking_acom c) P PA pc*)
+        (*(length (assigned_vars (erase c)) + length (assigned_arrs (erase c))) be (assigned_vars (erase c))*)
+        (*(assigned_arrs (erase c)) (filter P (assigned_vars (erase c))) (filter PA (assigned_arrs (erase c)))) as (((?&?)&?)&?) eqn:Heq.*)
+    (*eapply static_tracking_while_invariant in Heq; [|apply IHc]. invert H.*)
+    (*now constructor.*)
+  (*+ destruct (static_tracking_acom c P PA pc) as ((?&?)&?) eqn:Heq.*)
+    (*apply IHc in Heq. invert H. now constructor.*)
+(*Qed.*)
+(**)
+(*Lemma same_shape_static_tracking_acom : forall c c' P PA pc,*)
+  (*same_shape c c' ->*)
+  (*static_tracking_acom c P PA pc = static_tracking_acom c' P PA pc.*)
+(*Proof. intros. revert P PA pc. induction H; simpl; intros; try tauto.*)
+  (*- rewrite IHsame_shape1. destruct (static_tracking_acom c1' P PA pc). destruct p; f_equal.*)
+    (*rewrite IHsame_shape2. reflexivity.*)
+  (*- rewrite IHsame_shape1. destruct (static_tracking_acom c1' P PA (join pc (label_of_bexp P be))). destruct p; f_equal.*)
+    (*rewrite IHsame_shape2. reflexivity.*)
+  (*- *)
+    (*admit. [> JB: need to 'lift' IHsame_shape to static_tracking_while <]*)
+  (*- now rewrite IHsame_shape.*)
+(*Admitted.*)
 
-Lemma same_shape_static_tracking_acom : forall c c' P PA pc,
-  same_shape c c' ->
-  static_tracking_acom c P PA pc = static_tracking_acom c' P PA pc.
-Proof. intros. revert P PA pc. induction H; simpl; intros; try tauto.
-  - rewrite IHsame_shape1. destruct (static_tracking_acom c1' P PA pc). destruct p; f_equal.
-    rewrite IHsame_shape2. reflexivity.
-  - rewrite IHsame_shape1. destruct (static_tracking_acom c1' P PA (join pc (label_of_bexp P be))). destruct p; f_equal.
-    rewrite IHsame_shape2. reflexivity.
-  - 
-    admit. (* JB: need to 'lift' IHsame_shape to static_tracking_while *)
-  - now rewrite IHsame_shape.
-Admitted.
-
-Lemma ideal_eval_static_tracking_step :
-  forall ac ds c P PA Pt PAt pc' P' PA' pc st ast b act stt astt bt os,
-  static_tracking_acom c P PA pc = (ac, Pt, PAt) ->
-  <[[ ac, st, ast, b, pc, P, PA ]]> -->i_ds^^os <[[ act, stt, astt, bt, pc', P', PA' ]]> ->
-  less_precise (act, Pt, PAt) (static_tracking_acom act P' PA' pc').
-Proof.
-  intros. apply static_tracking_acom_same_shape in H as H'. revert c Pt PAt H H'.
-  induction H0; simpl; intros; invert H'; simpl in *.
-  + invert H0. split; [tauto|]. split; apply less_precise_vars_refl.
-  + destruct (static_tracking_acom c0 P PA pc) as ((c1'&P1)&PA1) eqn:Heq1.
-    destruct (static_tracking_acom c3 P1 PA1 pc) as ((c2'&P2)&PA2) eqn:Heq2.
-    invert H. apply IHideal_eval_small_step in Heq1 as H'; [|tauto].
-    destruct (static_tracking_acom c1t P' PA' pc') as ((act&P1t)&PA1t) eqn:Heq1t.
-    destruct (static_tracking_acom c2 P1t PA1t pc') as ((act'&P2t)&PA2t) eqn:Heq2t.
-    admit.
-  + destruct (static_tracking_acom c0 P PA pc) as ((ac1&P1)&PA1) eqn:Heq1.
-    destruct (static_tracking_acom c3 P1 PA1 pc) as ((ac2&P2)&PA2) eqn:Heq2.
-    invert H0. revert c0 Heq1 H4.
-    induction H; simpl; intros.
-    { invert H4. invert Heq1. eapply same_shape_static_tracking_acom in H5.
-      rewrite H5 in Heq2. rewrite Heq2. split; [apply less_precise_acom_refl|]. split; apply less_precise_vars_refl. }
-    invert H4.
-    simpl in Heq1. destruct (static_tracking_acom c1 P PA pc) as ((ac&P')&PA') eqn:Heq.
-    invert Heq1. specialize (IHterminal c1 Heq H2). (* JB: applying the induction hypothesis does not work, because the labels don't actually match. Perhaps we could do some kind of monotonicity for branch labels? *)
-    admit.
-  + (* if-then-else *)
-    admit.
-  + (* if-then-else *)
-    admit.
-  + (* while *)
-    admit.
-  + inversion H2. subst. split. 1: reflexivity. split; apply less_precise_vars_refl.
-  + inversion H3. subst. split. 1: reflexivity. split; apply less_precise_vars_refl.
-  + inversion H4. subst. split. 1: reflexivity. split; apply less_precise_vars_refl.
-  + inversion H4. subst. split. 1: reflexivity. split. 1: apply less_precise_vars_refl.
-    intro x.
-    admit.
-  + (* underneath branch *)
-    destruct (static_tracking_acom c1t Pt PAt pct) as ((ac2 & P2) & PA2).
-    destruct (static_tracking_acom c0 P PA pc) as ((c0' & P') & PA') eqn: Heq.
-    inversion H. subst.
-    specialize (IHideal_eval_small_step _ _ _ Heq H3).
-    (* JB: I believe the less_precise_acom definition is wrong in the branch case. *)
-    admit.
-Admitted.
+(*Lemma ideal_eval_static_tracking_step :*)
+  (*forall ac ds c P PA Pt PAt pc' P' PA' pc st ast b act stt astt bt os,*)
+  (*static_tracking_acom c P PA pc = (ac, Pt, PAt) ->*)
+  (*<[[ ac, st, ast, b, pc, P, PA ]]> -->i_ds^^os <[[ act, stt, astt, bt, pc', P', PA' ]]> ->*)
+  (*less_precise (act, Pt, PAt) (static_tracking_acom act P' PA' pc').*)
+(*Proof.*)
+  (*intros. apply static_tracking_acom_same_shape in H as H'. revert c Pt PAt H H'.*)
+  (*induction H0; simpl; intros; invert H'; simpl in *.*)
+  (*+ invert H0. split; [tauto|]. split; apply less_precise_vars_refl.*)
+  (*+ destruct (static_tracking_acom c0 P PA pc) as ((c1'&P1)&PA1) eqn:Heq1.*)
+    (*destruct (static_tracking_acom c3 P1 PA1 pc) as ((c2'&P2)&PA2) eqn:Heq2.*)
+    (*invert H. apply IHideal_eval_small_step in Heq1 as H'; [|tauto].*)
+    (*destruct (static_tracking_acom c1t P' PA' pc') as ((act&P1t)&PA1t) eqn:Heq1t.*)
+    (*destruct (static_tracking_acom c2 P1t PA1t pc') as ((act'&P2t)&PA2t) eqn:Heq2t.*)
+    (*admit.*)
+  (*+ destruct (static_tracking_acom c0 P PA pc) as ((ac1&P1)&PA1) eqn:Heq1.*)
+    (*destruct (static_tracking_acom c3 P1 PA1 pc) as ((ac2&P2)&PA2) eqn:Heq2.*)
+    (*invert H0. revert c0 Heq1 H4.*)
+    (*induction H; simpl; intros.*)
+    (*{ invert H4. invert Heq1. eapply same_shape_static_tracking_acom in H5.*)
+      (*rewrite H5 in Heq2. rewrite Heq2. split; [apply less_precise_acom_refl|]. split; apply less_precise_vars_refl. }*)
+    (*invert H4.*)
+    (*simpl in Heq1. destruct (static_tracking_acom c1 P PA pc) as ((ac&P')&PA') eqn:Heq.*)
+    (*invert Heq1. specialize (IHterminal c1 Heq H2). [> JB: applying the induction hypothesis does not work, because the labels don't actually match. Perhaps we could do some kind of monotonicity for branch labels? <]*)
+    (*admit.*)
+  (*+ [> if-then-else <]*)
+    (*admit.*)
+  (*+ [> if-then-else <]*)
+    (*admit.*)
+  (*+ [> while <]*)
+    (*admit.*)
+  (*+ inversion H2. subst. split. 1: reflexivity. split; apply less_precise_vars_refl.*)
+  (*+ inversion H3. subst. split. 1: reflexivity. split; apply less_precise_vars_refl.*)
+  (*+ inversion H4. subst. split. 1: reflexivity. split; apply less_precise_vars_refl.*)
+  (*+ inversion H4. subst. split. 1: reflexivity. split. 1: apply less_precise_vars_refl.*)
+    (*intro x.*)
+    (*admit.*)
+  (*+ [> underneath branch <]*)
+    (*destruct (static_tracking_acom c1t Pt PAt pct) as ((ac2 & P2) & PA2).*)
+    (*destruct (static_tracking_acom c0 P PA pc) as ((c0' & P') & PA') eqn: Heq.*)
+    (*inversion H. subst.*)
+    (*specialize (IHideal_eval_small_step _ _ _ Heq H3).*)
+    (*[> JB: I believe the less_precise_acom definition is wrong in the branch case. <]*)
+    (*admit.*)
+(*Admitted.*)
 
 Lemma ideal_eval_noninterferent :
   forall ac ds c P PA P' PA' pc st1 ast1 st2 ast2 b act1 act2 stt1 stt2 astt1 astt2 bt1 bt2 os pct1 pct2 Pt1 Pt2 PAt1 PAt2,
@@ -1433,8 +1468,10 @@ Proof.
   - apply ideal_eval_small_step_spec_needs_force in H4 as Heq. invert Heq.
     change (DForce :: ds) with ([]++[DForce]++ds). change (x::x1) with ([]++x::x1). change (x0::x2) with ([]++x0::x2).
     exists 0, ds.
-    assert (x = x0) as <- by admit. (* JB: need equivalent of ideal_eval_small_step_force_obs *)
-    exists [], x, x1, x2. repeat eexists; try eassumption.
+    eapply ideal_eval_small_step_force_obs in H7 as Heq. 3: exact H4.
+    2: eapply multi_ideal_preserves_seq_same_obs; eassumption.
+    invert Heq.
+    exists [], x0, x1, x2. repeat eexists; try eassumption.
   - eapply IHds in H8 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?). 3: exact H5.
     2: {
       eapply multi_ideal_preserves_seq_same_obs.
@@ -1456,7 +1493,7 @@ Proof.
     }
     rewrite !app_comm_cons. exists  (1 + x9).
     repeat eexists; try eassumption.
-Admitted.
+Qed.
 
 Lemma ideal_eval_small_step_force_obs : forall c st1 st2 ast1 ast2 ct1 ct2 stt1 stt2 astt1 astt2 os1 os2
     pc P PA pct1 pct2 Pt1 Pt2 PAt1 PAt2,
@@ -1484,24 +1521,11 @@ Proof.
   unfold ideal_same_obs. intros. eapply multi_ideal_spec_bit_deterministic in H5 as Heq; [|eassumption]. subst.
   apply erase_static_tracking in H as H'. subst.
   destruct b1; [|eapply multi_ideal_no_spec_deterministic; eassumption].
-  apply multi_ideal_misspeculate_split in H5, H6. (*JB: different version of this lemma which does both execution at once, using seq_same_obs to obtain that P,PA are equal for both executions?*)
-  destruct H5 as (n1&ds1&os1'&o1&os1''&c1&c1'&st1&st1'&ast1&ast1'&?&?&?&?&?&?&->&->&?&?&?).
-  destruct H6 as (n2&ds2&os2'&o2&os2''&c2&c2'&st2&st2'&ast2&ast2'&?&?&?&?&?&?&?&->&?&?&?).
-  apply repeat_same_length in H6 as H'; [|discriminate]. subst. apply app_inv_head in H6. invert H6.
-  eapply multi_ideal_no_spec_deterministic in H9 as Heq; [|eassumption..]. subst. f_equal.
-  eapply multi_ideal_stuck_noninterference in H9 as Heq; [|try now eauto..]. 2: admit. (* JB: needs to be changed in multi_ideal_stuck_noninterference, but likely, we want a statement using static_tracking_acom instead of erase. *)
-  (* JB: something along the lines of multi_ideal_preserves_wt, but this requires a different phrasing for H.*)
-  destruct Heq as (<-&_&?&?). eapply multi_ideal_preserves_seq_same_obs in H4; [|eassumption..].
-  
-  eapply ideal_eval_small_step_force_obs with (os2 := [o2]) in H4; [|try eassumption..]. 2: admit. (* JB: needs that P, PA are equal for both *)
-  invert H4. f_equal.
-  (* JB: Here we need the 'preservation' assumption to apply ideal_eval_noniterferent *)
-  
-
-  
-  (*apply multi_ideal_multi_seq in H5, H9. assert (c1 = c2) by admit. subst.*)
-  (*eapply multi_seq_preserves_seq_same_obs in H9 as Hobs; [|apply H5|eassumption|reflexivity].*)
-  (*admit.*)
+  eapply seq_same_obs_multi_ideal_misspeculate_split in H6; [|eassumption..]. clear H5.
+  destruct H6 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&->&->&->&?&?&?&?&?&?).
+  do 2 f_equal.
+  (* missing: execution preserves well-annotated *)
+  (* missing: ideal_misspeculated_unwinding *)
 Admitted.
 
 Theorem fs_flex_vslh_relative_secure : forall P PA c st ast st' ast',
