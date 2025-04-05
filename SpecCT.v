@@ -124,7 +124,7 @@ Definition BGt a1 a2 := BNot (BLe a1 a2).
 End MergedExps.
 (* /HIDE *)
 
-(** ** Typing Constant-time conditional *)
+(** ** Typing Constant-time Conditionals *)
 
 (** Typing of arithmetic and boolean expressions will also become
     mutually inductive. *)
@@ -151,6 +151,7 @@ Coercion ANum : nat >-> aexp.
 Declare Custom Entry com.
 Declare Scope com_scope.
 
+(* HIDE: BCP: Again, these notations are in flux in PLF... *)
 Notation "<{ e }>" := e (at level 0, e custom com at level 99) : com_scope.
 Notation "( x )" := x (in custom com, x at level 99) : com_scope.
 Notation "x" := x (in custom com at level 0, x constr at level 0) : com_scope.
