@@ -901,7 +901,7 @@ Proof.
   intros P pc c. generalize dependent pc.
   induction c; intros pc H; simpl in *; econstructor;
     try rewrite andb_true_iff in *;
-    try destruct H as [H1 H2]; try tauto;
+    try destruct H; try tauto;
     eauto using label_of_aexp_sound, label_of_bexp_sound.
 Qed.
 (* /FOLD *)
@@ -1018,43 +1018,43 @@ Proof.
   intros P c Hwt s1 s2 s1' s2' Heq Heval1 Heval2.
   generalize dependent s2'. generalize dependent s2.
   induction Heval1; intros s2 Heq s2' Heval2;
-    inversion Heval2; inversion Hwt; subst.
+    inversion Heval2; inversion Hwt; subst; try rewrite join_public_l in *.
   - assumption.
   - intros y Hy. destruct (String.eqb_spec x y) as [Hxy | Hxy].
     + rewrite Hxy. do 2 rewrite t_update_eq.
-      unfold can_flow in H9. rewrite join_public_l in H9.
+      unfold can_flow in H9.
       apply orb_prop in H9. destruct H9 as [Hl | Hx].
       * rewrite Hl in *. apply (noninterferent_aexp Heq H8).
       * subst. rewrite Hy in Hx. discriminate Hx.
     + do 2 rewrite (t_update_neq _ _ _ _ _ Hxy).
       apply Heq. apply Hy.
   - eapply IHHeval1_2; try eassumption. eapply IHHeval1_1; eassumption.
-  - (* if true-true *) rewrite join_public_l in *.
+  - (* if true-true *)
     eapply IHHeval1; try eassumption.
     eapply weaken_pc; try eassumption. apply can_flow_public.
-  - (* if true-false *) rewrite join_public_l in *. destruct l.
+  - (* if true-false *) destruct l.
     + rewrite (noninterferent_bexp Heq H11) in H.
       rewrite H in H5. discriminate H5.
     + eapply different_code with (c1:=c1) (c2:=c2); eassumption.
-  - (* if false-true *) rewrite join_public_l in *. destruct l.
+  - (* if false-true *) destruct l.
     + rewrite (noninterferent_bexp Heq H11) in H.
       rewrite H in H5. discriminate H5.
     + eapply different_code with (c1:=c2) (c2:=c1); eassumption.
-  - (* if false-false *) rewrite join_public_l in *.
+  - (* if false-false *)
     eapply IHHeval1; try eassumption.
     eapply weaken_pc; try eassumption. apply can_flow_public.
   - (* while false-false *) assumption.
-  - (* while false-true *) rewrite join_public_l in *. destruct l.
+  - (* while false-true *) destruct l.
     + rewrite (noninterferent_bexp Heq H10) in H.
       rewrite H in H2. discriminate H2.
     + eapply different_code with (c1:=<{skip}>) (c2:=<{c;while b do c end}>);
         repeat (try eassumption; try econstructor).
-  - (* while true-false *) rewrite join_public_l in *. destruct l.
+  - (* while true-false *) destruct l.
     + rewrite (noninterferent_bexp Heq H8) in H.
       rewrite H in H4. discriminate H4.
     + eapply different_code with (c1:=<{c;while b do c end}>) (c2:=<{skip}>);
         repeat (try eassumption; try econstructor).
-  - (* while true-true *) rewrite join_public_l in *.
+  - (* while true-true *)
     eapply IHHeval1_2; try eassumption. eapply IHHeval1_1; try eassumption.
     eapply weaken_pc; try eassumption. apply can_flow_public.
 Qed.
