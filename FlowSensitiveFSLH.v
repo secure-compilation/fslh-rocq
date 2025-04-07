@@ -19,9 +19,9 @@ Set Default Goal Selector "!".
 Inductive acom : Type :=
   | ASkip
   | AAsgn (x : string) (e : aexp)
-  | ASeq (c1 c2 : acom)
+  | ASeq (c1 c2 : acom) (P : pub_vars) (PA : pub_arrs)
   | AIf (be : bexp) (lbe : label) (c1 c2 : acom)
-  | AWhile (be : bexp) (lbe : label) (c : acom)
+  | AWhile (be : bexp) (lbe : label) (c : acom) (P : pub_vars) (PA : pub_arrs)
   | AARead (x : string) (lx : label) (a : string) (i : aexp)  (li : label)
   | AAWrite (a : string) (i : aexp) (li : label) (e : aexp)
   | ABranch (lbl:label) (c:acom).
@@ -42,15 +42,15 @@ Notation "x := y"  :=
   (AAsgn x y)
     (in custom acom at level 0, x constr at level 0,
       y custom acom at level 85, no associativity) : com_scope.
-Notation "x ; y" :=
-  (ASeq x y)
+Notation "x ; '@(' P ',' PA ')' y" :=
+  (ASeq x y P PA)
     (in custom acom at level 90, right associativity) : com_scope.
 Notation "'if' x '@' lbe 'then' y 'else' z 'end'" :=
   (AIf x lbe y z)
     (in custom acom at level 89, x custom acom at level 99,
      y at level 99, z at level 99) : com_scope.
-Notation "'while' x '@' lbe 'do' y 'end'" :=
-  (AWhile x lbe y)
+Notation "'while' x '@' lbe 'do' y '@(' P ',' PA ')' 'end'" :=
+  (AWhile x lbe y P PA)
     (in custom acom at level 89, x custom acom at level 99, y at level 99) : com_scope.
 Notation "x '@@' lx '<-' a '[[' i '@' li ']]'"  :=
   (AARead x lx a i li)
@@ -68,10 +68,10 @@ Fixpoint erase (ac:acom) : com :=
   match ac with
   | <[ skip ]> => <{skip}>
   | <[ X := ae ]> => <{X := ae}>
-  | <[ ac1 ; ac2 ]> => <{ erase ac1; erase ac2 }>
+  | <[ ac1 ;@(P, PA) ac2 ]> => <{ erase ac1; erase ac2 }>
   | <[ if be@lbe then ac1 else ac2 end ]> => <{ if be then erase ac1
                                                       else erase ac2 end }>
-  | <[ while be @ lbe do ac1 end ]> => <{ while be do erase ac1 end }>
+  | <[ while be @ lbe do ac1 @(P,PA) end ]> => <{ while be do erase ac1 end }>
   | <[ X@@lx <- a[[i@li]] ]> => <{ X <- a[[i]] }>
   | <[ a[i@li] <- e ]> => <{ a[i] <- e }>
   | <[ branch l ac1 ]> => <{ erase ac1 }>
@@ -79,6 +79,75 @@ Fixpoint erase (ac:acom) : com :=
 
 Definition join_pub_vars (P1 P2: pub_vars) : pub_vars :=
   fun x => join (P1 x) (P2 x).
+
+Definition less_precise_vars (P1 P2:pub_vars) : Prop :=
+  forall x, can_flow (P2 x) (P1 x) = true.
+
+(* JB: probably no longer needed*)
+Fixpoint less_precise_acom (ac1 ac2 : acom) : Prop :=
+  match ac1, ac2 with
+  | <[ c11;@(_,_) c12 ]>, <[ c21;@(_,_)c22 ]> => less_precise_acom c11 c21 /\
+                                     less_precise_acom c12 c22
+  | <[ if be1@lbe1 then c11 else c12 end ]>,
+    <[ if be2@lbe2 then c21 else c22 end ]> => be1 = be2 /\ can_flow lbe2 lbe1 = true /\
+                                               less_precise_acom c11 c21 /\
+                                               less_precise_acom c12 c22
+  | <[ while be1@lbe1 do c1 @(_,_) end ]>,
+    <[ while be2@lbe2 do c2 @(_,_) end ]> => be1 = be2 /\ can_flow lbe2 lbe1 = true /\
+                                      less_precise_acom c1 c2
+  | <[ x1@@lx1 <- a1[[i1@li1]] ]>,
+    <[ x2@@lx2 <- a2[[i2@li2]] ]> => x1 = x2 /\ a1 = a2 /\ i1 = i2 /\
+                                     can_flow lx2 lx1 = true /\ can_flow li2 li1 = true
+  | <[ a1[i1@li1] <- e1 ]>,
+    <[ a2[i2@li2] <- e2 ]> => a1 = a2 /\ i1 = i2 /\ e1 = e2 /\ can_flow li2 li1 = true
+  | _, _ => ac1 = ac2
+  end.
+
+Definition less_precise (x1 x2 : acom * pub_vars * pub_arrs) : Prop :=
+  let '(ac1,P1,PA1) := x1 in
+  let '(ac2,P2,PA2) := x2 in
+  less_precise_acom ac1 ac2 /\ less_precise_vars P1 P2 /\ less_precise_vars PA1 PA2.
+
+Lemma pub_equiv_less_precise : forall (P P':pub_vars) {A:Type} (x1 x2:total_map A),
+  pub_equiv P x1 x2 ->
+  less_precise_vars P' P ->
+  pub_equiv P' x1 x2.
+Proof.
+  intros. intros x P'x. unfold less_precise_vars, can_flow in H0. specialize (H0 x). apply H.
+  now rewrite P'x, orb_false_r in H0.
+Qed.
+
+Lemma can_flow_trans : forall a b c, can_flow a b = true -> can_flow b c = true -> can_flow a c = true.
+Proof.
+  intros a b c H1 H2. destruct a, b, c; tauto.
+Qed.
+
+Lemma less_precise_vars_refl : forall P, less_precise_vars P P.
+Proof. intros P x. now destruct (P x). Qed.
+
+Lemma less_precise_acom_refl : forall ac, less_precise_acom ac ac.
+Proof. induction ac; repeat econstructor; try destruct lbe; try destruct li; try destruct lx; tauto. Qed.
+
+Lemma less_precise_vars_trans : forall P P' P'',
+  less_precise_vars P' P ->
+  less_precise_vars P'' P' ->
+  less_precise_vars P'' P.
+Proof.
+  intros P P' P'' H1 H2 x.
+  specialize (H1 x). specialize (H2 x).
+  eapply can_flow_trans; eassumption.
+Qed.
+
+Lemma less_precise_vars_join_l : forall P1 P2,
+  less_precise_vars (join_pub_vars P1 P2) P1.
+Proof.
+  intros P1 P2 x. unfold join_pub_vars. now destruct (P1 x).
+Qed.
+Lemma less_precise_vars_join_r : forall P1 P2,
+  less_precise_vars (join_pub_vars P1 P2) P2.
+Proof.
+  intros P1 P2 x. unfold join_pub_vars. now destruct (P1 x), (P2 x).
+Qed.
 
 Definition str_nodup := nodup string_dec.
 
@@ -126,7 +195,7 @@ Fixpoint static_tracking (c:com) (P:pub_vars) (PA:pub_arrs) (pc:label)
   | <{ x := ae }> => (<[x := ae]>, x !-> (join pc (label_of_aexp P ae)); P, PA)
   | <{ c1; c2 }> => let '(ac1, P1, PA1) := static_tracking c1 P PA pc in
                     let '(ac2, P2, PA2) := static_tracking c2 P1 PA1 pc in
-                     (<[ ac1; ac2 ]>, P2, PA2)
+                     (<[ ac1;@(P1, PA1) ac2 ]>, P2, PA2)
   | <{ if be then c1 else c2 end }> =>
       let lbe := label_of_bexp P be in
       let '(ac1, P1, PA1) := static_tracking c1 P PA (join pc lbe) in
@@ -139,7 +208,7 @@ Fixpoint static_tracking (c:com) (P:pub_vars) (PA:pub_arrs) (pc:label)
       let parrs := filter PA arrs in
       let max_iters := length vars + length arrs in
       let '(P', PA', lbe, ac1) := static_tracking_while (static_tracking c1) P PA pc max_iters be vars arrs pvars parrs in
-      (<[ while be@lbe do ac1 end ]>, P', PA')
+      (<[ while be@lbe do ac1 @(P', PA') end ]>, P', PA')
   | <{ X <- a[[i]] }> =>
       let li := label_of_aexp P i in
       let lx := join pc (join li (PA a)) in
@@ -150,41 +219,130 @@ Fixpoint static_tracking (c:com) (P:pub_vars) (PA:pub_arrs) (pc:label)
       (<[ a[i@li] <- e ]>, P, a !-> la; PA)
   end.
 
-Fixpoint well_labeled_acom ac P PA pc : option (pub_vars*pub_arrs) :=
-  match ac with
-  | <[ skip ]> => Some (P, PA)
-  | <[ x := ae ]> => Some (x !-> (join pc (label_of_aexp P ae)); P, PA)
-  | <[ c1; c2 ]> => match well_labeled_acom c1 P PA pc with
-                    | Some (P1, PA1) => well_labeled_acom c2 P1 PA1 pc
-                    | None => None
-                    end
-  | <[ if be@lbe then c1 else c2 end ]> =>
-      if can_flow (label_of_bexp P be) lbe then
-        match well_labeled_acom c1 P PA (join pc lbe), well_labeled_acom c2 P PA (join pc lbe) with
-          | Some (P1, PA1), Some (P2, PA2) => Some (join_pub_vars P1 P2, join_pub_vars PA1 PA2)
-          | _, _ => None
-          end
-      else None
-  | <[ while be@_ do c1 end ]> => None
-      (* let vars := assigned_vars (erase c1) in *)
-      (* let arrs := assigned_arrs (erase c1) in *)
-      (* let pvars := filter P vars in *)
-      (* let parrs := filter PA arrs in *)
-      (* let max_iters := length vars + length arrs in *)
-      (* let '(P', PA', lbe, ac1) := static_tracking_while (well_labeled_acom c1) P PA pc max_iters be vars arrs pvars parrs in *)
-      (* (<[ while be@lbe do ac1 end ]>, P', PA') *)
-  | <[ X@@lx <- a[[i@li]] ]> =>
-      if can_flow (label_of_aexp P i) li && can_flow (join pc (join li (PA a))) lx then
-        Some (X !-> lx; P, PA)
-      else None
-  | <[ a[i@li] <- e ]> =>
-      if can_flow (label_of_aexp P i) li then
-        let la := join (PA a) (join pc (join li (label_of_aexp P e))) in
-        Some (P, a !-> la; PA)
-      else None
-    (* We're not too sure about this case -- do we need special case for branch ...; c2? *)
-  | <[ branch l c ]> => well_labeled_acom c P PA pc
+Definition pc_of_acom pc c :=
+  match c with
+  | <[ branch pc' _ ]> => pc'
+  | _ => pc
   end.
+
+Fixpoint well_labeled_acom ac P PA pc P' PA' : Prop :=
+  match ac with 
+  | <[ skip ]> => less_precise_vars P' P /\ less_precise_vars PA' PA
+  | <[ x := ae ]> => less_precise_vars P' (x !->(join pc (label_of_aexp P ae)); P) /\ less_precise_vars PA' PA
+  | <[ ac1 ;@(Pi, PAi) ac2 ]> => well_labeled_acom ac1 P PA pc Pi PAi /\ well_labeled_acom ac2 Pi PAi (pc_of_acom pc ac1) P' PA'
+  | <[ if be@lbe then ac1 else ac2 end ]> => well_labeled_acom ac1 P PA (join pc lbe) P' PA' /\ well_labeled_acom ac2 P PA (join pc lbe) P' PA'
+  | <[ while be@lbe do ac1 @(Pi, PAi) end ]> => less_precise_vars Pi P /\ less_precise_vars PAi PA /\ well_labeled_acom ac1 Pi PAi (join pc lbe) Pi PAi /\ less_precise_vars P' Pi /\ less_precise_vars PA' PAi
+  | <[ X@@lx <-a[[i@li]] ]> => can_flow (label_of_aexp P i) li = true /\ can_flow pc lx = true /\ can_flow li lx = true /\ can_flow (PA a) lx = true /\ less_precise_vars P' (X !-> lx; P) /\ less_precise_vars PA' PA
+  | <[ a[i@li] <- e]> => can_flow (label_of_aexp P i) li = true /\ less_precise_vars P' P /\ less_precise_vars PA' (a !-> (join (PA a) (join pc (join li (label_of_aexp P e)))); PA)
+  | <[ branch l ac ]> => well_labeled_acom ac P PA pc P' PA'
+  end.
+
+Lemma static_tracking_no_branch : forall c P PA P' PA' pc ac lbl,
+  static_tracking c P PA pc = (<[branch lbl ac]>, P', PA') ->
+  False.
+Proof.
+  induction c; simpl; intros; invert H.
+  + destruct (static_tracking c1 P PA pc) as ((ac1&P1)&PA1), (static_tracking c2 P1 PA1 pc) as ((ac2&P2)&PA2).
+    invert H1.
+  + destruct (static_tracking c1 P PA (join pc (label_of_bexp P be))) as ((ac1&P1)&PA1), (static_tracking c2 P PA (join pc (label_of_bexp P be))) as ((ac2&P2)&PA2).
+    invert H1.
+  + destruct (static_tracking_while (static_tracking c) P PA pc
+         (length (assigned_vars c) + length (assigned_arrs c)) be
+         (assigned_vars c) (assigned_arrs c) (filter P (assigned_vars c)) (filter PA (assigned_arrs c))) as (((P1&PA1)&lbe)&ac1).
+    invert H1.
+Qed.
+
+Lemma well_labeled_weaken_post : forall ac P PA pc P' PA' P'' PA'',
+  well_labeled_acom ac P PA pc P' PA' ->
+  less_precise_vars P'' P' ->
+  less_precise_vars PA'' PA' ->
+  well_labeled_acom ac P PA pc P'' PA''.
+Proof.
+  induction ac; intros; simpl in *.
+  - destruct H. split; eapply less_precise_vars_trans; eassumption.
+  - destruct H. split; eapply less_precise_vars_trans; eassumption.
+  - destruct H. split. 1: assumption. eapply IHac2; eassumption.
+  - destruct H. split; [eapply IHac1 | eapply IHac2]; eassumption.
+  - destruct H as (? & ? & ? & ? & ?). repeat split; try assumption; eapply less_precise_vars_trans; eassumption.
+  - destruct H as (? & ? & ? & ? & ? & ?). repeat split; try assumption; eapply less_precise_vars_trans; eassumption.
+  - destruct H as (? & ? & ?). repeat split; try assumption; eapply less_precise_vars_trans; eassumption.
+  - eapply IHac; eassumption.
+Qed.
+
+Lemma static_tracking_well_labeled : forall c P PA pc ac P' PA',
+  static_tracking c P PA pc = (ac, P', PA') ->
+  well_labeled_acom ac P PA pc P' PA'.
+Proof.
+  induction c; intros.
+  - simpl in H. invert H. simpl. split; now apply less_precise_vars_refl.
+  - simpl in H. invert H. simpl. split; now apply less_precise_vars_refl.
+  - simpl in H. destruct (static_tracking c1 P PA pc) as ((ac1 & P1) & PA1) eqn: Heq1, (static_tracking c2 P1 PA1 pc) as ((ac2 & P2) & PA2) eqn: Heq2.
+    invert H. simpl.
+    assert (pc_of_acom pc ac1 = pc) as ->.
+    {
+      destruct ac1; try reflexivity.
+      exfalso. eapply static_tracking_no_branch; eassumption.
+    }
+    split; [now apply IHc1 | now apply IHc2].
+  - simpl in H. destruct (static_tracking c1 P PA (join pc (label_of_bexp P be))) as ((ac1 & P1) & PA1) eqn: Heq1, (static_tracking c2 P PA (join pc (label_of_bexp P be))) as ((ac2 & P2) & PA2) eqn: Heq2.
+    invert H. simpl.
+    apply IHc1 in Heq1. apply IHc2 in Heq2.
+    split; eapply well_labeled_weaken_post; try eassumption. 
+    + apply less_precise_vars_join_l.
+    + apply less_precise_vars_join_l.
+    + apply less_precise_vars_join_r.
+    + apply less_precise_vars_join_r.
+  - simpl in H.
+    destruct (static_tracking_while (static_tracking c) P PA pc (Datatypes.length (assigned_vars c) + Datatypes.length (assigned_arrs c)) be (assigned_vars c) (assigned_arrs c) (filter P (assigned_vars c)) (filter PA (assigned_arrs c))) as (((Pi & PAi) & lbe) & ac1) eqn: Heq. invert H. cbn.
+    repeat split. 4, 5: apply less_precise_vars_refl.
+    1-3: admit. (* TODO: correctness of fixpoint *)
+  - simpl in H. invert H. simpl. repeat split.
+    5,6: apply less_precise_vars_refl.
+    + now destruct (label_of_aexp P i).
+    + now destruct pc.
+    + now destruct pc, (label_of_aexp P i).
+    + now destruct pc, (label_of_aexp P i), (PA' a).
+  - simpl in H. invert H. simpl. repeat split.
+    2, 3: apply less_precise_vars_refl.
+    now destruct (label_of_aexp P' i).
+Admitted.
+    
+
+(*Fixpoint well_labeled_acom ac P PA pc : option (pub_vars*pub_arrs) :=*)
+  (*match ac with*)
+  (*| <[ skip ]> => Some (P, PA)*)
+  (*| <[ x := ae ]> => Some (x !-> (join pc (label_of_aexp P ae)); P, PA)*)
+  (*| <[ c1; c2 ]> => match well_labeled_acom c1 P PA pc with*)
+                    (*| Some (P1, PA1) => well_labeled_acom c2 P1 PA1 pc*)
+                    (*| None => None*)
+(*end*)
+(*| <[ if be@lbe then c1 else c2 end ]> =>*)
+      (*if can_flow (label_of_bexp P be) lbe then*)
+        (*match well_labeled_acom c1 P PA (join pc lbe), well_labeled_acom c2 P PA (join pc lbe) with*)
+          (*| Some (P1, PA1), Some (P2, PA2) => Some (join_pub_vars P1 P2, join_pub_vars PA1 PA2)*)
+          (*| _, _ => None*)
+          (*end*)
+      (*else None*)
+  (*| <[ while be@_ do c1 end ]> => None*)
+      (*[> let vars := assigned_vars (erase c1) in <]*)
+      (*[> let arrs := assigned_arrs (erase c1) in <]*)
+      (*[> let pvars := filter P vars in <]*)
+      (*[> let parrs := filter PA arrs in <]*)
+      (*[> let max_iters := length vars + length arrs in <]*)
+      (*[> let '(P', PA', lbe, ac1) := static_tracking_while (well_labeled_acom c1) P PA pc max_iters be vars arrs pvars parrs in <]*)
+      (*[> (<[ while be@lbe do ac1 end ]>, P', PA') <]*)
+  (*| <[ X@@lx <- a[[i@li]] ]> =>*)
+      (*if can_flow (label_of_aexp P i) li && can_flow (join pc (join li (PA a))) lx then*)
+        (*Some (X !-> lx; P, PA)*)
+      (*else None*)
+  (*| <[ a[i@li] <- e ]> =>*)
+      (*if can_flow (label_of_aexp P i) li then*)
+        (*let la := join (PA a) (join pc (join li (label_of_aexp P e))) in*)
+        (*Some (P, a !-> la; PA)*)
+      (*else None*)
+    (*[> We're not too sure about this case -- do we need special case for branch ...; c2? <]*)
+  (*| <[ branch l c ]> => well_labeled_acom c P PA pc*)
+  (*end.*)
 
 (* Fixpoint well_labeled_acom2 ac P PA pc : bool := *)
 (*   match ac with *)
@@ -237,12 +395,12 @@ Fixpoint flex_vslh_acom ac :=
   match ac with
   | <[ skip ]> => <{ skip }>
   | <[ X := ae ]> => <{ X := ae }>
-  | <[ ac1; ac2 ]> => <{ flex_vslh_acom ac1; flex_vslh_acom ac2 }>
+  | <[ ac1;@(_,_) ac2 ]> => <{ flex_vslh_acom ac1; flex_vslh_acom ac2 }>
   | <[ if be@lbe then ac1 else ac2 end ]> =>
       let be' := if lbe then be else <{ "b" = 0 && be }> in
       <{ if be' then "b" := be' ? "b" : 1; flex_vslh_acom ac1 else
                      "b" := be' ? 1 : "b"; flex_vslh_acom ac2 end }>
-  | <[ while be@lbe do ac end ]> =>
+  | <[ while be@lbe do ac@(_,_) end ]> =>
       let be' := if lbe then be else <{ "b" = 0 && be }> in
       <{ while be' do "b" := be' ? "b" : 1; flex_vslh_acom ac end; "b" := be' ? 1 : "b" }>
   | <[ X@@lx <- a[[i@li]] ]> =>
@@ -263,12 +421,6 @@ Inductive terminal : acom -> Prop :=
   | Terminal_Skip : terminal <[ skip ]>
   | Terminal_Branch : forall l c, terminal c -> terminal <[ branch l c ]>.
 
-Definition pc_of_acom pc c :=
-  match c with
-  | <[ branch pc' _ ]> => pc'
-  | _ => pc
-  end.
-
 Reserved Notation
   "'<[[' c , st , ast , b , pc , P , PA ']]>' '-->i_' ds '^^' os '<[[' ct , stt , astt , bt , pct , Pt , PAt ']]>'"
   (at level 40, c custom acom at level 99, ct custom acom at level 99,
@@ -280,13 +432,13 @@ Inductive ideal_eval_small_step :
   | ISM_Asgn : forall X ae n st ast b pc P PA,
       aeval st ae = n ->
       <[[X := ae, st, ast, b, pc, P, PA]]> -->i_[]^^[] <[[skip, X !-> n; st, ast, b, pc, X !-> (join pc (label_of_aexp P ae)); P, PA]]>
-  | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt c2 pc P PA pc' P' PA',
+  | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt c2 pc P PA pc' P' PA' Pi PAi,
       <[[c1, st, ast, b, pc, P, PA]]>  -->i_ds^^os <[[c1t, stt, astt, bt, pc', P', PA']]>  ->
-      <[[(c1;c2), st, ast, b, pc, P, PA]]>  -->i_ds^^os <[[(c1t;c2), stt, astt, bt, pc', P', PA']]>
+      <[[(c1;@(Pi,PAi)c2), st, ast, b, pc, P, PA]]>  -->i_ds^^os <[[(c1t;@(Pi,PAi) c2), stt, astt, bt, pc', P', PA']]>
   (** LD: Fixed? *)
-  | ISM_Seq_Skip : forall st ast b c1 c2 pc P PA,
+  | ISM_Seq_Skip : forall st ast b c1 c2 pc P PA Pi PAi,
       terminal c1 ->
-      <[[(c1;c2), st, ast, b, pc, P, PA]]>  -->i_[]^^[] <[[c2, st, ast, b, pc_of_acom pc c1, P, PA]]>
+      <[[(c1;@(Pi,PAi)c2), st, ast, b, pc, P, PA]]>  -->i_[]^^[] <[[c2, st, ast, b, pc_of_acom pc c1, P, PA]]>
   | ISM_If : forall be ct cf st ast b c' b' lbe pc P PA,
       b' = (lbe || negb b) && beval st be ->
       c' = (if b' then ct else cf) ->
@@ -295,9 +447,9 @@ Inductive ideal_eval_small_step :
       b' = (lbe || negb b) && beval st be ->
       c' = (if b' then cf else ct) ->
       <[[if be@lbe then ct else cf end, st, ast, b, pc, P, PA]]> -->i_[DForce]^^[OBranch b'] <[[branch pc c', st, ast, true, join pc lbe, P, PA]]>
-  | ISM_While : forall be c st ast b lbe c' pc P PA,
-      c' = <[ if be@lbe then c; while be@lbe do c end else skip end ]> ->
-      <[[while be@lbe do c end, st, ast, b, pc, P, PA]]> -->i_[]^^[] <[[c', st, ast, b, pc, P, PA]]>
+  | ISM_While : forall be c st ast b lbe c' pc P PA Pi PAi,
+      c' = <[ if be@lbe then c;@(Pi, PAi) while be@lbe do c@(Pi,PAi) end else skip end ]> ->
+      <[[while be@lbe do c@(Pi,PAi) end, st, ast, b, pc, P, PA]]> -->i_[]^^[] <[[c', st, ast, b, pc, P, PA]]>
   | ISM_ARead : forall X a ie st ast (b :bool) i li lX v pc P PA,
       (if (negb li) && b then 0 else (aeval st ie)) = i ->
       (if lX && li && b then 0 else nth i (ast a) 0) = v ->
@@ -386,23 +538,23 @@ Proof.
   + now apply IHmulti_ideal.
 Qed.
 
-Lemma multi_ideal_add_snd_com : forall c st ast ct stt astt ds os c2 b bt pc P PA pct Pt PAt,
+Lemma multi_ideal_add_snd_com : forall c st ast ct stt astt ds os c2 b bt pc P PA pct Pt PAt Pi PAi,
   <[[c, st, ast, b, pc, P, PA]]> -->i*_ds^^os <[[ct, stt, astt, bt, pct, Pt, PAt]]> ->
-  <[[c;c2, st, ast, b, pc, P, PA]]> -->i*_ds^^os <[[ct;c2, stt, astt, bt, pct, Pt, PAt]]>.
+  <[[c;@(Pi,PAi) c2, st, ast, b, pc, P, PA]]> -->i*_ds^^os <[[ct;@(Pi,PAi) c2, stt, astt, bt, pct, Pt, PAt]]>.
 Proof.
   intros. induction H; repeat econstructor; eauto.
 Qed.
 
-Lemma multi_ideal_seq : forall ac1 ac2 acm st ast b stm astm bm ds os pc P PA pcm Pm PAm,
-  <[[ac1; ac2, st, ast, b, pc, P, PA]]> -->i*_ds^^os <[[acm, stm, astm, bm, pcm, Pm, PAm]]> ->
+Lemma multi_ideal_seq : forall ac1 ac2 acm st ast b stm astm bm ds os pc P PA pcm Pm PAm Pi PAi,
+  <[[ac1;@(Pi, PAi) ac2, st, ast, b, pc, P, PA]]> -->i*_ds^^os <[[acm, stm, astm, bm, pcm, Pm, PAm]]> ->
   (exists st' ast' pc' P' PA' act b' ds1 ds2 os1 os2,
   terminal act /\ os = os1 ++ os2 /\ ds = ds1 ++ ds2 /\
   <[[ac1, st, ast, b, pc, P, PA]]> -->i*_ds1^^os1 <[[act, st', ast', b', pc', P', PA']]> /\
   <[[ac2, st', ast', b', pc_of_acom pc' act, P', PA']]> -->i*_ds2^^os2 <[[acm, stm, astm, bm, pcm, Pm, PAm]]>) \/
-  (exists ac', acm = <[ ac'; ac2 ]> /\
+  (exists ac', acm = <[ ac';@(Pi, PAi) ac2 ]> /\
    <[[ac1, st, ast, b, pc, P, PA]]> -->i*_ds^^os <[[ac', stm, astm, bm, pcm, Pm, PAm]]>).
 Proof.
-  intros. remember <[ ac1; ac2 ]> as ac. revert ac1 ac2 Heqac.
+  intros. remember <[ ac1;@(Pi, PAi) ac2 ]> as ac. revert ac1 ac2 Heqac.
   induction H; intros; subst.
   { right. repeat eexists. constructor. }
   invert H.
@@ -492,7 +644,7 @@ Proof.
   + now invert H0.
   + invert H0; [|now apply ideal_terminal_no_step in H].
     eapply IHideal_eval_small_step; eassumption.
-  + invert H0; [now apply ideal_terminal_no_step in H18|reflexivity].
+  + invert H0; [now apply ideal_terminal_no_step in H20|reflexivity].
   + now invert H1.
   + now invert H1.
   + now invert H0.
@@ -601,8 +753,8 @@ Lemma ideal_eval_small_step_silent_step_same_prog : forall c st1 st2 ast1 ast2 b
 Proof.
   induction c; intros; invert H; invert H0; try tauto.
   - erewrite IHc1 with (ct1 := c1t). 2, 3: eassumption. reflexivity.
-  - now eapply ideal_terminal_no_step in H18.
-  - now eapply ideal_terminal_no_step in H18.
+  - now eapply ideal_terminal_no_step in H20.
+  - now eapply ideal_terminal_no_step in H20.
   - erewrite IHc with (ct1 := c1t). 2, 3: eassumption. reflexivity.
 Qed.
 
@@ -624,10 +776,10 @@ Lemma ideal_eval_small_step_deterministic_labels: forall {c st1 st2 ast1 ast2 b 
   ct1 = ct2 /\ bt1 = bt2 /\ pct1 = pct2 /\ Pt1 = Pt2 /\ PAt1 = PAt2.
 Proof.
   induction c; intros; invert H0; invert H1; try tauto.
-  - eapply IHc1 in H18. 2: { cbn in H. eapply seq_same_obs_com_seq. eassumption. } 2: eassumption. now firstorder; subst.
-  - eapply ideal_terminal_no_step in H18. 1: easy.
+  - eapply IHc1 in H20. 2: { cbn in H. eapply seq_same_obs_com_seq. eassumption. } 2: eassumption. now firstorder; subst.
+  - eapply ideal_terminal_no_step in H21. 1: easy.
     eassumption.
-  - eapply ideal_terminal_no_step in H19. 1: easy.
+  - eapply ideal_terminal_no_step in H21. 1: easy.
     eassumption.
   - firstorder.
     cbn in H. now apply seq_same_obs_com_if in H as ->.
@@ -814,63 +966,21 @@ Fixpoint ideal_step_taints ac P PA pc (pcs : list label) : pub_vars * pub_arrs *
   end.
 *)
 
-Definition less_precise_vars (P1 P2:pub_vars) : Prop :=
-  forall x, can_flow (P2 x) (P1 x) = true.
-
-Fixpoint less_precise_acom (ac1 ac2 : acom) : Prop :=
-  match ac1, ac2 with
-  | <[ c11; c12 ]>, <[ c21;c22 ]> => less_precise_acom c11 c21 /\
-                                     less_precise_acom c12 c22
-  | <[ if be1@lbe1 then c11 else c12 end ]>,
-    <[ if be2@lbe2 then c21 else c22 end ]> => be1 = be2 /\ can_flow lbe2 lbe1 = true /\
-                                               less_precise_acom c11 c21 /\
-                                               less_precise_acom c12 c22
-  | <[ while be1@lbe1 do c1 end ]>,
-    <[ while be2@lbe2 do c2 end ]> => be1 = be2 /\ can_flow lbe2 lbe1 = true /\
-                                      less_precise_acom c1 c2
-  | <[ x1@@lx1 <- a1[[i1@li1]] ]>,
-    <[ x2@@lx2 <- a2[[i2@li2]] ]> => x1 = x2 /\ a1 = a2 /\ i1 = i2 /\
-                                     can_flow lx2 lx1 = true /\ can_flow li2 li1 = true
-  | <[ a1[i1@li1] <- e1 ]>,
-    <[ a2[i2@li2] <- e2 ]> => a1 = a2 /\ i1 = i2 /\ e1 = e2 /\ can_flow li2 li1 = true
-  | _, _ => ac1 = ac2
-  end.
-
-Definition less_precise (x1 x2 : acom * pub_vars * pub_arrs) : Prop :=
-  let '(ac1,P1,PA1) := x1 in
-  let '(ac2,P2,PA2) := x2 in
-  less_precise_acom ac1 ac2 /\ less_precise_vars P1 P2 /\ less_precise_vars PA1 PA2.
-
-Lemma pub_equiv_less_precise : forall (P P':pub_vars) {A:Type} (x1 x2:total_map A),
-  pub_equiv P x1 x2 ->
-  less_precise_vars P' P ->
-  pub_equiv P' x1 x2.
-Proof.
-  intros. intros x P'x. unfold less_precise_vars, can_flow in H0. specialize (H0 x). apply H.
-  now rewrite P'x, orb_false_r in H0.
-Qed.
-
-Lemma less_precise_vars_refl : forall P, less_precise_vars P P.
-Proof. intros P x. now destruct (P x). Qed.
-
-Lemma less_precise_acom_refl : forall ac, less_precise_acom ac ac.
-Proof. induction ac; repeat econstructor; try destruct lbe; try destruct li; try destruct lx; tauto. Qed.
-
 (* LD: Maybe could just be removed *)
 Inductive same_shape : acom -> acom -> Prop :=
   | Same_skip : same_shape <[skip]> <[skip]>
   | Same_asgn : forall x e, same_shape <[x:=e]> <[x:=e]>
-  | Same_seq : forall c1 c2 c1' c2',
+  | Same_seq : forall c1 c2 c1' c2' P PA P' PA',
                same_shape c1 c1' ->
                same_shape c2 c2' ->
-               same_shape <[c1; c2]> <[c1'; c2']>
+               same_shape <[c1;@(P, PA) c2]> <[c1';@(P', PA') c2']>
   | Same_if : forall be lbe lbe' c1 c2 c1' c2',
                same_shape c1 c1' ->
                same_shape c2 c2' ->
                same_shape <[if be@lbe then c1 else c2 end]> <[if be@lbe' then c1' else c2' end]>
-  | Same_while : forall be lbe lbe' c c',
+  | Same_while : forall be lbe lbe' c c' P PA P' PA',
                same_shape c c' ->
-               same_shape <[while be@lbe do c end]> <[while be@lbe' do c' end]>
+               same_shape <[while be@lbe do c@(P, PA) end]> <[while be@lbe' do c'@(P', PA') end]>
   | Same_aread : forall a x i lx lx' li li',
                same_shape <[x@@lx <- a[[i@li]] ]> <[x@@lx' <- a[[i@li']] ]>
   | Same_axrite : forall a i e li li',
@@ -1031,14 +1141,14 @@ Qed.
 
 Fixpoint acom_size (c :acom) :nat :=
   match c with
-  | <[ c1; c2 ]> => 1 + (acom_size c1) + (acom_size c2)
+  | <[ c1;@(_,_) c2 ]> => 1 + (acom_size c1) + (acom_size c2)
   (* For conditionals the maximum of both branches is tighter, but a
      looser bound based on blindly "counting all constructors"
      (commented here) works just as well, and is easier to explain on
      paper *)
   | <[ if _@_ then ct else cf end ]> => 1 + max (acom_size ct) (acom_size cf)
   (* | <{{ if be then ct else cf end }}> => 1 + (com_size ct) + (com_size cf) *)
-  | <[ while _@_ do cw end ]> => 1 + (acom_size cw)
+  | <[ while _@_ do cw@(_,_) end ]> => 1 + (acom_size cw)
   | <[ branch l c ]> => 1 + acom_size c
   | _  => 1
   end.
@@ -1162,7 +1272,7 @@ Proof.
         do 2 econstructor; [reflexivity|constructor; [now rewrite H0, Heq|reflexivity] |simpl; rewrite t_update_same; constructor]. }
         invert H3. invert H15; [inversion H14|]. apply multi_spec_seq in H4. destruct H4.
         ++ do 8 destruct H1. destruct H3, H4. remember (if lbe then be else <{{ "b" = 0 && be }}>) as be'.
-           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_vslh_acom c) end; "b" := be' ? 1 : "b" }}> with (flex_vslh_acom <[ while be@lbe do c end ]>) in H5
+           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_vslh_acom c) end; "b" := be' ? 1 : "b" }}> with (flex_vslh_acom <[ while be@lbe do c@(P0,PA0) end ]>) in H5
              by now simpl; rewrite Heqbe'.
            subst. simpl in H4. rewrite H0, t_update_same in H4. eapply H in H4; [|prog_size_auto|tauto|now invert Hunused|tauto].
            destruct H4, H1, H1, H1, H1, H1, H3; [tauto|]. destruct H4. subst. eapply multi_ideal_preserves_nonempty_arrs in H1 as Harrs'; [|tauto].
@@ -1192,7 +1302,7 @@ Proof.
         do 2 econstructor; [reflexivity|constructor; [now rewrite H0, Heq|reflexivity] |simpl; rewrite t_update_same; constructor]. }
         invert H3. invert H15; [inversion H14|]. apply multi_spec_seq in H4. destruct H4.
         ++ do 8 destruct H1. destruct H3, H4. remember (if lbe then be else <{{ "b" = 0 && be }}>) as be'.
-           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_vslh_acom c) end; "b" := be' ? 1 : "b" }}> with (flex_vslh_acom <[ while be@lbe do c end ]>) in H5
+           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_vslh_acom c) end; "b" := be' ? 1 : "b" }}> with (flex_vslh_acom <[ while be@lbe do c @(P0,PA0) end ]>) in H5
              by now simpl; rewrite Heqbe'.
            subst. simpl in H4. rewrite H0 in H4. eapply H in H4; [|prog_size_auto|tauto|now invert Hunused|tauto].
            destruct H4, H1, H1, H1, H1, H1, H3; [tauto|]. destruct H4. subst. eapply multi_ideal_preserves_nonempty_arrs in H1 as Harrs'; [|tauto].
@@ -1246,21 +1356,6 @@ Lemma flex_slh_acom_bcc : forall ac st ast c' st' ast' os ds (b b' : bool) pc P 
   <[[ac, st, ast, b, pc, P, PA]]> -->i*_ds^^os <[[ac', "b" !-> st "b"; st'', ast', b', pc', P', PA']]>.
 Proof. intros. eapply flex_slh_acom_bcc_generalized in H2; [|tauto..]. destruct H2 as (st''&ac'&?&?&?&?&?). now eauto 20. Qed.
 
-Lemma static_tracking_no_branch : forall c P PA P' PA' pc ac lbl,
-  static_tracking c P PA pc = (<[branch lbl ac]>, P', PA') ->
-  False.
-Proof.
-  induction c; simpl; intros; invert H.
-  + destruct (static_tracking c1 P PA pc) as ((ac1&P1)&PA1), (static_tracking c2 P1 PA1 pc) as ((ac2&P2)&PA2).
-    invert H1.
-  + destruct (static_tracking c1 P PA (join pc (label_of_bexp P be))) as ((ac1&P1)&PA1), (static_tracking c2 P PA (join pc (label_of_bexp P be))) as ((ac2&P2)&PA2).
-    invert H1.
-  + destruct (static_tracking_while (static_tracking c) P PA pc
-         (length (assigned_vars c) + length (assigned_arrs c)) be
-         (assigned_vars c) (assigned_arrs c) (filter P (assigned_vars c)) (filter PA (assigned_arrs c))) as (((P1&PA1)&lbe)&ac1).
-    invert H1.
-Qed.
-
 (* LD: This has to be rephrased *)
 Lemma ideal_misspeculated_unwinding_one_step : forall P PA P' PA' pc ac c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds
     pct1 pct2 Pt1 Pt2 PAt1 PAt2,
@@ -1308,7 +1403,7 @@ Proof.
 *)
 Admitted.
 
-Lemma fs_flex_vsls_correct_small_step : forall P PA c c' st ast st' ast' os,
+Lemma fs_flex_vslh_correct_small_step : forall P PA c c' st ast st' ast' os,
   st "b" = 0 ->
   unused "b" c ->
   <(( c, st, ast ))> -->^ os <((c', st', ast'))> ->
@@ -1482,10 +1577,6 @@ Proof.
         eapply multi_ideal_trans; [eassumption|constructor].
     }
     apply ideal_eval_small_step_no_spec in H4 as Heq1. destruct Heq1; [|discriminate]. invert H15.
-    (*assert (x =  x0) as <-.*)
-    (*{*)
-      (*eapply multi_ideal_trans in H4, H7; [|eassumption..]. eapply multi_ideal_combined_executions in H4, H7. [|eassumption..].*)
-    (*}*)
     eapply multi_ideal_trans in H4, H7. 2, 3: eassumption. eapply multi_ideal_combined_executions in H4, H7; [|eassumption..].
     assert (x = x0) as <-.
     {
