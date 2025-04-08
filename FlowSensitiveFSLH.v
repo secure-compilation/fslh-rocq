@@ -121,6 +121,10 @@ Lemma can_flow_trans : forall a b c, can_flow a b = true -> can_flow b c = true 
 Proof.
   intros a b c H1 H2. destruct a, b, c; tauto.
 Qed.
+Lemma can_flow_refl : forall a, can_flow a a = true.
+Proof.
+  now destruct a.
+Qed.
 
 Lemma less_precise_vars_refl : forall P, less_precise_vars P P.
 Proof. intros P x. now destruct (P x). Qed.
@@ -219,19 +223,51 @@ Fixpoint static_tracking (c:com) (P:pub_vars) (PA:pub_arrs) (pc:label)
       (<[ a[i@li] <- e ]>, P, a !-> la; PA)
   end.
 
-Definition pc_of_acom pc c :=
+Lemma static_tracking_while_invariant : forall ac P' PA' pc' f P PA pc i be vars arrs pvars parrs (R : acom -> Prop),
+  (forall ac' P PA P1 PA1 pc, f P PA pc = (ac', P1, PA1) -> R ac') ->
+  static_tracking_while f P PA pc i be vars arrs pvars parrs = (P', PA', pc', ac) ->
+  R ac.
+Proof.
+  intros until i. revert f P PA pc P' PA' pc'. induction i; simpl; intros.
+  + destruct (f P PA (join pc (label_of_bexp P be))) as ((ac1&P1)&PA1) eqn:Heq1.
+    eapply H. rewrite Heq1.
+    destruct (list_eqb pvars (filter (join_pub_vars P P1) vars) && list_eqb parrs (filter (join_pub_vars PA PA1) arrs)); now invert H0.
+  + destruct (f P PA (join pc (label_of_bexp P be))) as ((ac1&P1)&PA1) eqn:Heq.
+    destruct (list_eqb pvars (filter (join_pub_vars P P1) vars) && list_eqb parrs (filter (join_pub_vars PA PA1) arrs)).
+    - invert H0. eapply H, Heq.
+    - eapply IHi; eassumption.
+Qed.
+
+Fixpoint pc_of_acom pc c :=
   match c with
   | <[ branch pc' _ ]> => pc'
+  | <[ c1;@(_,_) c2 ]> => pc_of_acom (pc_of_acom pc c1) c2
   | _ => pc
   end.
+
+Fixpoint branch_free ac :=
+  match ac with 
+  | <[ skip ]> | <[ _ := _ ]> | <[ _@@_ <-_[[_@_]] ]> | <[_[_@_] <- _]> => True
+  | <[ ac1;@(_,_) ac2]> => branch_free ac1 /\ branch_free ac2
+  | <[ if _@_ then ac1 else ac2 end ]> => branch_free ac1 /\ branch_free ac2
+  | <[ while _@_ do ac1@(_,_) end ]> => branch_free ac1
+  | <[ branch _ _ ]> => False
+end.
+
+Lemma branch_free_pc_of_acom: 
+  forall ac pc, branch_free ac -> pc_of_acom pc ac = pc.
+Proof.
+  induction ac; simpl; try tauto.
+  intros pc [H1 H2]. now rewrite IHac1, IHac2.
+Qed.
 
 Fixpoint well_labeled_acom ac P PA pc P' PA' : Prop :=
   match ac with 
   | <[ skip ]> => less_precise_vars P' P /\ less_precise_vars PA' PA
   | <[ x := ae ]> => less_precise_vars P' (x !->(join pc (label_of_aexp P ae)); P) /\ less_precise_vars PA' PA
-  | <[ ac1 ;@(Pi, PAi) ac2 ]> => well_labeled_acom ac1 P PA pc Pi PAi /\ well_labeled_acom ac2 Pi PAi (pc_of_acom pc ac1) P' PA'
-  | <[ if be@lbe then ac1 else ac2 end ]> => well_labeled_acom ac1 P PA (join pc lbe) P' PA' /\ well_labeled_acom ac2 P PA (join pc lbe) P' PA'
-  | <[ while be@lbe do ac1 @(Pi, PAi) end ]> => less_precise_vars Pi P /\ less_precise_vars PAi PA /\ well_labeled_acom ac1 Pi PAi (join pc lbe) Pi PAi /\ less_precise_vars P' Pi /\ less_precise_vars PA' PAi
+  | <[ ac1 ;@(Pi, PAi) ac2 ]> => branch_free ac2 /\ well_labeled_acom ac1 P PA pc Pi PAi /\ well_labeled_acom ac2 Pi PAi (pc_of_acom pc ac1) P' PA'
+  | <[ if be@lbe then ac1 else ac2 end ]> => can_flow (label_of_bexp P be) lbe = true /\ branch_free ac1 /\ branch_free ac2 /\ well_labeled_acom ac1 P PA (join pc lbe) P' PA' /\ well_labeled_acom ac2 P PA (join pc lbe) P' PA'
+  | <[ while be@lbe do ac1 @(Pi, PAi) end ]> => can_flow (label_of_bexp Pi be) lbe = true /\ branch_free ac1 /\ less_precise_vars Pi P /\ less_precise_vars PAi PA /\ well_labeled_acom ac1 Pi PAi (join pc lbe) Pi PAi /\ less_precise_vars P' Pi /\ less_precise_vars PA' PAi
   | <[ X@@lx <-a[[i@li]] ]> => can_flow (label_of_aexp P i) li = true /\ can_flow pc lx = true /\ can_flow li lx = true /\ can_flow (PA a) lx = true /\ less_precise_vars P' (X !-> lx; P) /\ less_precise_vars PA' PA
   | <[ a[i@li] <- e]> => can_flow (label_of_aexp P i) li = true /\ less_precise_vars P' P /\ less_precise_vars PA' (a !-> (join (PA a) (join pc (join li (label_of_aexp P e)))); PA)
   | <[ branch l ac ]> => well_labeled_acom ac P PA pc P' PA'
@@ -252,6 +288,40 @@ Proof.
     invert H1.
 Qed.
 
+Lemma static_tracking_branch_free : forall c P PA P' PA' pc ac,
+  static_tracking c P PA pc = (ac, P', PA') -> branch_free ac.
+Proof.
+  induction c; simpl; intros; invert H; try easy.
+  - destruct (static_tracking c1 P PA pc) as ((ac1 & P1) & PA1) eqn: Heq1, (static_tracking c2 P1 PA1 pc) as ((ac2 & P2) & PA2) eqn: Heq2. invert H1.
+    simpl. split; [eapply IHc1 | eapply IHc2]; eassumption.
+  - destruct (static_tracking c1 P PA (join pc (label_of_bexp P be))) as ((ac1 & P1) & PA1) eqn: Heq1, (static_tracking c2 P PA (join pc (label_of_bexp P be))) as ((ac2 & P2) & PA2) eqn: Heq2. invert H1.
+    simpl. split; [eapply IHc1 | eapply IHc2]; eassumption.
+  - destruct (static_tracking_while (static_tracking c) P PA pc (Datatypes.length (assigned_vars c) + Datatypes.length (assigned_arrs c)) be (assigned_vars c) (assigned_arrs c)) as (((Pi & PAi) & lbe) & ac1) eqn: Heq.
+    eapply static_tracking_while_invariant in Heq. 2: { intros. apply (IHc P0 PA0 P1 PA1 pc0 ac' H). }
+    invert H1. exact Heq.
+Qed.
+
+Lemma label_of_aexp_less_precise : 
+  forall e P P', less_precise_vars P P' ->
+  can_flow (label_of_aexp P' e) (label_of_aexp P e) = true.
+Proof.
+  induction e; intros.
+  - reflexivity.
+  - apply H.
+  - cbn. specialize (IHe1 P P' H). specialize (IHe2 P P' H).
+    now destruct (label_of_aexp P' e1), (label_of_aexp P e1), (label_of_aexp P' e2), (label_of_aexp P e2).
+  - cbn. specialize (IHe1 P P' H). specialize (IHe2 P P' H).
+    now destruct (label_of_aexp P' e1), (label_of_aexp P e1), (label_of_aexp P' e2), (label_of_aexp P e2).
+  - cbn. specialize (IHe1 P P' H). specialize (IHe2 P P' H).
+    now destruct (label_of_aexp P' e1), (label_of_aexp P e1), (label_of_aexp P' e2), (label_of_aexp P e2).
+  - cbn. admit. (* mutually inductive with bexp *)
+Admitted.
+
+Lemma label_of_bexp_less_precise : 
+  forall e P P', less_precise_vars P P' ->
+  can_flow (label_of_bexp P' e) (label_of_bexp P e) = true.
+Admitted.
+
 Lemma well_labeled_weaken_post : forall ac P PA pc P' PA' P'' PA'',
   well_labeled_acom ac P PA pc P' PA' ->
   less_precise_vars P'' P' ->
@@ -261,11 +331,48 @@ Proof.
   induction ac; intros; simpl in *.
   - destruct H. split; eapply less_precise_vars_trans; eassumption.
   - destruct H. split; eapply less_precise_vars_trans; eassumption.
-  - destruct H. split. 1: assumption. eapply IHac2; eassumption.
-  - destruct H. split; [eapply IHac1 | eapply IHac2]; eassumption.
-  - destruct H as (? & ? & ? & ? & ?). repeat split; try assumption; eapply less_precise_vars_trans; eassumption.
+  - destruct H as (? & ? & ?). repeat split. 1, 2: assumption. eapply IHac2; eassumption.
+  - destruct H as (? & ? & ? & ? & ?). repeat split; [assumption.. | eapply IHac1 | eapply IHac2]; eassumption.
+  - destruct H as (? & ? & ? & ? & ? & ? & ?). repeat split; try assumption; eapply less_precise_vars_trans; eassumption.
   - destruct H as (? & ? & ? & ? & ? & ?). repeat split; try assumption; eapply less_precise_vars_trans; eassumption.
   - destruct H as (? & ? & ?). repeat split; try assumption; eapply less_precise_vars_trans; eassumption.
+  - eapply IHac; eassumption.
+Qed.
+
+Lemma well_labeled_strengthen_pre : forall ac P PA pc P' PA' P'' PA'',
+  well_labeled_acom ac P PA pc P' PA' ->
+  less_precise_vars P P'' ->
+  less_precise_vars PA PA'' ->
+  well_labeled_acom ac P'' PA'' pc P' PA'.
+Proof.
+  induction ac; simpl; intros.
+  - destruct H. split; eapply less_precise_vars_trans; eassumption.
+  - destruct H. split; [|eapply less_precise_vars_trans; eassumption].
+    intros y. specialize (H y). unfold t_update in *. destruct (x =? y).
+    + apply (label_of_aexp_less_precise e) in H0. now destruct pc, (P' y), (label_of_aexp P e), (label_of_aexp P'' e).
+    + specialize (H0 y). eapply can_flow_trans; eassumption.
+  - destruct H as (? & ? & ?).
+    repeat split; try assumption. eapply IHac1; eassumption.
+  - destruct H as (? & ? & ? & ? & ?).
+    repeat split; try assumption. 1: eapply can_flow_trans; [now apply label_of_bexp_less_precise | eassumption].
+    1: eapply IHac1; eassumption.
+    eapply IHac2; eassumption.
+  - repeat split; try apply H; eapply less_precise_vars_trans; now try apply H.
+  - repeat split; try apply H.
+    + apply (label_of_aexp_less_precise i) in H0. eapply can_flow_trans; now try apply H.
+    + apply (label_of_aexp_less_precise a) in H1. eapply can_flow_trans; now try apply H.
+    + destruct H as (?&?&?&?&?&?). intros y. specialize (H5 y).
+      unfold t_update in *. destruct (x =? y).
+      * assumption.
+      * eapply can_flow_trans; [apply H0 | apply H5].
+    + eapply less_precise_vars_trans; now try apply H.
+  - repeat split.
+    + apply (label_of_aexp_less_precise i) in H0. eapply can_flow_trans; now try apply H.
+    + eapply less_precise_vars_trans; now try apply H.
+    + destruct H as (?&?&?). intros b. specialize (H3 b). apply (label_of_aexp_less_precise e) in H0 as H0'. specialize (H1 a) as H1'.
+      unfold t_update in *. destruct (a =? b).
+      * destruct (PA a), (PA'' a), pc, li, (label_of_aexp P e), (label_of_aexp P'' e); try easy.
+      * eapply can_flow_trans. 2: eassumption. apply H1.
   - eapply IHac; eassumption.
 Qed.
 
@@ -280,22 +387,26 @@ Proof.
     invert H. simpl.
     assert (pc_of_acom pc ac1 = pc) as ->.
     {
-      destruct ac1; try reflexivity.
-      exfalso. eapply static_tracking_no_branch; eassumption.
+      apply static_tracking_branch_free in Heq1. now apply branch_free_pc_of_acom.
     }
+    split. 1: eapply static_tracking_branch_free; eassumption.
     split; [now apply IHc1 | now apply IHc2].
   - simpl in H. destruct (static_tracking c1 P PA (join pc (label_of_bexp P be))) as ((ac1 & P1) & PA1) eqn: Heq1, (static_tracking c2 P PA (join pc (label_of_bexp P be))) as ((ac2 & P2) & PA2) eqn: Heq2.
     invert H. simpl.
+    split. 1: apply can_flow_refl.
+    split. 1: eapply static_tracking_branch_free; eassumption.
+    split. 1: eapply static_tracking_branch_free; eassumption.
     apply IHc1 in Heq1. apply IHc2 in Heq2.
     split; eapply well_labeled_weaken_post; try eassumption. 
     + apply less_precise_vars_join_l.
     + apply less_precise_vars_join_l.
     + apply less_precise_vars_join_r.
     + apply less_precise_vars_join_r.
-  - simpl in H.
-    destruct (static_tracking_while (static_tracking c) P PA pc (Datatypes.length (assigned_vars c) + Datatypes.length (assigned_arrs c)) be (assigned_vars c) (assigned_arrs c) (filter P (assigned_vars c)) (filter PA (assigned_arrs c))) as (((Pi & PAi) & lbe) & ac1) eqn: Heq. invert H. cbn.
-    repeat split. 4, 5: apply less_precise_vars_refl.
-    1-3: admit. (* TODO: correctness of fixpoint *)
+  - apply static_tracking_branch_free in H as H'. simpl in H.
+    destruct (static_tracking_while (static_tracking c) P PA pc (Datatypes.length (assigned_vars c) + Datatypes.length (assigned_arrs c)) be (assigned_vars c) (assigned_arrs c) (filter P (assigned_vars c)) (filter PA (assigned_arrs c))) as (((Pi & PAi) & lbe) & ac1) eqn: Heq.
+    invert H. cbn.
+    repeat split. 2: exact H'. 5, 6: apply less_precise_vars_refl.
+    1-4: admit. (* TODO: correctness of fixpoint *)
   - simpl in H. invert H. simpl. repeat split.
     5,6: apply less_precise_vars_refl.
     + now destruct (label_of_aexp P i).
@@ -359,21 +470,6 @@ Admitted.
 (*     (* We're not too sure about this case -- do we need special case for branch ...; c2? *) *)
 (*   | <[ branch l c ]> => well_labeled_acom2 c P PA pc *)
 (*   end. *)
-
-Lemma static_tracking_while_invariant : forall ac P' PA' pc' f P PA pc i be vars arrs pvars parrs (R : acom -> Prop),
-  (forall ac' P PA P1 PA1 pc, f P PA pc = (ac', P1, PA1) -> R ac') ->
-  static_tracking_while f P PA pc i be vars arrs pvars parrs = (P', PA', pc', ac) ->
-  R ac.
-Proof.
-  intros until i. revert f P PA pc P' PA' pc'. induction i; simpl; intros.
-  + destruct (f P PA (join pc (label_of_bexp P be))) as ((ac1&P1)&PA1) eqn:Heq1.
-    eapply H. rewrite Heq1.
-    destruct (list_eqb pvars (filter (join_pub_vars P P1) vars) && list_eqb parrs (filter (join_pub_vars PA PA1) arrs)); now invert H0.
-  + destruct (f P PA (join pc (label_of_bexp P be))) as ((ac1&P1)&PA1) eqn:Heq.
-    destruct (list_eqb pvars (filter (join_pub_vars P P1) vars) && list_eqb parrs (filter (join_pub_vars PA PA1) arrs)).
-    - invert H0. eapply H, Heq.
-    - eapply IHi; eassumption.
-Qed.
 
 Lemma erase_static_tracking : forall c ac P PA P' PA' pc,
   static_tracking c P PA pc = (ac, P', PA') ->
@@ -989,97 +1085,110 @@ Inductive same_shape : acom -> acom -> Prop :=
                same_shape c c' ->
                same_shape <[branch l c]> <[branch l c']>.
 
-(*Lemma static_tracking_acom_same_shape : forall c c' P PA Pt PAt pc,*)
-  (*static_tracking_acom c P PA pc = (c', Pt, PAt) ->*)
-  (*same_shape c c'.*)
-(*Proof.*)
-  (*induction c; simpl; intros; try now (invert H; constructor).*)
-  (*+ destruct (static_tracking_acom c1 P PA pc) as ((?&P')&PA') eqn:Heq.*)
-    (*destruct (static_tracking_acom c2 P' PA' pc) as ((?&?)&?) eqn:Heq'.*)
-    (*apply IHc1 in Heq. apply IHc2 in Heq'.*)
-    (*invert H. now constructor.*)
-  (*+ destruct (static_tracking_acom c1 P PA (join pc (label_of_bexp P be))) as ((?&?)&?) eqn:Heq.*)
-    (*destruct (static_tracking_acom c2 P PA (join pc (label_of_bexp P be))) as ((?&?)&?) eqn:Heq'.*)
-    (*apply IHc1 in Heq. apply IHc2 in Heq'.*)
-    (*invert H. now constructor.*)
-  (*+ destruct (static_tracking_while (static_tracking_acom c) P PA pc*)
-        (*(length (assigned_vars (erase c)) + length (assigned_arrs (erase c))) be (assigned_vars (erase c))*)
-        (*(assigned_arrs (erase c)) (filter P (assigned_vars (erase c))) (filter PA (assigned_arrs (erase c)))) as (((?&?)&?)&?) eqn:Heq.*)
-    (*eapply static_tracking_while_invariant in Heq; [|apply IHc]. invert H.*)
-    (*now constructor.*)
-  (*+ destruct (static_tracking_acom c P PA pc) as ((?&?)&?) eqn:Heq.*)
-    (*apply IHc in Heq. invert H. now constructor.*)
-(*Qed.*)
-(**)
-(*Lemma same_shape_static_tracking_acom : forall c c' P PA pc,*)
-  (*same_shape c c' ->*)
-  (*static_tracking_acom c P PA pc = static_tracking_acom c' P PA pc.*)
-(*Proof. intros. revert P PA pc. induction H; simpl; intros; try tauto.*)
-  (*- rewrite IHsame_shape1. destruct (static_tracking_acom c1' P PA pc). destruct p; f_equal.*)
-    (*rewrite IHsame_shape2. reflexivity.*)
-  (*- rewrite IHsame_shape1. destruct (static_tracking_acom c1' P PA (join pc (label_of_bexp P be))). destruct p; f_equal.*)
-    (*rewrite IHsame_shape2. reflexivity.*)
-  (*- *)
-    (*admit. [> JB: need to 'lift' IHsame_shape to static_tracking_while <]*)
-  (*- now rewrite IHsame_shape.*)
-(*Admitted.*)
+Lemma ideal_eval_pc_of_acom:
+  forall ac st ast b pc P PA ds os ac' st' ast' b' pc' P' PA' Pt PAt,
+  well_labeled_acom ac P PA pc Pt PAt ->
+  <[[ ac, st, ast, b, pc, P, PA]]> -->i_ds^^os <[[ ac', st', ast', b', pc', P', PA']]> ->
+  pc_of_acom pc ac = pc_of_acom pc' ac'.
+Proof.
+  induction ac; intros; invert H0; try easy.
+  - simpl. f_equal. eapply IHac1. 2: eassumption.
+    simpl in H. apply H.
+Qed.
 
-(*Lemma ideal_eval_static_tracking_step :*)
-  (*forall ac ds c P PA Pt PAt pc' P' PA' pc st ast b act stt astt bt os,*)
-  (*static_tracking_acom c P PA pc = (ac, Pt, PAt) ->*)
-  (*<[[ ac, st, ast, b, pc, P, PA ]]> -->i_ds^^os <[[ act, stt, astt, bt, pc', P', PA' ]]> ->*)
-  (*less_precise (act, Pt, PAt) (static_tracking_acom act P' PA' pc').*)
-(*Proof.*)
-  (*intros. apply static_tracking_acom_same_shape in H as H'. revert c Pt PAt H H'.*)
-  (*induction H0; simpl; intros; invert H'; simpl in *.*)
-  (*+ invert H0. split; [tauto|]. split; apply less_precise_vars_refl.*)
-  (*+ destruct (static_tracking_acom c0 P PA pc) as ((c1'&P1)&PA1) eqn:Heq1.*)
-    (*destruct (static_tracking_acom c3 P1 PA1 pc) as ((c2'&P2)&PA2) eqn:Heq2.*)
-    (*invert H. apply IHideal_eval_small_step in Heq1 as H'; [|tauto].*)
-    (*destruct (static_tracking_acom c1t P' PA' pc') as ((act&P1t)&PA1t) eqn:Heq1t.*)
-    (*destruct (static_tracking_acom c2 P1t PA1t pc') as ((act'&P2t)&PA2t) eqn:Heq2t.*)
-    (*admit.*)
-  (*+ destruct (static_tracking_acom c0 P PA pc) as ((ac1&P1)&PA1) eqn:Heq1.*)
-    (*destruct (static_tracking_acom c3 P1 PA1 pc) as ((ac2&P2)&PA2) eqn:Heq2.*)
-    (*invert H0. revert c0 Heq1 H4.*)
-    (*induction H; simpl; intros.*)
-    (*{ invert H4. invert Heq1. eapply same_shape_static_tracking_acom in H5.*)
-      (*rewrite H5 in Heq2. rewrite Heq2. split; [apply less_precise_acom_refl|]. split; apply less_precise_vars_refl. }*)
-    (*invert H4.*)
-    (*simpl in Heq1. destruct (static_tracking_acom c1 P PA pc) as ((ac&P')&PA') eqn:Heq.*)
-    (*invert Heq1. specialize (IHterminal c1 Heq H2). [> JB: applying the induction hypothesis does not work, because the labels don't actually match. Perhaps we could do some kind of monotonicity for branch labels? <]*)
-    (*admit.*)
-  (*+ [> if-then-else <]*)
-    (*admit.*)
-  (*+ [> if-then-else <]*)
-    (*admit.*)
-  (*+ [> while <]*)
-    (*admit.*)
-  (*+ inversion H2. subst. split. 1: reflexivity. split; apply less_precise_vars_refl.*)
-  (*+ inversion H3. subst. split. 1: reflexivity. split; apply less_precise_vars_refl.*)
-  (*+ inversion H4. subst. split. 1: reflexivity. split; apply less_precise_vars_refl.*)
-  (*+ inversion H4. subst. split. 1: reflexivity. split. 1: apply less_precise_vars_refl.*)
-    (*intro x.*)
-    (*admit.*)
-  (*+ [> underneath branch <]*)
-    (*destruct (static_tracking_acom c1t Pt PAt pct) as ((ac2 & P2) & PA2).*)
-    (*destruct (static_tracking_acom c0 P PA pc) as ((c0' & P') & PA') eqn: Heq.*)
-    (*inversion H. subst.*)
-    (*specialize (IHideal_eval_small_step _ _ _ Heq H3).*)
-    (*[> JB: I believe the less_precise_acom definition is wrong in the branch case. <]*)
-    (*admit.*)
-(*Admitted.*)
+Lemma well_labeled_terminal_less_precise : 
+  forall ac P PA pc P' PA',
+  well_labeled_acom ac P PA pc P' PA' ->
+  terminal ac ->
+  less_precise_vars P' P /\ less_precise_vars PA' PA.
+Proof.
+  induction ac; simpl; intros; invert H0; [assumption | eapply IHac; eassumption ].
+Qed.
+
+Lemma ideal_eval_preserves_well_annotated : 
+  forall ac ds P PA Pt PAt pc' P' PA' pc st ast b act stt astt bt os, 
+  well_labeled_acom ac P PA pc Pt PAt ->
+  <[[ ac, st , ast, b, pc, P, PA ]]> -->i_ds^^os <[[ act, stt, astt, bt, pc', P', PA' ]]> ->
+  well_labeled_acom act P' PA' pc' Pt PAt.
+Proof.
+  induction ac; intros.
+  - inversion H0.
+  - invert H0. exact H.
+  - invert H0.
+    + simpl in H |-*. destruct H. split. 1: assumption. split.
+      * eapply IHac1; try eassumption. apply H0.
+      * eapply ideal_eval_pc_of_acom in H20 as <-. 1, 2: apply H0.
+    + simpl in H. 
+      eapply well_labeled_terminal_less_precise in H20; [|apply H].
+      eapply well_labeled_strengthen_pre; try apply H; apply H20.
+  - invert H0.
+    + simpl in H |-*. destruct ((lbe || negb bt) && beval stt be); tauto.
+    + simpl in H |-*. destruct ((lbe || negb b) && beval stt be); tauto.
+  - invert H0. simpl in H |-*. destruct H as (?&?&?&?&?&?&?). repeat split; try assumption.
+    + eapply can_flow_trans;[|eassumption]. now apply label_of_bexp_less_precise. 
+    + eapply well_labeled_strengthen_pre; eassumption.
+    + apply less_precise_vars_refl.
+    + apply less_precise_vars_refl.
+    + eapply branch_free_pc_of_acom in H0 as ->. now destruct pc', lbe.
+    + eapply less_precise_vars_trans; eassumption.
+    + eapply less_precise_vars_trans; eassumption.
+  - invert H0; simpl in *; tauto.
+  - invert H0; simpl in *; tauto.
+  - invert H0. simpl in *. eapply IHac; eassumption.
+Qed.
+
+Lemma multi_ideal_preserves_well_labeled : 
+  forall ac ds P PA Pt PAt pc' P' PA' pc st ast b act stt astt bt os, 
+  well_labeled_acom ac P PA pc Pt PAt ->
+  <[[ ac, st , ast, b, pc, P, PA ]]> -->i*_ds^^os <[[ act, stt, astt, bt, pc', P', PA' ]]> ->
+  well_labeled_acom act P' PA' pc' Pt PAt.
+Proof.
+  intros. induction H0.
+  - assumption.
+  - apply IHmulti_ideal.
+    eapply ideal_eval_preserves_well_annotated; eassumption.
+Qed.
 
 Lemma ideal_eval_noninterferent :
-  forall ac ds c P PA P' PA' pc st1 ast1 st2 ast2 b act1 act2 stt1 stt2 astt1 astt2 bt1 bt2 os pct1 pct2 Pt1 Pt2 PAt1 PAt2,
-  static_tracking c P PA pc = (ac, P', PA') ->
+  forall ac ds P PA P' PA' pc st1 ast1 st2 ast2 b act1 act2 stt1 stt2 astt1 astt2 bt1 bt2 os pct1 pct2 Pt1 Pt2 PAt1 PAt2,
+  well_labeled_acom ac P PA pc P' PA' ->
   pub_equiv P st1 st2 ->
   (b = false -> pub_equiv PA ast1 ast2) ->
   <[[ ac, st1, ast1, b, pc, P, PA ]]> -->i_ds^^os <[[ act1, stt1, astt1, bt1, pct1, Pt1, PAt1 ]]> ->
   <[[ ac, st2, ast2, b, pc, P, PA ]]> -->i_ds^^os <[[ act2, stt2, astt2, bt2, pct2, Pt2, PAt2 ]]> ->
   act1 = act2 /\ bt1 = bt2 /\ pct1 = pct2 /\ Pt1 = Pt2 /\ PAt1 = PAt2 /\
   pub_equiv Pt1 stt1 stt2 /\ (bt1 = false -> pub_equiv PAt1 astt1 astt2).
-Admitted.
+Proof.
+  induction ac; intros; invert H2; invert H3; try easy.
+  - repeat split; try tauto. 
+    unfold pub_equiv, t_update. intros y. destruct (x =? y).
+    + destruct pct2; simpl. 2: congruence.
+      intros. eapply noninterferent_aexp. 1: eassumption.
+      unfold public. rewrite <- H2. apply label_of_aexp_sound.
+    + apply H0.
+  - eapply IHac1 in H22; try eassumption. 2: apply H.
+      firstorder. subst. reflexivity.
+  - now apply ideal_terminal_no_step in H23.
+  - now apply ideal_terminal_no_step in H22.
+  - repeat split; try tauto. 
+    unfold pub_equiv, t_update. intros y. destruct (x =? y).
+    + intros ->. destruct li, bt2; cbn in *. 1, 3, 4: easy (* contradiction in H for 3 and 4*).
+      rewrite H1; try reflexivity.
+      destruct PAt2; easy.
+    + apply H0.
+  - repeat split; try tauto. 
+    unfold pub_equiv, t_update. intros y. destruct (x =? y).
+    + now intros ->.
+    + apply H0.
+  - repeat split; try tauto. intros ->. simpl in *. 
+    unfold pub_equiv, t_update. intros b. destruct (a =? b).
+    + destruct (PA a) eqn: HeqPA, pct2, li, (label_of_aexp Pt2 e) eqn: Heqle; try easy.
+      unfold pub_equiv in H1. rewrite H1; try easy. intros _.
+      f_equal. eapply noninterferent_aexp. 1: eassumption.
+      unfold public. rewrite <- Heqle. apply label_of_aexp_sound.
+    + apply H1. reflexivity.
+  - eapply IHac in H20; try eassumption. firstorder. now subst.
+Qed.
 
 Definition acom_unused X ac := unused X (erase ac).
 
@@ -1356,52 +1465,71 @@ Lemma flex_slh_acom_bcc : forall ac st ast c' st' ast' os ds (b b' : bool) pc P 
   <[[ac, st, ast, b, pc, P, PA]]> -->i*_ds^^os <[[ac', "b" !-> st "b"; st'', ast', b', pc', P', PA']]>.
 Proof. intros. eapply flex_slh_acom_bcc_generalized in H2; [|tauto..]. destruct H2 as (st''&ac'&?&?&?&?&?). now eauto 20. Qed.
 
-(* LD: This has to be rephrased *)
-Lemma ideal_misspeculated_unwinding_one_step : forall P PA P' PA' pc ac c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds
+Lemma ideal_misspeculated_unwinding_one_step : forall ac P PA P' PA' pc st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds
     pct1 pct2 Pt1 Pt2 PAt1 PAt2,
-  static_tracking c P PA pc = (ac, P', PA') ->
+  well_labeled_acom ac P PA pc P' PA' ->
   pub_equiv P st1 st2 ->
   <[[ac, st1, ast1, true, pc, P, PA]]> -->i_ds^^os1 <[[ct1, stt1, astt1, true, pct1, Pt1, PAt1]]> ->
   <[[ac, st2, ast2, true, pc, P, PA]]> -->i_ds^^os2 <[[ct2, stt2, astt2, true, pct2, Pt2, PAt2]]> ->
   os1 = os2 /\ ct1 = ct2.
 Proof.
-(*
-  intros. apply erase_static_tracking in H as H'. subst.
-  remember true as b in H1 at 1. remember true as bt in H1. revert st2 ast2 os2 ct2 stt2 astt2 P' PA' pct2 Pt2 PAt2 H H0 H2 Heqb Heqbt.
-  induction H1; simpl; intros.
-  + now invert H2.
-  + destruct (static_tracking (erase c1) P PA pc) as ((ac1&P1)&PA1) eqn:Heq1.
-    destruct (static_tracking (erase c2) P1 PA1 pc) as ((ac2&P2)&PA2) eqn:Heq2. invert H. invert H2; [|now apply ideal_terminal_no_step in H1].
-    eapply IHideal_eval_small_step in H19; [|now eauto..]. now invert H19.
-  + invert H2; [now apply ideal_terminal_no_step in H20|tauto].
-  + invert H3. destruct (static_tracking (erase ct) Pt2 PAt2 (join pc (label_of_bexp P be))) as ((ac1&P1)&PA1).
-    destruct (static_tracking (erase cf) P PA (join pc (label_of_bexp P be))) as ((ac2&P2)&PA2).
-    invert H1. destruct (label_of_bexp P be) eqn:Heq; [|tauto]. erewrite noninterferent_bexp; [tauto|eassumption|].
-    unfold public. rewrite <- Heq. apply label_of_exp_sound.
-  + invert H3.
-    destruct (static_tracking (erase ct) P PA (join pc (label_of_bexp P be))) as ((ac1&P1)&PA1).
-    destruct (static_tracking (erase cf) P PA (join pc (label_of_bexp P be))) as ((ac2&P2)&PA2). invert H1.
-    destruct (label_of_bexp P be) eqn:Heq; [|tauto]. erewrite noninterferent_bexp; [tauto|eassumption|].
-    unfold public. rewrite <- Heq. apply label_of_exp_sound.
-  + now invert H2.
-  + invert H4. invert H2. destruct (label_of_aexp P ie) eqn:Heq; [|tauto]. erewrite noninterferent_aexp; [now eauto..|].
-    unfold public. rewrite <- Heq. apply label_of_exp_sound.
-  + invert H5. invert H3. erewrite noninterferent_aexp; [now eauto..|]. rewrite <- H5. apply label_of_exp_sound.
-  + invert H5. invert H3. destruct (label_of_aexp P' ie) eqn:Heq; [|tauto]. erewrite noninterferent_aexp; [now eauto..|].
-    unfold public. rewrite <- Heq. apply label_of_exp_sound.
-  + invert H5. invert H3. erewrite noninterferent_aexp; [now eauto..|]. rewrite <- H0. apply label_of_exp_sound.
-  + invert H2. now apply static_tracking_no_branch in H.
-Admitted.
+  induction ac; intros; invert H1; invert H2; try easy.
+  - eapply IHac1 in H21; try eassumption. 2: apply H. destruct H21 as (->&->). split; reflexivity.
+  - now apply ideal_terminal_no_step in H22.
+  - now apply ideal_terminal_no_step in H22.
+  - cbn in H|-*. destruct (label_of_bexp Pt2 be) eqn: Heq, lbe; cbn in *. 2-4: easy.
+    eapply noninterferent_bexp in H0 as ->. 1: easy.
+    unfold public. rewrite <- Heq. apply label_of_bexp_sound.
+  - cbn in H|-*. destruct (label_of_bexp Pt2 be) eqn: Heq, lbe; cbn in *. 2-4: easy.
+    eapply noninterferent_bexp in H0 as ->. 1: easy.
+    unfold public. rewrite <- Heq. apply label_of_bexp_sound.
+  - cbn in H|-*. destruct li; cbn in *.
+    + destruct (label_of_aexp P i) eqn: Heq; cbn in H. 2: easy. (* contradiction in H *)
+      split. 2: reflexivity. do 2 f_equal. 
+      eapply noninterferent_aexp. 1: eassumption.
+      unfold public. rewrite <- Heq. apply label_of_aexp_sound.
+    + easy.
+  - cbn in H. destruct (label_of_aexp P i) eqn: Heq; cbn in H. 2: easy.
+    split. 2: reflexivity. do 2 f_equal.
+    eapply noninterferent_aexp. 1: eassumption.
+    unfold public. rewrite <- Heq. apply label_of_aexp_sound.
+  - cbn in H|-*. destruct li; cbn in *.
+    + destruct (label_of_aexp Pt2 i) eqn: Heq; cbn in H. 2: easy.
+      split. 2: reflexivity. do 2 f_equal.
+      eapply noninterferent_aexp. 1: eassumption.
+      unfold public. rewrite <- Heq. apply label_of_aexp_sound.
+    + easy.
+  - cbn in H. destruct (label_of_aexp Pt2 i) eqn: Heq; cbn in H. 2: easy.
+    split. 2: reflexivity. do 2 f_equal.
+    eapply noninterferent_aexp. 1: eassumption.
+    unfold public. rewrite <- Heq. apply label_of_aexp_sound.
+  - eapply IHac in H19; [|eassumption..]. destruct H19 as (->&->). split; reflexivity.
+Qed.
 
-Lemma ideal_misspeculated_unwinding : forall P PA P' PA' pc ac c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
-  static_tracking c P PA pc = (ac, P', PA') ->
+Lemma ideal_misspeculated_unwinding : forall ac P PA P' PA' pc st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds
+    pct1 pct2 Pt1 Pt2 PAt1 PAt2,
+  well_labeled_acom ac P PA pc P' PA' ->
   pub_equiv P st1 st2 ->
-  <[[ac, st1, ast1, true]]> -->i*_ds^^os1 <[[ct1, stt1, astt1, true]]> ->
-  <[[ac, st2, ast2, true]]> -->i*_ds^^os2 <[[ct2, stt2, astt2, true]]> ->
+  <[[ac, st1, ast1, true, pc, P, PA]]> -->i*_ds^^os1 <[[ct1, stt1, astt1, true, pct1, Pt1, PAt1]]> ->
+  <[[ac, st2, ast2, true, pc, P, PA]]> -->i*_ds^^os2 <[[ct2, stt2, astt2, true, pct2, Pt2, PAt2]]> ->
   os1 = os2.
 Proof.
-*)
-Admitted.
+  intros. revert H2. remember true as b in H1 at 1. remember true as bt in H1.
+  revert st2 ast2 ct2 stt2 astt2 os2 Heqb Heqbt H H0.
+  induction H1; intros; subst.
+  - apply multi_ideal_obs_length in H2. now destruct os2.
+  - pose proof (ideal_eval_small_step_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H). subst. invert H3.
+    + apply multi_ideal_obs_length in H1. apply ideal_eval_small_step_obs_length in H.
+      symmetry in H7. apply app_eq_nil in H7 as (->&->). symmetry in H, H1. apply length_zero_iff_nil in H, H1. now subst.
+    + assert (ds0 = ds1).
+      { apply app_eq_prefix in H4. apply prefix_eq_length; [|tauto]. eapply ideal_eval_small_step_same_length; eassumption. }
+      subst. apply app_inv_head in H4. subst.
+      pose proof (ideal_eval_small_step_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H5). subst.
+      eapply ideal_misspeculated_unwinding_one_step in H5 as H5'; [|eassumption..]. destruct H5'. subst.
+      eapply ideal_eval_noninterferent in H5 as H5'; [|now eauto..]. destruct H5' as (_ & _ & -> & -> & -> & Hequiv' & Hequiv'').
+      eapply ideal_eval_preserves_well_annotated in H0; [|now eauto]. f_equal.
+      now eapply IHmulti_ideal; eauto.
+Qed.
 
 Lemma fs_flex_vslh_correct_small_step : forall P PA c c' st ast st' ast' os,
   st "b" = 0 ->
@@ -1485,15 +1613,15 @@ Proof.
 Qed.
 
 Lemma multi_ideal_stuck_noninterference :
-  forall ac P PA st1 st2 ast1 ast2 b pc act1 act2 stt1 stt2 astt1 astt2 bt1 bt2 pct1 pct2 Pt1 Pt2 PAt1 PAt2 act1' act2' stt1' stt2' astt1' astt2' bt1' bt2' pct1' pct2' Pt1' Pt2' PAt1' PAt2' ds os d1 d2 o1 o2,
-  static_tracking (erase ac) P PA pc = (ac, P, PA) ->
+  forall ac P PA P' PA' st1 st2 ast1 ast2 b pc act1 act2 stt1 stt2 astt1 astt2 bt1 bt2 pct1 pct2 Pt1 Pt2 PAt1 PAt2 act1' act2' stt1' stt2' astt1' astt2' bt1' bt2' pct1' pct2' Pt1' Pt2' PAt1' PAt2' ds os d1 d2 o1 o2,
+  well_labeled_acom ac P PA pc P' PA' ->
   pub_equiv P st1 st2 ->
   (b = false -> pub_equiv PA ast1 ast2) -> 
   <[[ ac, st1, ast1, b, pc, P, PA ]]> -->i*_ds^^os <[[ act1, stt1, astt1, bt1, pct1, Pt1, PAt1 ]]> ->
   <[[ act1, stt1, astt1, bt1, pct1, Pt1, PAt1 ]]> -->i_[d1]^^[o1] <[[ act1', stt1', astt1', bt1', pct1', Pt1', PAt1' ]]> ->
   <[[ ac, st2, ast2, b, pc, P, PA ]]> -->i*_ds^^os <[[ act2, stt2, astt2, bt2, pct2, Pt2, PAt2 ]]> ->
   <[[ act2, stt2, astt2, bt2, pct2, Pt2, PAt2 ]]> -->i_[d2]^^[o2] <[[ act2', stt2', astt2', bt2', pct2', Pt2', PAt2' ]]> ->
-  act1 = act2 /\ bt1 = bt2 /\ pub_equiv P stt1 stt2 /\ (bt2 = false -> pub_equiv PA astt1 astt2). (* JB: incorrect statement: should refer to Pt1/Pt2, PAt1/PAt2 instead of P, PA. Those should also be equal...*)
+  act1 = act2 /\ bt1 = bt2 /\ Pt1 = Pt2 /\ PAt1 = PAt2 /\ pub_equiv Pt1 stt1 stt2 /\ (bt2 = false -> pub_equiv PAt1 astt1 astt2). (* JB: incorrect statement: should refer to Pt1/Pt2, PAt1/PAt2 instead of P, PA. Those should also be equal...*)
 Proof.
   intros. revert st2 ast2 act2 stt2 astt2 bt2 pct2 Pt2 PAt2 act2' stt2' astt2' bt2' pct2' Pt2' PAt2' d2 o2 H4 H5 H H0 H1.
   induction H2; intros.
@@ -1510,12 +1638,9 @@ Proof.
     apply app_inv_head in H7, H8. clear Heq'. subst.
     eapply ideal_eval_noninterferent in H16 as Heq; [|eassumption..].
     destruct Heq as (<-&<-&<-&<-&<-&?&?).
-    (* JB: 
-       Issues:
-       -  'erase' removes branches. I'm pretty sure we want to use static_tracking_acom instead, but this needs to be changed in later lemmas as well.
-       -  ideal_eval_static_tracking_step does not give us anything close enough to the condition needed.
-     *)
-Admitted.
+    eapply IHmulti_ideal; try eassumption.
+    eapply ideal_eval_preserves_well_annotated; eassumption.
+Qed.
   
   
 
@@ -1597,13 +1722,20 @@ Theorem ideal_eval_relative_secure : forall ac c st st' ast ast' P PA P' PA',
 Proof.
   unfold ideal_same_obs. intros. eapply multi_ideal_spec_bit_deterministic in H5 as Heq; [|eassumption]. subst.
   apply erase_static_tracking in H as H'. subst.
+  apply static_tracking_well_labeled in H.
   destruct b1; [|eapply multi_ideal_no_spec_deterministic; eassumption].
   eapply seq_same_obs_multi_ideal_misspeculate_split in H6; [|eassumption..]. clear H5.
   destruct H6 as (?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&?&->&->&->&?&?&?&?&?&?).
   do 2 f_equal.
-  (* missing: execution preserves well-annotated *)
-  (* missing: ideal_misspeculated_unwinding *)
-Admitted.
+  eapply multi_ideal_stuck_noninterference in H9 as Heq; try eassumption. 2: now intros.
+  eapply multi_ideal_preserves_well_labeled in H5 as Hwl. 2: eassumption.
+  eapply ideal_misspeculated_unwinding in H10; try eassumption.
+  - eapply ideal_eval_preserves_well_annotated; eassumption.
+  - destruct Heq as (_&_&_&_&Hequiv1%pub_equiv_sym&Hequiv2%pub_equiv_sym). 2: reflexivity.
+    eapply ideal_eval_noninterferent in H6; try eassumption.
+    + apply pub_equiv_sym, H6.
+    + intros _. apply Hequiv2.
+Qed.
 
 Theorem fs_flex_vslh_relative_secure : forall P PA c st ast st' ast',
   unused "b" c ->
