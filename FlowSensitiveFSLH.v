@@ -301,26 +301,38 @@ Proof.
     invert H1. exact Heq.
 Qed.
 
+Lemma exp_label_less_precise P P': 
+  less_precise_vars P P' ->
+  (forall ae, can_flow (label_of_aexp P' ae) (label_of_aexp P ae) = true) /\
+  (forall be, can_flow (label_of_bexp P' be) (label_of_bexp P be) = true).
+Proof.
+  intro Hlp.
+  apply aexp_bexp_mutind; intros; try easy.
+  - apply Hlp.
+  - cbn. now destruct (label_of_aexp P' a1), (label_of_aexp P a1), (label_of_aexp P' a2), (label_of_aexp P a2).
+  - cbn. now destruct (label_of_aexp P' a1), (label_of_aexp P a1), (label_of_aexp P' a2), (label_of_aexp P a2).
+  - cbn. now destruct (label_of_aexp P' a1), (label_of_aexp P a1), (label_of_aexp P' a2), (label_of_aexp P a2).
+  - cbn. now destruct (label_of_bexp P' b), (label_of_bexp P b), (label_of_aexp P' a1), (label_of_aexp P a1), (label_of_aexp P' a2), (label_of_aexp P a2).
+  - cbn. now destruct (label_of_aexp P' a1), (label_of_aexp P a1), (label_of_aexp P' a2), (label_of_aexp P a2).
+  - cbn. now destruct (label_of_aexp P' a1), (label_of_aexp P a1), (label_of_aexp P' a2), (label_of_aexp P a2).
+  - cbn. now destruct (label_of_aexp P' a1), (label_of_aexp P a1), (label_of_aexp P' a2), (label_of_aexp P a2).
+  - cbn. now destruct (label_of_aexp P' a1), (label_of_aexp P a1), (label_of_aexp P' a2), (label_of_aexp P a2).
+  - cbn. now destruct (label_of_bexp P' b1), (label_of_bexp P b1), (label_of_bexp P' b2), (label_of_bexp P b2).
+Qed.
+
 Lemma label_of_aexp_less_precise : 
   forall e P P', less_precise_vars P P' ->
   can_flow (label_of_aexp P' e) (label_of_aexp P e) = true.
 Proof.
-  induction e; intros.
-  - reflexivity.
-  - apply H.
-  - cbn. specialize (IHe1 P P' H). specialize (IHe2 P P' H).
-    now destruct (label_of_aexp P' e1), (label_of_aexp P e1), (label_of_aexp P' e2), (label_of_aexp P e2).
-  - cbn. specialize (IHe1 P P' H). specialize (IHe2 P P' H).
-    now destruct (label_of_aexp P' e1), (label_of_aexp P e1), (label_of_aexp P' e2), (label_of_aexp P e2).
-  - cbn. specialize (IHe1 P P' H). specialize (IHe2 P P' H).
-    now destruct (label_of_aexp P' e1), (label_of_aexp P e1), (label_of_aexp P' e2), (label_of_aexp P e2).
-  - cbn. admit. (* mutually inductive with bexp *)
-Admitted.
+  intros. now apply exp_label_less_precise.
+Qed.
 
 Lemma label_of_bexp_less_precise : 
   forall e P P', less_precise_vars P P' ->
   can_flow (label_of_bexp P' e) (label_of_bexp P e) = true.
-Admitted.
+Proof.
+  intros. now apply exp_label_less_precise.
+Qed.
 
 Lemma well_labeled_weaken_post : forall ac P PA pc P' PA' P'' PA'',
   well_labeled_acom ac P PA pc P' PA' ->
