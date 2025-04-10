@@ -502,10 +502,123 @@ Proof.
       - rewrite String.eqb_eq in Heq. subst. specialize (H3 y). now destruct (PA y), (PA'' y).
       - specialize (H3 y). now destruct (PA y), (PA'' y).
 Qed.
+
+Lemma static_tracking_unassigned: forall c P PA pc ac P' PA',
+  static_tracking c P PA pc = (ac, P', PA') ->
+  (forall y, ~In y (assigned_vars c) -> P' y = P y) /\
+  (forall y, ~In y (assigned_arrs c) -> PA' y = PA y).
+Proof.
+  induction c; simpl; intros.
+  - invert H. tauto.
+  - invert H. split; [|tauto]. intros y. unfold t_update. destruct (x =? y) eqn: Heq; [apply String.eqb_eq in Heq | apply String.eqb_neq in Heq]; tauto.
+  - destruct (static_tracking c1 P PA pc) as ((ac1 & P1) & PA1) eqn: Hc1. apply IHc1 in Hc1.
+    destruct (static_tracking c2 P1 PA1 pc) as ((ac2 & P2) & PA2) eqn: Hc2. apply IHc2 in Hc2.
+    split.
+    + intros y Hnin.
+      assert (~ In y (assigned_vars c1) /\ ~ In y (assigned_vars c2)) as [Hnin1 Hnin2]. 
+      { split; intros Hin; apply Hnin; apply nodup_In; apply in_or_app; [left | right]; assumption. }
+      invert H. destruct Hc1, Hc2. now rewrite H1, H.
+    + intros y Hnin.
+      assert (~ In y (assigned_arrs c1) /\ ~ In y (assigned_arrs c2)) as [Hnin1 Hnin2]. 
+      { split; intros Hin; apply Hnin; apply nodup_In; apply in_or_app; [left | right]; assumption. }
+      invert H. destruct Hc1, Hc2. now rewrite H2, H0.
+  - destruct (static_tracking c1 P PA (join pc (label_of_bexp P be))) as ((ac1 & P1) & PA1) eqn: Hc1. apply IHc1 in Hc1.
+    destruct (static_tracking c2 P PA (join pc (label_of_bexp P be))) as ((ac2 & P2) & PA2) eqn: Hc2. apply IHc2 in Hc2.
+    invert H. split.
+    + intros y Hnin.
+      assert (~ In y (assigned_vars c1) /\ ~ In y (assigned_vars c2)) as [Hnin1 Hnin2]. 
+      { split; intros Hin; apply Hnin; apply nodup_In; apply in_or_app; [left | right]; assumption. }
+      unfold join_pub_vars. destruct Hc1, Hc2. rewrite H, H1; [|assumption..]. now destruct (P y).
+    + intros y Hnin.
+      assert (~ In y (assigned_arrs c1) /\ ~ In y (assigned_arrs c2)) as [Hnin1 Hnin2]. 
+      { split; intros Hin; apply Hnin; apply nodup_In; apply in_or_app; [left | right]; assumption. }
+      unfold join_pub_vars. destruct Hc1, Hc2. rewrite H0, H2; [|assumption..]. now destruct (PA y).
+  - revert P PA pc ac P' PA' H.
+    induction (Datatypes.length (assigned_vars c) + Datatypes.length (assigned_arrs c)) as [|n IHn]; intros.
+    + cbn in H. destruct (static_tracking c P PA (join pc (label_of_bexp P be))) as ((aci & Pi) & PAi) eqn: Hi. apply IHc in Hi. destruct Hi as [Hi1 Hi2].
+      rewrite Tauto.if_same in H. invert H.
+      split; intros y Hnin; [specialize (Hi1 y Hnin) | specialize (Hi2 y Hnin)]; unfold join_pub_vars; [rewrite Hi1; now destruct (P y) | rewrite Hi2; now destruct (PA y)].
+    + simpl in H. destruct (static_tracking c P PA (join pc (label_of_bexp P be))) as ((aci & Pi) & PAi) eqn: Hi. apply IHc in Hi.
+      destruct (list_eqb (filter P (assigned_vars c)) (filter (join_pub_vars P Pi) (assigned_vars c)) && list_eqb (filter PA (assigned_arrs c)) (filter (join_pub_vars PA PAi) (assigned_arrs c))).
+      * invert H. destruct Hi as [Hi1 Hi2].
+        split; intros y Hnin; [specialize (Hi1 y Hnin) | specialize (Hi2 y Hnin)]; unfold join_pub_vars; [rewrite Hi1; now destruct (P y) | rewrite Hi2; now destruct (PA y)].
+      * apply IHn in H. destruct Hi as [Hi1 Hi2], H as [H1 H2].
+        split; intros y Hnin.
+        -- specialize (Hi1 y Hnin). specialize (H1 y Hnin). rewrite H1. unfold join_pub_vars. rewrite Hi1. now destruct (P y).
+        -- specialize (Hi2 y Hnin). specialize (H2 y Hnin). rewrite H2. unfold join_pub_vars. rewrite Hi2. now destruct (PA y).
+  - invert H. split; [|tauto].
+  intros y. unfold t_update. destruct (x =? y) eqn: Heq; [apply String.eqb_eq in Heq | apply String.eqb_neq in Heq]; tauto.
+  - invert H. split; [tauto|].
+    intros y. unfold t_update. destruct (a =? y) eqn: Heq; [apply String.eqb_eq in Heq | apply String.eqb_neq in Heq]; tauto.
+Qed.
       
+Lemma static_tracking_while_early_fixpoint: 
+  forall c P PA pc ac P' PA',
+  static_tracking c P PA pc = (ac, P', PA') ->
+  list_eqb (filter P (assigned_vars c))
+  (filter (join_pub_vars P P') (assigned_vars c)) &&
+  list_eqb (filter PA (assigned_arrs c))
+  (filter (join_pub_vars PA PA') (assigned_arrs c)) = true ->
+  join_pub_vars P P' = P /\ join_pub_vars PA PA' = PA.
+Proof.
+  intros. apply static_tracking_unassigned in H as [H1 H2].
+  apply andb_prop in H0 as [HP HPA].
+  unfold list_eqb in HP, HPA.
+  destruct (list_eq_dec string_dec (filter P (assigned_vars c)) (filter (join_pub_vars P P') (assigned_vars c)))as [HeqP|?]; [|congruence].
+  destruct (list_eq_dec string_dec (filter PA (assigned_arrs c)) (filter (join_pub_vars PA PA') (assigned_arrs c))) as [HeqPA|?]; [|congruence].
+  split; unfold join_pub_vars; apply functional_extensionality; intros y.
+  - destruct (in_dec string_dec y (assigned_vars c)) as [Hin | Hnin].
+    + eapply ext_in_filter in HeqP. 2: eassumption. rewrite HeqP at 2. reflexivity.
+    + rewrite H1; [|assumption]. now destruct (P y).
+  - destruct (in_dec string_dec y (assigned_arrs c)) as [Hin | Hnin].
+    + eapply ext_in_filter in HeqPA. 2: eassumption. rewrite HeqPA at 2. reflexivity.
+    + rewrite H2; [|assumption]. now destruct (PA y).
+Qed.
+
+Lemma filter_join P P' l:
+  filter (join_pub_vars P P') l = filter P' (filter P l).
+Proof.
+  induction l.
+  - reflexivity.
+  - simpl. unfold join_pub_vars. destruct (P a); simpl; destruct  (P' a); simpl; [f_equal|..]; apply IHl.
+Qed.
+
+Lemma filter_shorter_or_eq {A} f (l: list A):
+  filter f l = l \/ Datatypes.length (filter f l) < Datatypes.length l.
+Proof.
+  induction l.
+  - now left.
+  - destruct IHl.
+    + simpl. destruct (f a).
+      * left. now rewrite H.
+      * right. rewrite H. lia.
+    + right. simpl. destruct (f a); simpl; lia.
+Qed.
+
+Lemma static_tracking_while_decreases:
+  forall c P PA P' PA',
+  list_eqb (filter P (assigned_vars c))
+  (filter (join_pub_vars P P') (assigned_vars c)) &&
+  list_eqb (filter PA (assigned_arrs c))
+  (filter (join_pub_vars PA PA') (assigned_arrs c)) = false ->
+  Datatypes.length (filter (join_pub_vars P P') (assigned_vars c)) + Datatypes.length (filter (join_pub_vars PA PA') (assigned_arrs c)) < Datatypes.length (filter P (assigned_vars c)) + Datatypes.length (filter PA (assigned_arrs c)).
+Proof.
+  intros. apply andb_false_iff in H. unfold list_eqb in H. destruct H as [HP | HPA].
+  - destruct (list_eq_dec string_dec (filter P (assigned_vars c)) (filter (join_pub_vars P P') (assigned_vars c))) as [?|HneqP];[congruence|].
+    repeat rewrite filter_join in *.
+    pose proof (filter_length_le PA' (filter PA (assigned_arrs c))).
+    enough (Datatypes.length (filter P' (filter P (assigned_vars c))) < Datatypes.length (filter P (assigned_vars c))) by lia.
+    destruct (filter_shorter_or_eq P' (filter P (assigned_vars c))); [congruence | lia].
+  - destruct (list_eq_dec string_dec (filter PA (assigned_arrs c)) (filter (join_pub_vars PA PA') (assigned_arrs c))) as [?|HneqPA];[congruence|].
+    repeat rewrite filter_join in *.
+    pose proof (filter_length_le P' (filter P (assigned_vars c))).
+    enough (Datatypes.length (filter PA' (filter PA (assigned_arrs c))) < Datatypes.length (filter PA (assigned_arrs c))) by lia.
+    destruct (filter_shorter_or_eq PA' (filter PA (assigned_arrs c))); [congruence | lia].
+Qed.
+
 Lemma static_tracking_while_well_labeled: forall c n P PA pc be P' PA' lbe ac, 
   (forall P PA pc ac P' PA', static_tracking c P PA pc = (ac, P', PA') -> well_labeled_acom ac P PA pc P' PA') ->
-  (n >= Datatypes.length (filter P (assigned_vars c)) + Datatypes.length (filter PA (assigned_arrs c))) (*TODO*) ->
+  (n >= Datatypes.length (filter P (assigned_vars c)) + Datatypes.length (filter PA (assigned_arrs c))) ->
   (static_tracking_while (static_tracking c) P PA pc n be (assigned_vars c) (assigned_arrs c) (filter P (assigned_vars c)) (filter PA (assigned_arrs c)) = (P', PA', lbe, ac)) ->
   can_flow (label_of_bexp P' be) lbe = true /\
   less_precise_vars P' P /\
@@ -525,18 +638,18 @@ Proof.
     + eapply well_labeled_weaken_post; eassumption.
   - cbn in H1.
     destruct (static_tracking c P PA (join pc (label_of_bexp P be))) as ((ac1 & P1) & PA1) eqn: Hwl.
-    apply H in Hwl.
+    apply H in Hwl as Hwl'.
     destruct (list_eqb (filter P (assigned_vars c)) (filter (join_pub_vars P P1) (assigned_vars c)) && list_eqb (filter PA (assigned_arrs c)) (filter (join_pub_vars PA PA1) (assigned_arrs c))) eqn: HeqPPA.
     + invert H1; subst.
       pose proof (less_precise_vars_join_r P P1). pose proof (less_precise_vars_join_r PA PA1).
-      assert (join_pub_vars P P1 = P) as Heq by admit. rewrite Heq in *. clear Heq. 
-      assert (join_pub_vars PA PA1 = PA) as Heq by admit. rewrite Heq in *. clear Heq. (* old and new agree on assigned values, needs proof that unassigned values are unchanged id P1/PA1*)
+      eapply static_tracking_while_early_fixpoint in HeqPPA. 2: eassumption. destruct HeqPPA as [Heq1 Heq2].
+      rewrite Heq1, Heq2 in *. clear Heq1 Heq2.
       repeat split. 2, 3: apply less_precise_vars_refl.
       * apply can_flow_refl.
       * eapply well_labeled_weaken_post; eassumption.
-    + apply IHn in H1. 3: admit. 2: exact H.
+    + apply IHn in H1. 3: { apply static_tracking_while_decreases in HeqPPA. lia. } 2: exact H.
       repeat split; try apply H1; (eapply less_precise_vars_trans; [apply less_precise_vars_join_l | apply H1]).
-Admitted. 
+Qed. 
   
 
 Lemma static_tracking_well_labeled : forall c P PA pc ac P' PA',
