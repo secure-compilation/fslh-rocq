@@ -325,11 +325,29 @@ Fixpoint well_labeled_acom ac P PA pc P' PA' : Prop :=
   match ac with 
   | <[ skip ]> => less_precise_vars P' P /\ less_precise_vars PA' PA
   | <[ x := ae ]> => less_precise_vars P' (x !->(join pc (label_of_aexp P ae)); P) /\ less_precise_vars PA' PA
-  | <[ ac1 ;@(Pi, PAi) ac2 ]> => branch_free ac2 /\ well_labeled_acom ac1 P PA pc Pi PAi /\ well_labeled_acom ac2 Pi PAi (pc_of_acom pc ac1) P' PA'
-  | <[ if be@lbe then ac1 else ac2 end ]> => can_flow (label_of_bexp P be) lbe = true /\ branch_free ac1 /\ branch_free ac2 /\ well_labeled_acom ac1 P PA (join pc lbe) P' PA' /\ well_labeled_acom ac2 P PA (join pc lbe) P' PA'
-  | <[ while be@lbe do ac1 @(Pi, PAi) end ]> => can_flow (label_of_bexp Pi be) lbe = true /\ branch_free ac1 /\ less_precise_vars Pi P /\ less_precise_vars PAi PA /\ well_labeled_acom ac1 Pi PAi (join pc lbe) Pi PAi /\ less_precise_vars P' Pi /\ less_precise_vars PA' PAi
-  | <[ X@@lx <-a[[i@li]] ]> => can_flow (label_of_aexp P i) li = true /\ can_flow pc lx = true /\ can_flow li lx = true /\ can_flow (PA a) lx = true /\ less_precise_vars P' (X !-> lx; P) /\ less_precise_vars PA' PA
-  | <[ a[i@li] <- e]> => can_flow (label_of_aexp P i) li = true /\ less_precise_vars P' P /\ less_precise_vars PA' (a !-> (join (PA a) (join pc (join li (label_of_aexp P e)))); PA)
+  | <[ ac1 ;@(Pi, PAi) ac2 ]> => branch_free ac2 /\
+                                   well_labeled_acom ac1 P PA pc Pi PAi /\
+                                   well_labeled_acom ac2 Pi PAi (pc_of_acom pc ac1) P' PA'
+  | <[ if be@lbe then ac1 else ac2 end ]> => can_flow (label_of_bexp P be) lbe = true /\
+                                               branch_free ac1 /\ branch_free ac2 /\
+                                               well_labeled_acom ac1 P PA (join pc lbe) P' PA' /\
+                                               well_labeled_acom ac2 P PA (join pc lbe) P' PA'
+  | <[ while be@lbe do ac1 @(Pi, PAi) end ]> => can_flow (label_of_bexp Pi be) lbe = true /\
+                                                  branch_free ac1 /\
+                                                  less_precise_vars Pi P /\
+                                                  less_precise_vars PAi PA /\
+                                                  well_labeled_acom ac1 Pi PAi (join pc lbe) Pi PAi /\
+                                                  less_precise_vars P' Pi /\
+                                                  less_precise_vars PA' PAi
+  | <[ X@@lx <-a[[i@li]] ]> => can_flow (label_of_aexp P i) li = true /\
+                                 can_flow pc lx = true /\
+                                 can_flow li lx = true /\
+                                 can_flow (PA a) lx = true /\
+                                 less_precise_vars P' (X !-> lx; P) /\
+                                 less_precise_vars PA' PA
+  | <[ a[i@li] <- e]> => can_flow (label_of_aexp P i) li = true /\
+                           less_precise_vars P' P /\
+                           less_precise_vars PA' (a !-> (join (PA a) (join pc (join li (label_of_aexp P e)))); PA)
   | <[ branch l ac ]> => well_labeled_acom ac P PA pc P' PA'
   end.
 
@@ -809,7 +827,6 @@ Inductive ideal_eval_small_step :
   | ISM_Seq : forall c1 st ast b ds os c1t stt astt bt c2 pc P PA pc' P' PA' Pi PAi,
       <[[c1, st, ast, b, pc, P, PA]]>  -->i_ds^^os <[[c1t, stt, astt, bt, pc', P', PA']]>  ->
       <[[(c1;@(Pi,PAi)c2), st, ast, b, pc, P, PA]]>  -->i_ds^^os <[[(c1t;@(Pi,PAi) c2), stt, astt, bt, pc', P', PA']]>
-  (** LD: Fixed? *)
   | ISM_Seq_Skip : forall st ast b c1 c2 pc P PA Pi PAi,
       terminal c1 ->
       <[[(c1;@(Pi,PAi)c2), st, ast, b, pc, P, PA]]>  -->i_[]^^[] <[[c2, st, ast, b, pc_of_acom pc c1, P, PA]]>
@@ -1383,7 +1400,7 @@ Proof.
   induction ac; simpl; intros; invert H0; [assumption | eapply IHac; eassumption ].
 Qed.
 
-Lemma ideal_eval_preserves_well_annotated : 
+Lemma ideal_eval_preserves_well_labeled : 
   forall ac ds P PA Pt PAt pc' P' PA' pc st ast b act stt astt bt os, 
   well_labeled_acom ac P PA pc Pt PAt ->
   <[[ ac, st , ast, b, pc, P, PA ]]> -->i_ds^^os <[[ act, stt, astt, bt, pc', P', PA' ]]> ->
@@ -1424,11 +1441,11 @@ Proof.
   intros. induction H0.
   - assumption.
   - apply IHmulti_ideal.
-    eapply ideal_eval_preserves_well_annotated; eassumption.
+    eapply ideal_eval_preserves_well_labeled; eassumption.
 Qed.
 
 Lemma ideal_eval_noninterferent :
-  forall ac ds P PA P' PA' pc st1 ast1 st2 ast2 b act1 act2 stt1 stt2 astt1 astt2 bt1 bt2 os pct1 pct2 Pt1 Pt2 PAt1 PAt2,
+  forall ac ds P PA (P' PA':pub_vars) pc st1 ast1 st2 ast2 b act1 act2 stt1 stt2 astt1 astt2 bt1 bt2 os pct1 pct2 Pt1 Pt2 PAt1 PAt2,
   well_labeled_acom ac P PA pc P' PA' ->
   pub_equiv P st1 st2 ->
   (b = false -> pub_equiv PA ast1 ast2) ->
@@ -1450,7 +1467,7 @@ Proof.
   - now apply ideal_terminal_no_step in H22.
   - repeat split; try tauto. 
     unfold pub_equiv, t_update. intros y. destruct (x =? y).
-    + intros ->. destruct li, bt2; cbn in *. 1, 3, 4: easy (* contradiction in H for 3 and 4*).
+    + intros ->. cbn in *. destruct li, bt2. 1, 3, 4: easy (* contradiction in H for 3 and 4*).
       rewrite H1; try reflexivity.
       destruct PAt2; easy.
     + apply H0.
@@ -1805,7 +1822,7 @@ Proof.
       pose proof (ideal_eval_small_step_spec_bit_monotonic _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H5). subst.
       eapply ideal_misspeculated_unwinding_one_step in H5 as H5'; [|eassumption..]. destruct H5'. subst.
       eapply ideal_eval_noninterferent in H5 as H5'; [|now eauto..]. destruct H5' as (_ & _ & -> & -> & -> & Hequiv' & Hequiv'').
-      eapply ideal_eval_preserves_well_annotated in H0; [|now eauto]. f_equal.
+      eapply ideal_eval_preserves_well_labeled in H0; [|now eauto]. f_equal.
       now eapply IHmulti_ideal; eauto.
 Qed.
 
@@ -1917,7 +1934,7 @@ Proof.
     eapply ideal_eval_noninterferent in H16 as Heq; [|eassumption..].
     destruct Heq as (<-&<-&<-&<-&<-&?&?).
     eapply IHmulti_ideal; try eassumption.
-    eapply ideal_eval_preserves_well_annotated; eassumption.
+    eapply ideal_eval_preserves_well_labeled; eassumption.
 Qed.
   
   
@@ -2008,7 +2025,7 @@ Proof.
   eapply multi_ideal_stuck_noninterference in H9 as Heq; try eassumption. 2: now intros.
   eapply multi_ideal_preserves_well_labeled in H5 as Hwl. 2: eassumption.
   eapply ideal_misspeculated_unwinding in H10; try eassumption.
-  - eapply ideal_eval_preserves_well_annotated; eassumption.
+  - eapply ideal_eval_preserves_well_labeled; eassumption.
   - destruct Heq as (_&_&_&_&Hequiv1%pub_equiv_sym&Hequiv2%pub_equiv_sym). 2: reflexivity.
     eapply ideal_eval_noninterferent in H6; try eassumption.
     + apply pub_equiv_sym, H6.
