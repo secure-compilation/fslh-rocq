@@ -1,26 +1,32 @@
-# Requirements
+# FSLH: Flexible Mechanized Speculative Load Hardening
 
-## General
+This artifact contains a complete Rocq formalization of the following paper:
 
-The development uses the Rocq proof assistant (formerly known as Coq)
+- [FSLH: Flexible Mechanized Speculative Load Hardening](https://arxiv.org/abs/2502.03203).
+  Jonathan Baumann, Roberto Blanco, Léon Ducruet, Sebastian Harwig, and Catalin Hritcu.
+  In 35th IEEE Computer Security Foundations Symposium (CSF). June 2025.
 
-Installation instructions: https://coq.inria.fr/download
+The latest version of this artifact is available at:
+https://github.com/secure-compilation/fslh-rocq
 
-Tested with versions 8.19.2, 8.20.0 and 8.20.1
+## Requirements
 
-The included Maps library is part of Software Foundations and is not anonymized: https://softwarefoundations.cis.upenn.edu/
+The development uses the [Rocq prover](https://rocq-prover.org).
 
-## Testing
+We tested this with versions 8.19.2, 8.20.0 and 8.20.1, when it was still called Coq.
 
-The test files `Testing*.v` additionally depend on the QuickChick library: https://github.com/QuickChick/QuickChick
+Installation instructions for these versions are available here:
+https://web.archive.org/web/20250305221757/https://coq.inria.fr/download
 
-Tested with version 2.0.5
+From OPAM just run:
 
-# Building
+    $ opam install coq.8.20.1
 
-Run `make` to build the development
+## Building
 
-# Key results
+For having Rocq check our proofs run `make` in the root directory of the development.
+
+## Key results
 
 Theorem 1 (SaSLH is SCT-secure). File `FlexSLH.v`, Theorem `addr_sel_slh_spec_ct_secure`
 
@@ -42,18 +48,28 @@ Theorem 9 (Connection between FvSLH and USLH). File `FlexVSLH.v`, Lemma `ultimat
 
 Lemma 1 (Backwards compiler correctness). File `FlexSLH.v`, Lemma `flex_aslh_bcc_generalized`
 
-Lemma 2 (Noninterference in the ideal semantics for aSLH). File `FlexSLH.v`, Lemma `ideal_eval_small_step_noninterference`
+Lemma 2 (Noninterference in the ideal semantics for aSLH).
+File `FlexSLH.v`, Lemma `ideal_eval_small_step_noninterference`
 
 Lemma 3 (Ideal unwinding lemma). File `FlexSLH.v`, Lemma `ideal_misspeculated_unwinding`
 
 Lemma 4 (Ideal semantics is relative-secure). File `FlexSLH.v`, Lemma `ideal_eval_relative_secure`
 
-Lemma 5 (Noninterference in the ideal semantics for vSLH). File `FlexVSLH.v`, Lemma `ideal_eval_small_step_noninterference`
+Lemma 5 (Noninterference in the ideal semantics for vSLH).
+File `FlexVSLH.v`, Lemma `ideal_eval_small_step_noninterference`
 
-# Assumptions
+## Assumptions
 
-Use `Print Assumptions` to check that the above theorems are all fully proved
-
+Use `Print Assumptions` to check that the above theorems are all fully proved:
 https://coq.inria.fr/doc/V8.20.0/refman/proof-engine/vernacular-commands.html#coq:cmd.Print-Assumptions
 
-The proofs only assume functional extensionality and decidability of map lookups
+The proofs only assume functional extensionality, decidability of map lookups,
+and exercises from the Maps library of Software Foundations textbook for which
+we didn't want to publicly leak the solutions.
+
+## Testing experiments
+
+The testing experiments in the `testing` sub-directory additionally depend on
+the [QuickChick](https://github.com/QuickChick/QuickChick) library.
+We tested with version 2.0.5. These testing experiments informed the design of
+FSLH, but are not part of the final artifact, which only includes full proofs.
