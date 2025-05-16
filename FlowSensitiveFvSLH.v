@@ -2,7 +2,7 @@
 
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
-From SECF Require Import Maps SpecCT UltimateSLH_optimized FlexSLH FlexVSLH.
+From SECF Require Import Maps SpecCT UltimateSLH_optimized FiSLH FvSLH.
 From Coq Require Import Bool.Bool.
 From Coq Require Import Arith.Arith.
 From Coq Require Import Arith.EqNat.

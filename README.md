@@ -28,44 +28,44 @@ For having Rocq check our proofs run `make` in the root directory of the develop
 
 ## Key results
 
-Theorem 1 (SaSLH is SCT-secure). File `FlexSLH.v`, Theorem `addr_sel_slh_spec_ct_secure`
+Theorem 1 (SiSLH is SCT-secure). File `FiSLH.v`, Theorem `addr_sel_slh_spec_ct_secure`
 
-Theorem 2 (USLH is relative-secure). File `FlexSLH.v`, Theorem `ultimate_slh_relative_secure`
+Theorem 2 (USLH is relative-secure). File `FiSLH.v`, Theorem `ultimate_slh_relative_secure`
 
-Theorem 3 (FaSLH is relative-secure). File `FlexSLH.v`, Theorem `flex_aslh_relative_secure`
+Theorem 3 (FiSLH is relative-secure). File `FiSLH.v`, Theorem `flex_islh_relative_secure`
 
-Theorem 4 (Connection between FaSLH and SaSLH). File `FlexSLH.v`, Lemma `addr_sel_slh_is_flex_aslh`
+Theorem 4 (Connection between FiSLH and SiSLH). File `FiSLH.v`, Lemma `addr_sel_slh_is_flex_islh`
 
-Theorem 5 (Connection between FaSLH and USLH). File `FlexSLH.v`, Lemma `ultimate_slh_is_flex_aslh`
+Theorem 5 (Connection between FiSLH and USLH). File `FiSLH.v`, Lemma `ultimate_slh_is_flex_islh`
 
-Theorem 6 (FvSLH∀ is relative-secure). File `FlowSensitiveFSLH.v`, Lemma `fs_flex_vslh_relative_secure` 
+Theorem 6 (FvSLH∀ is relative-secure). File `FlowSensitiveFvSLH.v`, Lemma `fs_flex_vslh_relative_secure` 
 
-Theorem 7 (FvSLH is relative-secure). File `FlexVSLH.v`, Theorem `flex_vslh_relative_secure`
+Theorem 7 (FvSLH is relative-secure). File `FvSLH.v`, Theorem `flex_vslh_relative_secure`
 
-Theorem 8 (SvSLH is SCT-secure). File `FlexVSLH.v`, Theorem `val_sel_slh_spec_ct_secure`
+Theorem 8 (SvSLH is SCT-secure). File `FvSLH.v`, Theorem `val_sel_slh_spec_ct_secure`
 
 <!--Theorem 8 (Connection between FvSLH and SvSLH). File `FlexVSLH.v`, Lemma `val_sel_slh_is_flex_vslh`-->
 <!---->
 <!--Theorem 9 (Connection between FvSLH and USLH). File `FlexVSLH.v`, Lemma `ultimate_slh_is_flex_vslh`-->
 <!---->
-Lemma 1 (Backwards compiler correctness). File `FlexSLH.v`, Lemma `flex_aslh_bcc_generalized`
+Lemma 1 (Backwards compiler correctness). File `FiSLH.v`, Lemma `flex_islh_bcc_generalized`
 
 Lemma 2 (Noninterference in the ideal semantics for iSLH with equal observations).
-File `FlexSLH.v`, Lemma `ideal_eval_small_step_noninterference`
+File `FiSLH.v`, Lemma `ideal_eval_small_step_noninterference`
 
-Lemma 3 (Unwinding of ideal misspeculated executions). File `FlexSLH.v`, Lemma `ideal_misspeculated_unwinding`
+Lemma 3 (Unwinding of ideal misspeculated executions). File `FiSLH.v`, Lemma `ideal_misspeculated_unwinding`
 
-Lemma 4 (Ideal semantics is relative-secure). File `FlexSLH.v`, Lemma `ideal_eval_relative_secure`
+Lemma 4 (Ideal semantics is relative-secure). File `FiSLH.v`, Lemma `ideal_eval_relative_secure`
 
 <!--Lemma 5 (Noninterference in the ideal semantics for vSLH).-->
 <!--File `FlexVSLH.v`, Lemma `ideal_eval_small_step_noninterference`-->
-Lemma 5 (Backwards compiler correctness for FvSLH∀). File `FlowSensitiveFSLH.v`, Lemma `flex_slh_acom_bcc_generalized`
+Lemma 5 (Backwards compiler correctness for FvSLH∀). File `FlowSensitiveFvSLH.v`, Lemma `flex_slh_acom_bcc_generalized`
 
-Lemma 6 (IFC analysis produces well-labeled programs). File `FlowSensitiveFSLH.v`, Lemma `static_tracking_well_labeled`
+Lemma 6 (IFC analysis produces well-labeled programs). File `FlowSensitiveFvSLH.v`, Lemma `static_tracking_well_labeled`
 
-Lemma 7 (Ideal semantics preserves well-labeledness). File `FlowSensitiveFSLH.v`, Lemma `ideal_eval_preserves_well_labeled`
+Lemma 7 (Ideal semantics preserves well-labeledness). File `FlowSensitiveFvSLH.v`, Lemma `ideal_eval_preserves_well_labeled`
 
-Lemma 8 (Ideal semantics ensures relative security). File `FlowSensitiveFSLH.v`, Lemma `ideal_eval_relative_secure`
+Lemma 8 (Ideal semantics ensures relative security). File `FlowSensitiveFvSLH.v`, Lemma `ideal_eval_relative_secure`
 
 ## Assumptions
 

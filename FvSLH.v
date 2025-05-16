@@ -1,8 +1,8 @@
-(** * FlexVSLH: Flexible Value SLH *)
+(** * FvSLH: Flexible Value SLH *)
 
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
 From Coq Require Import Strings.String.
-From SECF Require Import Maps SpecCT FlexSLH UltimateSLH_optimized.
+From SECF Require Import Maps SpecCT FiSLH UltimateSLH_optimized.
 From Coq Require Import Bool.Bool.
 From Coq Require Import Arith.Arith.
 From Coq Require Import Arith.EqNat.

@@ -1,4 +1,4 @@
-(** * FlexSLH: Selective Ultimate SLH *)
+(** * FiSLH: Selective Ultimate (index) SLH *)
 
 (* TERSE: HIDEFROMHTML *)
 Set Warnings "-notation-overridden,-parsing,-deprecated-hint-without-locality".
@@ -88,22 +88,22 @@ Axiom pub_vars_eq_dec : forall P P' : pub_vars, (P = P') + (exists x, P x <> P' 
 
 Definition all_secret P := if pub_vars_eq_dec P AllSecret then true else false.
 
-Fixpoint flex_aslh (P PA :pub_vars) (c:com) : com :=
+Fixpoint flex_islh (P PA :pub_vars) (c:com) : com :=
   (match c with
   | <{{skip}}> => <{{skip}}>
   | <{{x := e}}> => <{{x := e}}>
-  | <{{c1; c2}}> => <{{ flex_aslh P PA c1; flex_aslh P PA c2}}>
+  | <{{c1; c2}}> => <{{ flex_islh P PA c1; flex_islh P PA c2}}>
   | <{{if be then c1 else c2 end}}> =>
       let be' := if label_of_bexp P be
         then be                  (* Selective SLH -- tracking speculation, but not masking *)
         else <{{"b" = 0 && be}}> (* Ultimate SLH -- tracking speculation and also masking *)
-      in <{{if be' then "b" := be' ? "b" : 1; flex_aslh P PA c1
-                   else "b" := be' ? 1 : "b"; flex_aslh P PA c2 end}}>
+      in <{{if be' then "b" := be' ? "b" : 1; flex_islh P PA c1
+                   else "b" := be' ? 1 : "b"; flex_islh P PA c2 end}}>
   | <{{while be do c end}}> =>
       let be' := if label_of_bexp P be
         then be                  (* Selective SLH -- tracking speculation, but not masking *)
         else <{{"b" = 0 && be}}> (* Ultimate SLH -- tracking speculation and also masking *)
-      in <{{while be' do "b" := be' ? "b" : 1; flex_aslh P PA c end;
+      in <{{while be' do "b" := be' ? "b" : 1; flex_islh P PA c end;
              "b" := be' ? 1 : "b"}}>
   | <{{x <- a[[i]]}}> =>
     let i' := if label_of_aexp P i && negb (P x)
@@ -120,7 +120,7 @@ Fixpoint flex_aslh (P PA :pub_vars) (c:com) : com :=
 
 (* The following standard IFC type system that just tracks explicit and implicit
    flows seems good enough for what we need. Most importantly, it gives us
-   noninterference both sequentially and speculatively after applying flex_aslh
+   noninterference both sequentially and speculatively after applying flex_islh
    (see testing below). *)
 
 Reserved Notation "P '&' PA ',' pc '|--' c" (at level 40).
@@ -602,11 +602,11 @@ Ltac solve_refl :=
   now eexists; split; [|(try discriminate); (try now repeat econstructor)]; rewrite ?t_update_shadow, t_update_same;
   repeat econstructor; (repeat rewrite_eq); rewrite ?andb_false_r; (try now apply label_of_exp_sound).
 
-Lemma flex_aslh_bcc_generalized : forall c ds P PA st ast (b:bool) c' st' ast' b' os,
+Lemma flex_islh_bcc_generalized : forall c ds P PA st ast (b:bool) c' st' ast' b' os,
   nonempty_arrs ast ->
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
-  <((flex_aslh P PA c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  <((flex_islh P PA c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
   exists c'', P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))> /\
     (c' = <{{ skip }}> -> c'' = <{{ skip }}> /\ st' "b" = (if b' then 1 else 0)).
 Proof.
@@ -670,7 +670,7 @@ Proof.
            invert H3. invert H0; [inversion H16|]. apply IH in H4; [|prog_size_auto|tauto..]. destruct H4, H0, H3 as (->&?); [reflexivity|].
            pose proof (multi_ideal_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ _ Harrs H0).
            remember (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) as be'.
-           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_aslh P PA c) end; "b" := be' ? 1 : "b" }}> with (flex_aslh P PA <{{ while be do c end }}>) in H5
+           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_islh P PA c) end; "b" := be' ? 1 : "b" }}> with (flex_islh P PA <{{ while be do c end }}>) in H5
             by now simpl; rewrite Heqbe'.
            apply IH in H5; [|prog_size_auto|simpl; tauto..]. do 2 destruct H5.
            eapply multi_ideal_unused_overwrite with (X:="b") (n:=st'0 "b") in H5; [|simpl; tauto]. rewrite t_update_shadow in H5.
@@ -722,7 +722,7 @@ Proof.
            rewrite t_update_eq in H. apply multi_ideal_unused_update in H; [|simpl; tauto].
            pose proof (multi_ideal_preserves_nonempty_arrs _ _ _ _ _ _ _ _ _ _ _ _ Harrs H).
            remember (if label_of_bexp P be then be else <{{ "b" = 0 && be }}>) as be' in H3.
-           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_aslh P PA c) end; "b" := be' ? 1 : "b" }}> with (flex_aslh P PA <{{ while be do c end }}>) in H3
+           replace <{{ while be' do "b" := be' ? "b" : 1; (flex_islh P PA c) end; "b" := be' ? 1 : "b" }}> with (flex_islh P PA <{{ while be do c end }}>) in H3
             by now simpl; rewrite Heqbe'.
            apply IH in H3; [|prog_size_auto|simpl; tauto..]. do 2 destruct H3.
            eapply multi_ideal_unused_overwrite with (X:="b") (n:=st'1 "b") in H3; [|simpl; tauto]. rewrite t_update_shadow in H3.
@@ -761,14 +761,14 @@ Proof.
       * simpl in H15. rewrite st_b in H15. simpl in H15. specialize (Harrs a). lia.
 Qed.
 
-Lemma flex_aslh_bcc : forall c ds P PA st ast (b:bool) c' st' ast' b' os,
+Lemma flex_islh_bcc : forall c ds P PA st ast (b:bool) c' st' ast' b' os,
   nonempty_arrs ast ->
   unused "b" c ->
   st "b" = (if b then 1 else 0) ->
-  <((flex_aslh P PA c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
+  <((flex_islh P PA c, st, ast, b))> -->*_ds^^os <((c', st', ast', b'))> ->
   exists c'', P & PA |- <((c, st, ast, b))> -->i*_ds^^os <((c'', "b" !-> st "b"; st', ast', b'))>.
 Proof.
-  intros. apply flex_aslh_bcc_generalized in H2; [|tauto..]. do 2 destruct H2. eexists. apply H2.
+  intros. apply flex_islh_bcc_generalized in H2; [|tauto..]. do 2 destruct H2. eexists. apply H2.
 Qed.
 
 Lemma ideal_misspeculated_unwinding_one_step : forall P PA c st1 ast1 st2 ast2 ct1 stt1 astt1 ct2 stt2 astt2 os1 os2 ds,
@@ -956,7 +956,7 @@ Proof.
   eapply ideal_misspeculated_unwinding; eassumption.
 Qed.
 
-Theorem flex_aslh_relative_secure :
+Theorem flex_islh_relative_secure :
   forall P PA c st1 st2 ast1 ast2,
     (* Selective SLH assumptions *)
     P & PA, public |-- c -> (* just that this is weaker (not ct_well_typed) *)
@@ -969,11 +969,11 @@ Theorem flex_aslh_relative_secure :
     (* Ultimate SLH assumptions  *)
     nonempty_arrs ast1 ->
     nonempty_arrs ast2 ->
-    relative_secure (flex_aslh P PA) c st1 st2 ast1 ast2.
+    relative_secure (flex_islh P PA) c st1 st2 ast1 ast2.
 Proof.
   unfold relative_secure, spec_same_obs. intros.
-  apply flex_aslh_bcc in H8; [|tauto..].
-  apply flex_aslh_bcc in H9; [|tauto..].
+  apply flex_islh_bcc in H8; [|tauto..].
+  apply flex_islh_bcc in H9; [|tauto..].
   destruct H8 as (ct1&?). destruct H9 as (ct2&?).
   eapply ideal_eval_relative_secure; eassumption.
 Qed.
@@ -994,9 +994,9 @@ Module RelatingSelSLH.
                               <{{ a [ i' ] <- e }}>
   end)%string.
 
-  Lemma addr_sel_slh_is_flex_aslh : forall P PA c,
+  Lemma addr_sel_slh_is_flex_islh : forall P PA c,
     P ;; PA |-ct- c ->
-    addr_sel_slh P PA c = flex_aslh P PA c.
+    addr_sel_slh P PA c = flex_islh P PA c.
   Proof.
     intros P PA c H. induction H; simpl; repeat rewrite_eq; try reflexivity.
     - apply label_of_bexp_unique in H. rewrite <- H. reflexivity.
@@ -1022,8 +1022,8 @@ Module RelatingSelSLH.
       nonempty_arrs ast2 ->
       relative_secure (addr_sel_slh P PA) c st1 st2 ast1 ast2.
   Proof.
-    unfold relative_secure. intros. erewrite addr_sel_slh_is_flex_aslh; [|eassumption].
-    apply ct_well_typed_well_typed in H. eapply flex_aslh_relative_secure; eassumption.
+    unfold relative_secure. intros. erewrite addr_sel_slh_is_flex_islh; [|eassumption].
+    apply ct_well_typed_well_typed in H. eapply flex_islh_relative_secure; eassumption.
   Qed.
 
   Lemma well_typed_ct_secure_one_step : forall P PA c st1 st2 ast1 ast2 os1 os2 ct1 ct2 stt1 stt2 astt1 astt2,
@@ -1115,10 +1115,10 @@ Module RelatingUltimateSLH.
     forall b, label_of_bexp AllSecret b = is_empty (vars_bexp b).
   Proof. now apply AllSecrets_no_vars. Qed.
 
-  (* Actually this version of flex_aslh doesn't exactly correspond to ultimate_slh, even optimized *)
+  (* Actually this version of flex_islh doesn't exactly correspond to ultimate_slh, even optimized *)
 
-  Lemma ultimate_slh_is_flex_aslh : forall c,
-    ultimate_slh c = flex_aslh AllSecret AllSecret c.
+  Lemma ultimate_slh_is_flex_islh : forall c,
+    ultimate_slh c = flex_islh AllSecret AllSecret c.
   Proof.
     induction c; try reflexivity.
     + simpl. now repeat rewrite_eq.
@@ -1153,8 +1153,8 @@ Module RelatingUltimateSLH.
       nonempty_arrs ast2 ->
       relative_secure ultimate_slh c st1 st2 ast1 ast2.
   Proof.
-    unfold relative_secure. intros. rewrite ultimate_slh_is_flex_aslh.
-    eapply flex_aslh_relative_secure; [apply wt_relax, AllSecret_wt|apply AllSecret_pub_equiv|apply AllSecret_pub_equiv|tauto..].
+    unfold relative_secure. intros. rewrite ultimate_slh_is_flex_islh.
+    eapply flex_islh_relative_secure; [apply wt_relax, AllSecret_wt|apply AllSecret_pub_equiv|apply AllSecret_pub_equiv|tauto..].
   Qed.
 
 End RelatingUltimateSLH.
